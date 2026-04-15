@@ -94,7 +94,20 @@ public class SQLValidationService {
                 
                 // 检查是否有非聚合字段不在 GROUP BY 中
                 for (String column : nonAggregateColumns) {
-                    if (!groupByColumns.contains(column.toLowerCase())) {
+                    String columnLower = column.toLowerCase();
+                    
+                    // ✅ 修复：如果是表达式（如 DATE_FORMAT(...)），检查是否在 GROUP BY 中有相同表达式
+                    boolean foundInGroupBy = false;
+                    for (String groupByCol : groupByColumns) {
+                        // 直接匹配或去除空格后匹配
+                        if (columnLower.equals(groupByCol) || 
+                            columnLower.replaceAll("\\s+", "").equals(groupByCol.replaceAll("\\s+", ""))) {
+                            foundInGroupBy = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!foundInGroupBy) {
                         issues.add(String.format(
                             "❌ 字段 '%s' 在 SELECT 中但未在 GROUP BY 中，这会导致 MySQL 报错",
                             column

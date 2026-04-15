@@ -23,7 +23,7 @@ public class MySqlVectorService {
     
     @PostConstruct
     public void init() {
-        log.info("Chroma未配置，使用MySQL全文检索作为RAG后端");
+         log.debug("MySQL RAG后端已就绪（作为Chroma降级方案）");
         createTableIfNotExists();
     }
     

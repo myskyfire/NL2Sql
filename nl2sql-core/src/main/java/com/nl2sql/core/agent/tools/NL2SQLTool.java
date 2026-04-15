@@ -342,12 +342,19 @@ public class NL2SQLTool {
                 "   - 正确示例：SELECT province, SUM(amount) ... GROUP BY province\n" +
                 "7. **时间格式化规范**：\n" +
                 "   - 如果用户要求按天/月/年统计（如'最近10天每天的订单金额'），必须使用 DATE_FORMAT() 函数格式化时间\n" +
-                "   - 按天统计：DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS order_date\n" +
-                "   - 按月统计：DATE_FORMAT(created_at, '%%Y-%%m') AS order_month\n" +
-                "   - 按年统计：DATE_FORMAT(created_at, '%%Y') AS order_year\n" +
+                "   - 按天统计：DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期'\n" +
+                "   - 按月统计：DATE_FORMAT(created_at, '%%Y-%%m') AS '订单月份'\n" +
+                "   - 按年统计：DATE_FORMAT(created_at, '%%Y') AS '订单年份'\n" +
                 "   - ❌ 错误：DATE(created_at) 会返回带时分秒的格式\n" +
                 "   - ✅ 正确：DATE_FORMAT(created_at, '%%Y-%%m-%%d') 只返回日期部分\n" +
-                "8. **表关联规则**：\n" +
+                "8. **ORDER BY 别名一致性规则（重要）**：\n" +
+                "   - ⚠️ **强制规则**：ORDER BY 中使用的字段名或别名，必须与 SELECT 中定义的完全一致\n" +
+                "   - 错误示例：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY order_date\n" +
+                "     （SELECT 中是 '订单日期'，但 ORDER BY 用了 order_date）\n" +
+                "   - 正确示例1：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY '订单日期'\n" +
+                "   - 正确示例2：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS order_date ... ORDER BY order_date\n" +
+                "   - **关键**：SELECT 和 ORDER BY 必须使用相同的别名，不能混用\n" +
+                "9. **表关联规则**：\n" +
                 "   - 如果上面提供了'表之间的关联关系'，直接使用这些关系进行JOIN\n" +
                 "   - **必须使用直接JOIN，禁止使用子查询或IN子句进行表关联**\n" +
                 "   - 错误示例：JOIN tableB ON colA IN (SELECT id FROM tableB WHERE ...)\n" +
@@ -471,13 +478,15 @@ public class NL2SQLTool {
             if (end > start) {
                 String preferredTable = query.substring(start, end).trim();
                 tablePreferenceHint = String.format(
-                    "\n\n⚠️ **用户明确要求**：优先使用 `%s` 表\n" +
-                    "- 如果 `%s` 表在可用表列表中，**必须选择它**\n" +
-                    "- 除非该表完全无法满足用户需求，否则不要忽略用户的表选择\n" +
-                    "- 在选择表时，优先考虑用户指定的表，再补充必要的关联表",
-                    preferredTable, preferredTable
+                    "\n\n⚠️ **用户明确要求**：必须使用包含'%s'关键词的表\n" +
+                    "- **强制规则**：在可用表列表中，查找表名或表注释中包含'%s'的表\n" +
+                    "- 如果找到匹配的表，它**必须**出现在 selected_tables 中\n" +
+                    "- 即使其他表也有相关字段，也必须优先使用用户指定的表\n" +
+                    "- 只有在没有任何表匹配'%s'时，才可以根据语义选择最相关的表\n" +
+                    "- 示例：用户说'使用用户表'，应选择表名为 users 或注释包含'用户'的表",
+                    preferredTable, preferredTable, preferredTable
                 );
-                log.info("[NL2SQLTool] 检测到用户表偏好: {}", preferredTable);
+                log.info("[NL2SQLTool] ⚠️ 检测到用户表偏好（强制）: {}", preferredTable);
             }
         }
         

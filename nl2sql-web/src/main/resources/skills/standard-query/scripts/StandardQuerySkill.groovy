@@ -74,20 +74,43 @@ class StandardQuerySkill {
             
             String sql = nl2sqlTool.generateSQL(question, datasourceId)
             
-            // SQL后处理：检测并修复IN子查询关联
-            sql = optimizeSQL(sql)
+            // ✅ 关键修复：检查 SQL 生成是否失败或需要澄清
+            boolean hasSyntaxError = false
+            boolean needsClarification = false
             
-            // Step 2.5: LLM自主评估SQL风险
-            println "[StandardQuerySkill] Step 2.5: 评估SQL风险"
-            RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer)
+            if (sql == null || sql.trim().isEmpty() || sql.startsWith("错误：") || sql.startsWith("ERROR:")) {
+                println "[StandardQuerySkill] SQL生成失败，将尝试自动修正: ${sql}"
+                hasSyntaxError = true
+            } else if (sql.startsWith("CLARIFY_") || sql.startsWith("CLARIFICATION")) {
+                println "[StandardQuerySkill] SQL需要澄清，直接返回: ${sql}"
+                needsClarification = true
+            }
             
-            if ("HIGH".equals(riskResult.getRiskLevel())) {
-                println "[StandardQuerySkill] SQL风险评估为高风险，阻断执行: ${riskResult.getReason()}"
-                return createRiskBlockedResult(riskResult.getReason(), sql)
-            } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
-                println "[StandardQuerySkill] SQL风险评估为中风险，继续执行但提示用户: ${riskResult.getReason()}"
+            // 如果需要澄清，直接返回
+            if (needsClarification) {
+                return createClarificationResult(sql)
+            }
+            
+            // SQL后处理：检测并修复IN子查询关联（仅当SQL有效时）
+            if (!hasSyntaxError) {
+                sql = optimizeSQL(sql)
+            }
+            
+            // Step 2.5: LLM自主评估SQL风险（仅当SQL有效时）
+            if (!hasSyntaxError) {
+                println "[StandardQuerySkill] Step 2.5: 评估SQL风险"
+                RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer)
+                
+                if ("HIGH".equals(riskResult.getRiskLevel())) {
+                    println "[StandardQuerySkill] SQL风险评估为高风险，阻断执行: ${riskResult.getReason()}"
+                    return createRiskBlockedResult(riskResult.getReason(), sql)
+                } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
+                    println "[StandardQuerySkill] SQL风险评估为中风险，继续执行但提示用户: ${riskResult.getReason()}"
+                } else {
+                    println "[StandardQuerySkill] SQL风险评估为低风险，直接执行"
+                }
             } else {
-                println "[StandardQuerySkill] SQL风险评估为低风险，直接执行"
+                println "[StandardQuerySkill] SQL生成失败，跳过风险评估，直接进入修正流程"
             }
             
             // 检查是否需要澄清
@@ -154,6 +177,13 @@ class StandardQuerySkill {
     private RiskAssessmentResult assessSQLRisk(String sql, String question, Long datasourceId, 
                                                 LLMService llmService, SQLRiskAnalyzer riskAnalyzer) {
         try {
+            // ✅ 关键修复：如果 SQL 是澄清消息或错误消息，直接返回低风险
+            if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_") || 
+                sql.startsWith("错误：") || sql.startsWith("ERROR:")) {
+                println "[StandardQuerySkill] SQL不是有效查询，跳过风险评估"
+                return new RiskAssessmentResult("LOW", "非有效SQL，无需风险评估")
+            }
+            
             ChatModel model = llmService.getChatModel()
             
             // Step 1: LLM先自行评估
