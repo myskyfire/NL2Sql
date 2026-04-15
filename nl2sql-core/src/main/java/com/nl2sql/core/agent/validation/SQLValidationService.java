@@ -300,7 +300,9 @@ public class SQLValidationService {
                     if (expr instanceof Column) {
                         columns.add(((Column) expr).getColumnName());
                     } else {
-                        columns.add(itemStr);
+                        // ✅ 关键修复：提取表达式本身（不含 AS 别名）
+                        String exprStr = expr.toString().trim();
+                        columns.add(exprStr);
                     }
                 }
             }

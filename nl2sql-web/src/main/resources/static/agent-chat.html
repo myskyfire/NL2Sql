@@ -399,6 +399,7 @@
             console.log('[Agent响应] status:', data.status);
             console.log('[Agent响应] message:', data.message);
             console.log('[Agent响应] clarificationType:', data.clarificationType);
+            console.log('[Agent响应] data字段:', data.data ? `有${data.data.length}条` : '无');
             
             // ⚠️ 重要：保留原有的 sql/generatedSQL，只更新其他字段
             const preservedFields = ['sql', 'generatedSQL'];
@@ -411,9 +412,15 @@
             
             currentContext = { ...data, ...preservedData };
             
-            // 如果响应中包含 datasourceId，保存到上下文
+            // ✅ 关键修复：如果响应中包含 datasourceId，保存到上下文
             if (data.datasourceId) {
                 currentContext.datasourceId = data.datasourceId;
+            }
+            
+            // ✅ 关键修复：确保 data 字段被正确保存（用于图表和Excel下载）
+            if (data.data && Array.isArray(data.data)) {
+                currentContext.data = data.data;
+                console.log('[Agent响应] 已保存 data 字段:', data.data.length, '条记录');
             }
             
             // 保存最后一次的查询问题（用于AI总结等场景）
