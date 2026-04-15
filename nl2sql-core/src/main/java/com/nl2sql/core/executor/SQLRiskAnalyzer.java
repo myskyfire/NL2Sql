@@ -1,5 +1,6 @@
 package com.nl2sql.core.executor;
 
+import com.nl2sql.core.datasource.DataSourceManager;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,29 +16,39 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class SQLRiskAnalyzer {
     
-    private final JdbcTemplate jdbcTemplate;
+    private final DataSourceManager dataSourceManager;
     private final RedisTemplate<String, Object> redisTemplate;
     
     @Value("${sql.execution.table-stats-cache-hours:12}")
     private long cacheHours;
     
-    private static final String TABLE_STATS_CACHE_KEY = "sql:tablestats:%s";
+    private static final String TABLE_STATS_CACHE_KEY = "sql:tablestats:%s:%s"; // datasourceId:tableName
     
-    public SQLRiskAnalyzer(JdbcTemplate jdbcTemplate, RedisTemplate<String, Object> redisTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public SQLRiskAnalyzer(DataSourceManager dataSourceManager, RedisTemplate<String, Object> redisTemplate) {
+        this.dataSourceManager = dataSourceManager;
         this.redisTemplate = redisTemplate;
     }
     
     /**
      * 分析SQL风险
      */
-    public RiskAnalysisResult analyzeRisk(String sql) {
+    public RiskAnalysisResult analyzeRisk(String sql, Long datasourceId) {
         RiskAnalysisResult result = new RiskAnalysisResult();
         result.setSql(sql);
         
+        if (datasourceId == null) {
+            log.warn("[SQLRiskAnalyzer] datasourceId 为 null，无法执行 EXPLAIN");
+            result.setRiskLevel("HIGH");
+            result.getRisks().add("缺少数据源ID，无法执行风险分析");
+            return result;
+        }
+        
         try {
+            // 获取对应数据源的 JdbcTemplate
+            JdbcTemplate jdbcTemplate = dataSourceManager.getJdbcTemplate(datasourceId);
+            
             // 1. 执行EXPLAIN获取执行计划
-            List<Map<String, Object>> explainResult = executeExplain(sql);
+            List<Map<String, Object>> explainResult = executeExplain(sql, jdbcTemplate);
             result.setExplainResult(explainResult);
             
             // 2. 提取涉及的表
@@ -47,7 +58,7 @@ public class SQLRiskAnalyzer {
             // 3. 获取表统计信息(带缓存)
             Map<String, TableStats> tableStatsMap = new HashMap<>();
             for (String table : tables) {
-                TableStats stats = getTableStatsWithCache(table);
+                TableStats stats = getTableStatsWithCache(table, datasourceId, jdbcTemplate);
                 tableStatsMap.put(table, stats);
             }
             result.setTableStats(tableStatsMap);
@@ -61,10 +72,10 @@ public class SQLRiskAnalyzer {
             List<String> suggestions = generateSuggestions(explainResult, tableStatsMap, risks);
             result.setSuggestions(suggestions);
             
-            log.info("SQL风险分析完成: 风险等级={}, 风险点={}", result.getRiskLevel(), risks.size());
+            log.info("SQL风险分析完成: datasourceId={}, 风险等级={}, 风险点={}", datasourceId, result.getRiskLevel(), risks.size());
             
         } catch (Exception e) {
-            log.error("SQL风险分析失败", e);
+            log.error("SQL风险分析失败: datasourceId={}", datasourceId, e);
             result.setRiskLevel("HIGH");
             result.getRisks().add("分析失败: " + e.getMessage());
         }
@@ -73,9 +84,23 @@ public class SQLRiskAnalyzer {
     }
     
     /**
+     * 兼容旧接口（不推荐使用）
+     * @deprecated 使用 analyzeRisk(String sql, Long datasourceId)
+     */
+    @Deprecated
+    public RiskAnalysisResult analyzeRisk(String sql) {
+        log.warn("[SQLRiskAnalyzer] 调用了已弃用的方法 analyzeRisk(String)，请使用 analyzeRisk(String, Long)");
+        RiskAnalysisResult result = new RiskAnalysisResult();
+        result.setSql(sql);
+        result.setRiskLevel("HIGH");
+        result.getRisks().add("未指定数据源ID，无法执行分析");
+        return result;
+    }
+    
+    /**
      * 执行EXPLAIN
      */
-    private List<Map<String, Object>> executeExplain(String sql) {
+    private List<Map<String, Object>> executeExplain(String sql, JdbcTemplate jdbcTemplate) {
         try {
             String explainSQL = "EXPLAIN " + sql;
             return jdbcTemplate.queryForList(explainSQL);
@@ -104,30 +129,30 @@ public class SQLRiskAnalyzer {
     /**
      * 获取表统计信息(带缓存)
      */
-    private TableStats getTableStatsWithCache(String tableName) {
+    private TableStats getTableStatsWithCache(String tableName, Long datasourceId, JdbcTemplate jdbcTemplate) {
         try {
-            // 先查缓存
-            String cacheKey = String.format(TABLE_STATS_CACHE_KEY, tableName);
+            // 先查缓存（包含 datasourceId）
+            String cacheKey = String.format(TABLE_STATS_CACHE_KEY, datasourceId, tableName);
             TableStats cached = (TableStats) redisTemplate.opsForValue().get(cacheKey);
             
             if (cached != null) {
-                log.debug("命中表统计缓存: {}", tableName);
+                log.debug("命中表统计缓存: datasourceId={}, table={}", datasourceId, tableName);
                 return cached;
             }
             
             // 查数据库
-            TableStats stats = fetchTableStats(tableName);
+            TableStats stats = fetchTableStats(tableName, jdbcTemplate);
             
             // 写入缓存
             if (stats != null) {
                 redisTemplate.opsForValue().set(cacheKey, stats, cacheHours, TimeUnit.HOURS);
-                log.info("更新表统计缓存: {}, 行数={}", tableName, stats.getRowCount());
+                log.info("更新表统计缓存: datasourceId={}, table={}, rows={}", datasourceId, tableName, stats.getRowCount());
             }
             
             return stats;
             
         } catch (Exception e) {
-            log.error("获取表统计信息失败: {}", tableName, e);
+            log.error("获取表统计信息失败: datasourceId={}, table={}", datasourceId, tableName, e);
             return new TableStats();
         }
     }
@@ -135,7 +160,7 @@ public class SQLRiskAnalyzer {
     /**
      * 从数据库获取表统计信息
      */
-    private TableStats fetchTableStats(String tableName) {
+    private TableStats fetchTableStats(String tableName, JdbcTemplate jdbcTemplate) {
         try {
             String dbSchema = jdbcTemplate.getDataSource().getConnection().getCatalog();
             
@@ -158,7 +183,7 @@ public class SQLRiskAnalyzer {
             stats.setIndexSize(((Number) row.get("index_length")).longValue());
             
             // 获取索引信息
-            List<IndexInfo> indexes = fetchIndexInfo(tableName);
+            List<IndexInfo> indexes = fetchIndexInfo(tableName, jdbcTemplate);
             stats.setIndexes(indexes);
             
             return stats;
@@ -172,7 +197,7 @@ public class SQLRiskAnalyzer {
     /**
      * 获取表的索引信息
      */
-    private List<IndexInfo> fetchIndexInfo(String tableName) {
+    private List<IndexInfo> fetchIndexInfo(String tableName, JdbcTemplate jdbcTemplate) {
         try {
             String dbSchema = jdbcTemplate.getDataSource().getConnection().getCatalog();
             

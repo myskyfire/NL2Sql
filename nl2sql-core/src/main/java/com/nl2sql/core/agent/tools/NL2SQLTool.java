@@ -463,9 +463,28 @@ public class NL2SQLTool {
             "\n\n表之间的关联关系（重要）：\n" + relationshipInfo + 
             "\n注意：如果需要关联两张表，必须包含中间的所有表。例如：order_items -> products -> product_categories，需要同时选中这三张表。";
         
+        // ✅ 关键修复：检测用户是否指定了表名偏好
+        String tablePreferenceHint = "";
+        if (query.contains("[优先使用表:")) {
+            int start = query.indexOf("[优先使用表:") + "[优先使用表:".length();
+            int end = query.indexOf("]", start);
+            if (end > start) {
+                String preferredTable = query.substring(start, end).trim();
+                tablePreferenceHint = String.format(
+                    "\n\n⚠️ **用户明确要求**：优先使用 `%s` 表\n" +
+                    "- 如果 `%s` 表在可用表列表中，**必须选择它**\n" +
+                    "- 除非该表完全无法满足用户需求，否则不要忽略用户的表选择\n" +
+                    "- 在选择表时，优先考虑用户指定的表，再补充必要的关联表",
+                    preferredTable, preferredTable
+                );
+                log.info("[NL2SQLTool] 检测到用户表偏好: {}", preferredTable);
+            }
+        }
+        
         return String.format(
             "你是一个数据库专家。根据用户问题和当前可用的表结构，请选出需要用到的表。\n\n" +
-            "用户问题：%s\n\n" +
+            "用户问题：%s\n" +
+            "%s" +
             "当前可用的表：\n%s" +
             "%s\n\n" +
             "要求：\n" +
@@ -487,7 +506,7 @@ public class NL2SQLTool {
             "6. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
             "7. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
             "8. 只返回JSON，不要其他内容",
-            query, schemaInfo, relationshipHint
+            query, tablePreferenceHint, schemaInfo, relationshipHint
         );
     }
     

@@ -97,15 +97,25 @@ public class ReActAgent {
      * @return JSON字符串（工具结果）或自然语言（LLM回答）
      */
     public String execute(String userMessage, Long datasourceId, Long userId, String username) {
-        log.info("[ReActAgent] 开始执行，用户消息: {}", userMessage);
+        log.info("[ReActAgent] 开始执行，用户消息: {}, datasourceId={}", userMessage, datasourceId);
         
         List<ChatMessage> messages = new ArrayList<>();
         
         // 添加SystemMessage
         messages.add(new SystemMessage(buildSystemMessage()));
         
+        // ⚠️ 关键修复：在用户消息中添加 datasourceId 上下文
+        String enrichedMessage;
+        if (datasourceId != null) {
+            enrichedMessage = String.format("[数据源ID: %d] %s", datasourceId, userMessage);
+            log.info("[ReActAgent] 已注入数据源上下文: datasourceId={}", datasourceId);
+        } else {
+            enrichedMessage = "[数据源ID: null] " + userMessage;
+            log.warn("[ReActAgent] 数据源ID为null，LLM需要先调用 clarify_datasource");
+        }
+        
         // 添加用户消息
-        messages.add(new UserMessage(userMessage));
+        messages.add(new UserMessage(enrichedMessage));
         
         String finalAnswer = null;
         String lastToolResult = null; // 保存最后一次工具执行的原始结果
@@ -299,37 +309,24 @@ public class ReActAgent {
         sb.append("   - 如果包含 [INTENT:GENERATE_CHART] → 从消息中提取图表类型和 SQL，然后调用 generate_chart 工具\n");
         sb.append("     格式：{\"name\": \"generate_chart\", \"arguments\": {\"context\": {\"chartType\": \"bar/line/pie\", \"generatedSQL\": \"提取的SQL\"}}}\n");
         sb.append("   - 不要询问数据源，不要调用其他工具\n");
-        sb.append("2. **⚠️ 关键第一步：检查 datasourceId 是否为 null**\n");
-        sb.append("   - ⚠️ **绝对禁止**：如果 datasourceId 为 null，绝对不能调用 execute_standard_query！\n");
-        sb.append("   - 必须先调用 clarify_datasource 获取推荐的数据源\n");
-        sb.append("   - 示例：用户问“统计销售额”，datasourceId=null → 必须调用 clarify_datasource\n");
-        sb.append("   - ⚠️ **重要**：如果 datasourceId 不为 null（已有数据源），**绝对禁止**再次调用 clarify_datasource！\n");
-        sb.append("   - 正确做法：直接使用 execute_standard_query(question, datasourceId) 执行查询\n");
-        sb.append("3. **处理 clarify_datasource 工具的返回结果**\n");
-        sb.append("   - ⚠️ **关键规则**：如果 clarify_datasource 返回了 recommendedDatasourceId 和 high/medium 置信度\n");
-        sb.append("     → 立即调用 execute_standard_query(question=原始问题, datasourceId=recommendedDatasourceId)\n");
-        sb.append("     → ⚠️ **绝对禁止**：不要输出任何确认问句，如“请确认”、“是否使用”等\n");
-        sb.append("     → ⚠️ **绝对禁止**：不要说“好的”、“明白了”等废话\n");
-        sb.append("     → 直接输出工具调用 JSON，没有任何其他文字\n");
-        sb.append("   - 示例：clarify_datasource 返回 {recommendedDatasourceId: 1, confidence: \"high\"}\n");
-        sb.append("     → ✅ 正确：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"统计销售额\", \"datasourceId\": 1}}\n");
-        sb.append("     → ❌ 错误：“好的，请确认您要使用XXX数据源”\n");
-        sb.append("4. **检查是否是数据源确认回复**（如“是的”、“好的”、“确认”等）\n");
-        sb.append("   - 如果用户消息很短且是确认语气，并且上下文中有 datasourceId → 直接使用原始问题 + datasourceId 调用 execute_standard_query\n");
-        sb.append("   - 例如：用户之前问“查询订单”，你推荐了数据源，用户回复“是的” → 调用 execute_standard_query(question=\"查询订单\", datasourceId=xxx)\n");
-        sb.append("5. **判断是否需要澄清数据源**（仅当 clarify_datasource 无法匹配时）\n");
-        sb.append("   - ⚠️ **关键原则**：LLM 无法知道哪个数据源包含用户需要的字段\n");
-        sb.append("   - 如果用户没有明确指定数据源（datasourceId 未知），必须调用 clarify_datasource 获取可用数据源列表\n");
-        sb.append("   - 即使问题是“统计销售额”，也不能假设某个数据源一定有这些字段\n");
-        sb.append("6. **执行查询**（数据源明确时）：\n");
-        sb.append("   a) **先评估SQL复杂度**：\n");
-        sb.append("      - 简单查询（单表、少量字段）→ 直接调用 execute_standard_query\n");
-        sb.append("      - 复杂查询（多表JOIN≥3张、子查询、大数据量）→ 先调用 analyze_sql_risk 评估风险\n");
-        sb.append("   b) **如果调用了 analyze_sql_risk**：\n");
-        sb.append("      - 风险等级为 HIGH → 返回警告信息给用户，建议优化SQL\n");
-        sb.append("      - 风险等级为 MEDIUM/LOW → 调用 execute_direct_sql 执行已分析的SQL\n");
-        sb.append("      - 注意：execute_direct_sql 需要提供 sql 和 datasourceId 参数\n");
-        sb.append("6. 等待工具返回结果后，用中文给出最终答案\n\n");
+        sb.append("2. **⚠️ 关键第一步：检查用户消息开头的 [数据源ID: XXX] 标记**\n");
+        sb.append("   - ⚠️ **重要**：每条用户消息都会以 `[数据源ID: XXX]` 开头\n");
+        sb.append("   - 如果 `[数据源ID: null]` → 必须调用 clarify_datasource 获取推荐的数据源\n");
+        sb.append("   - 如果 `[数据源ID: 数字]`（如 `[数据源ID: 1]`）→ **直接使用这个数字作为 datasourceId**\n");
+        sb.append("   - ⚠️ **绝对禁止**：如果已有数据源ID，绝对不能再次调用 clarify_datasource！\n");
+        sb.append("3. **执行查询**（数据源明确时）：\n");
+        sb.append("   - ⚠️ **唯一正确做法**：直接调用 execute_standard_query(question, datasourceId)\n");
+        sb.append("   - ✅ execute_standard_query 会自动完成以下所有步骤：\n");
+        sb.append("     1. 检索表结构 (retrieve_schema)\n");
+        sb.append("     2. 生成 SQL (generate_sql)\n");
+        sb.append("     3. 评估 SQL 风险（如果需要，自动调用 EXPLAIN）\n");
+        sb.append("     4. 执行 SQL 并返回结果\n");
+        sb.append("   - ❌ **绝对禁止**：不要手动调用 analyze_sql_risk、execute_direct_sql 等底层工具\n");
+        sb.append("   - ❌ **绝对禁止**：不要自己生成 SQL，必须让 execute_standard_query 自动生成\n");
+        sb.append("   - 示例：用户消息为 `[数据源ID: 1] 查询所有订单`\n");
+        sb.append("     → ✅ 正确：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"查询所有订单\", \"datasourceId\": 1}}\n");
+        sb.append("     → ❌ 错误：{\"name\": \"clarify_datasource\", \"arguments\": {...}}\n");
+        sb.append("     → ❌ 错误：{\"name\": \"analyze_sql_risk\", \"arguments\": {\"sql\": \"SELECT ...\"}}\n\n");
         
         sb.append("## ⚠️ 重要规则\n");
         sb.append("- 不要输出Thought、Action、Observation等标记\n");
@@ -345,9 +342,7 @@ public class ReActAgent {
         
         sb.append("## 输出示例\n");
         sb.append("✅ 好的（总结意图）：{\"name\": \"summarize_result\", \"arguments\": {\"context\": {\"lastQuery\": \"查询销售额\", \"generatedSQL\": \"SELECT ...\"}}}\n");
-        sb.append("✅ 好的（简单查询）：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"统计销售额\", \"datasourceId\": 1}}\n");
-        sb.append("✅ 好的（复杂查询先评估）：{\"name\": \"analyze_sql_risk\", \"arguments\": {\"sql\": \"SELECT o.*, u.name FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_id\"}}\n");
-        sb.append("✅ 好的（风险评估后执行）：{\"name\": \"execute_direct_sql\", \"arguments\": {\"sql\": \"SELECT o.*, u.name FROM orders o JOIN users u ON o.user_id = u.id\", \"datasourceId\": 1}}\n");
+        sb.append("✅ 好的（标准查询）：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"统计销售额\", \"datasourceId\": 1}}\n");
         sb.append("❌ 不好的：Thought: 我需要...\\nAction: ...\n");
         
         return sb.toString();

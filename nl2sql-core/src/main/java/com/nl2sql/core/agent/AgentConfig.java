@@ -257,31 +257,63 @@ public class AgentConfig {
         
         // 注册图表生成工具（处理 [INTENT:GENERATE_CHART] 意图）
         agent.registerTool("generate_chart", (args, dsId, userId, username, userMessage) -> {
+            log.info("[generate_chart] 收到参数: args={}", args);
+            
             // 从 context 中获取图表类型和 SQL
             Map<String, Object> context = (Map<String, Object>) args.get("context");
             if (context == null) {
+                log.error("[generate_chart] context 为 null");
                 return "{\"status\":\"error\",\"message\":\"缺少上下文数据\"}";
             }
             
             String chartType = (String) context.get("chartType");
             String generatedSQL = (String) context.get("generatedSQL");
             
+            log.info("[generate_chart] chartType={}, generatedSQL={}", chartType, generatedSQL);
+            
             if (generatedSQL == null || generatedSQL.trim().isEmpty()) {
+                log.error("[generate_chart] generatedSQL 为空");
                 return "{\"status\":\"error\",\"message\":\"缺少 SQL 语句\"}";
             }
             
             try {
                 // 使用 SQLExecutionTool 重新执行查询，获取最新数据
                 log.info("[generate_chart] 重新执行 SQL 获取数据: {}", generatedSQL);
+                log.info("[generate_chart] datasourceId={}, userId={}, username={}", dsId, userId, username);
+                
                 SQLExecutionTool.ExecutionResult execResult = sqlExecutionTool.executeSQL(
                     generatedSQL, dsId, userId, username
                 );
                 
-                if (!execResult.isSuccess() || execResult.getData() == null || execResult.getData().isEmpty()) {
-                    return "{\"status\":\"error\",\"message\":\"查询失败或结果为空，无法生成图表\"}";
+                log.info("[generate_chart] 执行结果: success={}, data={}", 
+                    execResult.isSuccess(), 
+                    execResult.getData() != null ? execResult.getData().size() : "null");
+                
+                if (!execResult.isSuccess()) {
+                    log.error("[generate_chart] SQL执行失败: {}", execResult.getError());
+                    return "{\"status\":\"error\",\"message\":\"SQL执行失败: " + execResult.getError() + "\"}";
+                }
+                
+                if (execResult.getData() == null || execResult.getData().isEmpty()) {
+                    log.warn("[generate_chart] 查询结果为空");
+                    return "{\"status\":\"error\",\"message\":\"查询结果为空，无法生成图表\"}";
                 }
                 
                 List<Map<String, Object>> queryData = execResult.getData();
+                
+                // ⚠️ 关键：如果没有指定 chartType，分析数据并推荐适合的图表类型
+                if (chartType == null || chartType.trim().isEmpty()) {
+                    log.info("[generate_chart] 未指定图表类型，分析数据特征");
+                    List<String> recommendedTypes = analyzeAndRecommendChartTypes(queryData);
+                    
+                    Map<String, Object> result = new java.util.HashMap<>();
+                    result.put("status", "chart_recommendation");
+                    result.put("recommendedCharts", recommendedTypes);
+                    result.put("datasourceId", dsId);
+                    
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    return mapper.writeValueAsString(result);
+                }
                 
                 // 生成 ECharts 配置
                 Map<String, Object> echartsConfig = generateEChartsConfig(chartType, queryData);
@@ -306,8 +338,11 @@ public class AgentConfig {
         if (sqlRiskAnalysisTool != null) {
             agent.registerTool("analyze_sql_risk", (args, dsId, userId, username, userMessage) -> {
                 String sql = (String) args.get("sql");
-                return sqlRiskAnalysisTool.analyzeSQLRisk(sql);
-            }, "在执行复杂SQL之前，先分析其执行计划和潜在风险。适用于：多表JOIN、子查询、大数据量查询等场景。返回风险等级(LOW/MEDIUM/HIGH)、风险点和优化建议。");
+                // 使用传入的 datasourceId，如果没有则使用 dsId
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return sqlRiskAnalysisTool.analyzeSQLRisk(sql, datasourceId);
+            }, "在执行复杂SQL之前，先分析其执行计划和潜在风险。适用于：多表JOIN、子查询、大数据量查询等场景。返回风险等级(LOW/MEDIUM/HIGH)、风险点和优化建议。调用时必须传递参数：{\"sql\": \"SQL语句\", \"datasourceId\": 数据源ID}");
             log.info("启用 SQLRiskAnalysisTool");
         }
         
@@ -315,6 +350,67 @@ public class AgentConfig {
         log.info("已注册工具数量: {}", agent.getToolCount());
         
         return agent;
+    }
+    
+    /**
+     * 分析数据特征并推荐适合的图表类型
+     */
+    private List<String> analyzeAndRecommendChartTypes(List<Map<String, Object>> data) {
+        List<String> recommendations = new java.util.ArrayList<>();
+        
+        if (data == null || data.isEmpty()) {
+            return recommendations;
+        }
+        
+        // 分析数据特征
+        int rowCount = data.size();
+        int columnCount = data.get(0).size();
+        
+        // 检查是否有数值列和分类列
+        boolean hasNumericColumn = false;
+        boolean hasCategoryColumn = false;
+        String categoryKey = null;
+        
+        for (Map.Entry<String, Object> entry : data.get(0).entrySet()) {
+            if (entry.getValue() instanceof Number) {
+                hasNumericColumn = true;
+            } else if (entry.getValue() instanceof String) {
+                hasCategoryColumn = true;
+                if (categoryKey == null) {
+                    categoryKey = entry.getKey();
+                }
+            }
+        }
+        
+        // 根据数据特征推荐
+        if (hasCategoryColumn && hasNumericColumn) {
+            // 有分类和数值：适合柱状图、饼图
+            recommendations.add("bar");  // 柱状图
+            
+            if (rowCount <= 10) {
+                recommendations.add("pie");  // 数据量少时适合饼图
+            }
+            
+            if (rowCount >= 3) {
+                recommendations.add("line");  // 数据点多时适合折线图
+            }
+        } else if (hasNumericColumn && !hasCategoryColumn) {
+            // 只有数值：适合折线图（趋势）
+            recommendations.add("line");
+        } else if (hasCategoryColumn && !hasNumericColumn) {
+            // 只有分类：适合饼图（占比）
+            if (rowCount <= 10) {
+                recommendations.add("pie");
+            }
+        }
+        
+        // 默认至少返回柱状图
+        if (recommendations.isEmpty()) {
+            recommendations.add("bar");
+        }
+        
+        log.info("[analyzeAndRecommendChartTypes] 推荐图表类型: {}", recommendations);
+        return recommendations;
     }
     
     /**

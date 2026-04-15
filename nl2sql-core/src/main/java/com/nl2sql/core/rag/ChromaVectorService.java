@@ -7,6 +7,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -20,10 +21,14 @@ import java.util.stream.Collectors;
 
 /**
  * Chroma向量数据库服务 - 用于RAG知识库的向量检索
+ * ✅ 使用 LangChain4j 原生 Chroma V2 API 支持
  */
 @Slf4j
 @Service
 public class ChromaVectorService {
+    
+    @Value("${chroma.enabled:false}")
+    private boolean chromaEnabled;
     
     @Value("${chroma.url:http://localhost:8000}")
     private String chromaUrl;
@@ -36,19 +41,25 @@ public class ChromaVectorService {
     
     @PostConstruct
     public void init() {
+        if (!chromaEnabled) {
+            log.info("[ChromaVectorService] Chroma 已禁用，将使用 MySQL RAG");
+            return;
+        }
+        
         try {
-            log.info("初始化Chroma向量数据库: url={}, collection={}", chromaUrl, collectionName);
+            log.info("初始化Chroma向量数据库 (V2 API): url={}, collection={}", chromaUrl, collectionName);
             
             // 初始化Embedding模型
             this.embeddingModel = new AllMiniLmL6V2EmbeddingModel();
             
-            // 初始化Chroma向量存储
+            // ✅ 使用 LangChain4j 原生 V2 API
             this.embeddingStore = ChromaEmbeddingStore.builder()
                 .baseUrl(chromaUrl)
                 .collectionName(collectionName)
+                .apiVersion(ChromaApiVersion.V2)  // ⚠️ 关键：指定使用 V2 API
                 .build();
             
-            log.info("Chroma向量数据库初始化成功");
+            log.info("Chroma V2 向量数据库初始化成功");
         } catch (Exception e) {
             log.warn("Chroma向量数据库不可用: {}", e.getMessage());
             log.info("将使用MySQL全文检索作为RAG后端");
@@ -60,56 +71,42 @@ public class ChromaVectorService {
      * 添加知识到向量库
      */
     public void addKnowledge(String question, String answer, String sqlExample, String category) {
-        // ✅ 防御性检查：如果 Chroma 未初始化，静默跳过
         if (embeddingStore == null) {
             log.debug("[ChromaVectorService] Chroma 未初始化，跳过知识添加");
             return;
         }
         
         try {
-            // 创建文本片段
             dev.langchain4j.data.document.Metadata metadata = new dev.langchain4j.data.document.Metadata();
             metadata.put("answer", answer != null ? answer : "");
             metadata.put("sql_example", sqlExample != null ? sqlExample : "");
             metadata.put("category", category != null ? category : "");
             TextSegment segment = TextSegment.from(question, metadata);
             
-            // 生成向量
             Embedding embedding = embeddingModel.embed(segment).content();
-            
-            // 存储到Chroma
             embeddingStore.add(embedding, segment);
             
-            log.debug("添加知识到Chroma: question={}", question);
+            log.debug("添加知识到Chroma V2: question={}", question);
         } catch (Exception e) {
             log.error("添加知识到Chroma失败: {}", e.getMessage(), e);
-            // ✅ 降级处理：不抛出异常，避免影响主流程
         }
     }
     
     /**
      * 搜索相似问题
-     * 
-     * @param question 查询问题
-     * @param maxResults 最大返回结果数
-     * @param minScore 最小相似度分数(0-1)
-     * @return 相似结果列表
      */
     public List<RagResult> searchSimilar(String question, int maxResults, double minScore) {
-        // ✅ 防御性检查：如果 Chroma 未初始化，返回空列表
         if (embeddingStore == null) {
             log.debug("[ChromaVectorService] Chroma 未初始化，跳过向量搜索");
             return new ArrayList<>();
         }
         
         try {
-            log.debug("Chroma向量搜索: question={}, maxResults={}, minScore={}", 
+            log.debug("Chroma V2 向量搜索: question={}, maxResults={}, minScore={}", 
                 question, maxResults, minScore);
             
-            // 生成查询向量
             Embedding queryEmbedding = embeddingModel.embed(question).content();
             
-            // 执行相似度搜索
             dev.langchain4j.store.embedding.EmbeddingSearchRequest request = 
                 dev.langchain4j.store.embedding.EmbeddingSearchRequest.builder()
                     .queryEmbedding(queryEmbedding)
@@ -121,7 +118,6 @@ public class ChromaVectorService {
                 embeddingStore.search(request);
             List<EmbeddingMatch<TextSegment>> matches = searchResult.matches();
             
-            // 转换结果
             List<RagResult> results = new ArrayList<>();
             for (EmbeddingMatch<TextSegment> match : matches) {
                 RagResult result = new RagResult();
@@ -136,12 +132,11 @@ public class ChromaVectorService {
                 results.add(result);
             }
             
-            log.info("Chroma向量搜索完成: found={} items", results.size());
+            log.info("Chroma V2 向量搜索完成: found={} items", results.size());
             return results;
             
         } catch (Exception e) {
             log.error("Chroma向量搜索失败: {}", e.getMessage(), e);
-            // ✅ 降级处理：返回空列表而不是抛出异常
             return new ArrayList<>();
         }
     }

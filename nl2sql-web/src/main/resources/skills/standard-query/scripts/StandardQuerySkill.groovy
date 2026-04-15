@@ -49,12 +49,29 @@ class StandardQuerySkill {
                 println "[StandardQuerySkill] SQLRiskAnalyzer 未配置，跳过风险评估"
             }
             
+            // ✅ 检测用户是否要求生成图表（如"并生成柱状图"）
+            String chartType = extractChartTypeFromQuestion(question)
+            if (chartType != null) {
+                println "[StandardQuerySkill] 检测到图表生成意图: ${chartType}"
+                // 从问题中移除图表相关描述，保留纯查询部分
+                question = removeChartDescription(question)
+                println "[StandardQuerySkill] 清理后的问题: ${question}"
+            }
+            
             // Step 1: 检索表结构
             println "[StandardQuerySkill] Step 1: 检索表结构"
             String schema = nl2sqlTool.retrieveSchema(question, datasourceId)
             
             // Step 2: 生成SQL
             println "[StandardQuerySkill] Step 2: 生成SQL"
+            
+            // ✅ 关键修复：从用户问题中提取表名偏好
+            String tableHint = extractTablePreference(question)
+            if (tableHint) {
+                println "[StandardQuerySkill] 检测到用户指定表: ${tableHint}"
+                question = "${question} [优先使用表: ${tableHint}]"
+            }
+            
             String sql = nl2sqlTool.generateSQL(question, datasourceId)
             
             // SQL后处理：检测并修复IN子查询关联
@@ -90,7 +107,23 @@ class StandardQuerySkill {
             }
             
             println "[StandardQuerySkill] 查询成功: rowCount=${execResult.rowCount}"
-            return createSuccessResult(execResult.data, execResult.rowCount, execResult.executionTime, sql)
+            
+            // ✅ 如果用户要求生成图表，直接在返回中包含图表配置
+            if (chartType != null && execResult.data != null && !execResult.data.isEmpty()) {
+                println "[StandardQuerySkill] 生成图表配置: type=${chartType}"
+                Map<String, Object> echartsConfig = generateEChartsConfig(chartType, execResult.data)
+                return createSuccessResultWithChart(
+                    execResult.data, 
+                    execResult.rowCount, 
+                    execResult.executionTime, 
+                    sql, 
+                    datasourceId,
+                    chartType,
+                    echartsConfig
+                )
+            }
+            
+            return createSuccessResult(execResult.data, execResult.rowCount, execResult.executionTime, sql, datasourceId)
             
         } catch (Exception e) {
             println "[StandardQuerySkill] 执行异常: ${e.message}"
@@ -124,33 +157,82 @@ class StandardQuerySkill {
             ChatModel model = llmService.getChatModel()
             
             // Step 1: LLM先自行评估
+            println "[StandardQuerySkill] Step 1: LLM初步风险评估"
             String llmPrompt = buildRiskAssessmentPrompt(sql, question)
             String llmResponse = model.chat(llmPrompt)
             
-            println "[StandardQuerySkill] LLM初步评估: ${llmResponse}"
+            println "[StandardQuerySkill] LLM初步评估响应: ${llmResponse}"
             
             // 解析LLM的评估结果
             RiskAssessmentResult result = parseLLMRiskAssessment(llmResponse)
             
+            println "[StandardQuerySkill] LLM初步评估结果: riskLevel=${result.getRiskLevel()}, reason=${result.getReason()}"
+            
             // Step 2: 如果LLM无法确定或认为需要EXPLAIN，则调用风险分析工具
-            if ("UNCERTAIN".equals(result.getRiskLevel()) && riskAnalyzer != null) {
-                println "[StandardQuerySkill] LLM不确定，调用EXPLAIN分析"
-                SQLRiskAnalyzer.RiskAnalysisResult explainResult = riskAnalyzer.analyzeRisk(sql)
+            if ("UNCERTAIN".equals(result.getRiskLevel())) {
+                if (riskAnalyzer == null) {
+                    println "[StandardQuerySkill] ⚠️ SQLRiskAnalyzer 未注入，跳过EXPLAIN分析"
+                    result.setRiskLevel("LOW")
+                    result.setReason("SQLRiskAnalyzer未配置，默认低风险")
+                    return result
+                }
+                
+                // ⚠️ 关键检查：如果SQL是澄清消息，不要调用EXPLAIN
+                if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_")) {
+                    println "[StandardQuerySkill] SQL是澄清消息，跳过EXPLAIN分析"
+                    result.setRiskLevel("LOW")
+                    return result
+                }
+                
+                println "[StandardQuerySkill] ✅ LLM返回UNCERTAIN，开始调用EXPLAIN分析..."
+                SQLRiskAnalyzer.RiskAnalysisResult explainResult = riskAnalyzer.analyzeRisk(sql, datasourceId)
+                
+                println "[StandardQuerySkill] EXPLAIN分析完成: riskLevel=${explainResult.getRiskLevel()}, risks=${explainResult.getRisks()?.size() ?: 0}"
                 
                 // 将EXPLAIN结果再次给LLM判断
+                println "[StandardQuerySkill] Step 2: LLM结合EXPLAIN结果进行最终评估"
                 String refinedPrompt = buildRefinedRiskPrompt(sql, question, explainResult)
                 String refinedResponse = model.chat(refinedPrompt)
                 
-                println "[StandardQuerySkill] LLM结合EXPLAIN后的评估: ${refinedResponse}"
+                println "[StandardQuerySkill] LLM最终评估响应: ${refinedResponse}"
                 result = parseLLMRiskAssessment(refinedResponse)
+                
+                println "[StandardQuerySkill] ✅ 最终风险评估结果: riskLevel=${result.getRiskLevel()}"
+            } else {
+                println "[StandardQuerySkill] LLM已给出确定性评估(${result.getRiskLevel()})，跳过EXPLAIN分析"
             }
             
             return result
             
         } catch (Exception e) {
-            println "[StandardQuerySkill] 风险评估失败，默认低风险: ${e.message}"
+            println "[StandardQuerySkill] ❌ 风险评估失败，默认低风险: ${e.message}"
+            e.printStackTrace()
             return new RiskAssessmentResult("LOW", "风险评估失败，默认继续执行")
         }
+    }
+    
+    /**
+     * 从用户问题中提取表名偏好
+     */
+    private String extractTablePreference(String question) {
+        if (!question) return null
+        
+        // 匹配模式："使用XX表"、"用XX表"、"从XX表"
+        def patterns = [
+            /使用(\w+)表/,
+            /用(\w+)表/,
+            /从(\w+)表/,
+            /基于(\w+)表/
+        ]
+        
+        for (pattern in patterns) {
+            def matcher = question =~ pattern
+            if (matcher.find()) {
+                return matcher.group(1)
+            }
+        }
+        
+        return null
     }
     
     /**
@@ -164,17 +246,28 @@ class StandardQuerySkill {
 生成的SQL：
 ${sql}
 
-请从以下维度评估：
-1. 是否有全表扫描风险？
-2. JOIN的表数量是否过多（≥3张）？
-3. 是否有子查询或复杂嵌套？
-4. WHERE条件是否缺少索引支持？
+⚠️ **核心原则：你无法知道表的实际大小、索引情况、数据分布！**
+⚠️ **因此，对于任何涉及JOIN、子查询、聚合的SQL，你必须返回 UNCERTAIN！**
+
+请从以下维度评估（仅用于判断是否需要EXPLAIN）：
+1. 是否包含 JOIN 操作？
+2. 是否包含子查询？
+3. 是否包含 GROUP BY / ORDER BY / DISTINCT？
+4. WHERE 条件是否有明确的索引字段？
 5. 是否可能返回大量数据（无LIMIT）？
+
+🔴 **强制规则（必须遵守）：**
+- 如果 SQL 包含 **任何 JOIN 操作** → 必须返回 UNCERTAIN
+- 如果 SQL 包含 **子查询** → 必须返回 UNCERTAIN
+- 如果 SQL 包含 **GROUP BY / ORDER BY** → 必须返回 UNCERTAIN
+- 如果你**不确定表的大小或索引情况** → 必须返回 UNCERTAIN
+- **宁可过度谨慎，也不要误判为低风险**
+- **只有当 SQL 是简单的单表查询且有明确WHERE条件时，才能返回 LOW**
 
 返回JSON格式：
 {
   "risk_level": "LOW/MEDIUM/HIGH/UNCERTAIN",
-  "reason": "简要说明原因",
+  "reason": "简要说明原因，如果是UNCERTAIN请说明需要EXPLAIN验证什么",
   "can_self_fix": true/false,
   "fix_suggestion": "如果可以自修复，给出建议"
 }
@@ -182,8 +275,8 @@ ${sql}
 注意：
 - HIGH: 可能导致性能问题或超时，建议阻断
 - MEDIUM: 有一定风险但可以接受
-- LOW: 无明显风险
-- UNCERTAIN: 无法判断，需要EXPLAIN辅助"""
+- LOW: 无明显风险（仅限简单单表查询）
+- UNCERTAIN: **无法确定，必须通过EXPLAIN验证（这是最常见的情况）**"""
     }
     
     /**
@@ -288,13 +381,38 @@ ${sql}
     
     // ==================== 结果工厂方法 ====================
     
-    private Map<String, Object> createSuccessResult(List<Map<String, Object>> data, int rowCount, 
-                                                     double executionTime, String sql) {
+    /**
+     * 创建包含图表的成功结果
+     */
+    private Map<String, Object> createSuccessResultWithChart(List<Map<String, Object>> data, int rowCount, 
+                                                              double executionTime, String sql, Long datasourceId,
+                                                              String chartType, Map<String, Object> echartsConfig) {
         // ✅ 根据数据特征智能生成追问建议
         List<Map<String, String>> followUpSuggestions = generateFollowUpSuggestions(data, rowCount, sql)
         
-        // ⚠️ 重要：获取 datasourceId 并添加到返回结果
-        Long datasourceId = context.getParameter("datasourceId")
+        def result = [
+            success: true,
+            data: data,
+            rowCount: rowCount,
+            executionTime: executionTime,
+            sql: sql,
+            datasourceId: datasourceId,
+            chartType: getChartTypeName(chartType),
+            echartsConfig: echartsConfig
+        ]
+        
+        // 只有当有追问建议时才添加
+        if (followUpSuggestions && !followUpSuggestions.isEmpty()) {
+            result.followUpSuggestions = followUpSuggestions
+        }
+        
+        return result
+    }
+    
+    private Map<String, Object> createSuccessResult(List<Map<String, Object>> data, int rowCount, 
+                                                     double executionTime, String sql, Long datasourceId) {
+        // ✅ 根据数据特征智能生成追问建议
+        List<Map<String, String>> followUpSuggestions = generateFollowUpSuggestions(data, rowCount, sql)
         
         def result = [
             success: true,
@@ -385,6 +503,108 @@ ${sql}
         }
         
         return false
+    }
+    
+    /**
+     * 从用户问题中提取图表类型
+     * 支持：柱状图、折线图、饼图、面积图
+     */
+    private String extractChartTypeFromQuestion(String question) {
+        if (question == null || question.isEmpty()) {
+            return null
+        }
+        
+        String lowerQuestion = question.toLowerCase()
+        
+        // 检测图表关键词
+        if (lowerQuestion.contains("柱状图") || lowerQuestion.contains("bar chart") || lowerQuestion.contains("bar")) {
+            return "bar"
+        }
+        if (lowerQuestion.contains("折线图") || lowerQuestion.contains("line chart") || lowerQuestion.contains("line")) {
+            return "line"
+        }
+        if (lowerQuestion.contains("饼图") || lowerQuestion.contains("pie chart") || lowerQuestion.contains("pie")) {
+            return "pie"
+        }
+        if (lowerQuestion.contains("面积图") || lowerQuestion.contains("area chart") || lowerQuestion.contains("area")) {
+            return "area"
+        }
+        
+        return null
+    }
+    
+    /**
+     * 从问题中移除图表相关描述
+     */
+    private String removeChartDescription(String question) {
+        if (question == null || question.isEmpty()) {
+            return question
+        }
+        
+        // 移除常见的图表描述模式
+        String cleaned = question
+            .replaceAll("并生成[柱状|折线|饼|面积]图", "")
+            .replaceAll("并画出[柱状|折线|饼|面积]图", "")
+            .replaceAll("并展示[柱状|折线|饼|面积]图", "")
+            .replaceAll("生成[柱状|折线|饼|面积]图", "")
+            .replaceAll("画出[柱状|折线|饼|面积]图", "")
+            .replaceAll("展示[柱状|折线|饼|面积]图", "")
+            .trim()
+        
+        return cleaned
+    }
+    
+    /**
+     * 获取图表类型中文名
+     */
+    private String getChartTypeName(String chartType) {
+        switch (chartType) {
+            case "bar": return "柱状图"
+            case "line": return "折线图"
+            case "pie": return "饼图"
+            case "area": return "面积图"
+            default: return chartType
+        }
+    }
+    
+    /**
+     * 生成 ECharts 配置
+     */
+    private Map<String, Object> generateEChartsConfig(String chartType, List<Map<String, Object>> data) {
+        if (data == null || data.isEmpty()) {
+            return [:]
+        }
+        
+        Map<String, Object> config = [:]
+        config.put("type", chartType)
+        
+        // 提取 categories 和 values
+        List<String> categories = []
+        List<Object> values = []
+        
+        // 假设第一列是分类，第二列是数值
+        String categoryKey = null
+        String valueKey = null
+        
+        if (!data.isEmpty()) {
+            def keys = data.get(0).keySet()
+            def iterator = keys.iterator()
+            if (iterator.hasNext()) categoryKey = iterator.next()
+            if (iterator.hasNext()) valueKey = iterator.next()
+        }
+        
+        if (categoryKey != null && valueKey != null) {
+            for (def row : data) {
+                categories.add(String.valueOf(row.get(categoryKey)))
+                values.add(row.get(valueKey))
+            }
+        }
+        
+        config.put("categories", categories)
+        config.put("values", values)
+        config.put("title", getChartTypeName(chartType))
+        
+        return config
     }
     
     private Map<String, Object> createClarificationResult(String message) {

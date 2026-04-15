@@ -447,6 +447,10 @@
                     handleChartGenerated(data);
                     break;
                     
+                case 'chart_recommendation':
+                    handleChartRecommendation(data);
+                    break;
+                    
                 case 'error':
                     addMessage(`❌ ${data.error}`, 'agent');
                     break;
@@ -531,6 +535,12 @@
             if (data.aiSummary) {
                 const formattedSummary = formatAISummary(data.aiSummary);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
+            }
+            
+            // ✅ 关键新增：如果响应中包含图表配置，直接渲染图表
+            if (data.echartsConfig && data.chartType) {
+                console.log('[查询成功] 检测到图表配置:', data.chartType);
+                html += renderChartFromConfig(data.echartsConfig, data.chartType);
             }
             
             // 显示图表推荐
@@ -815,8 +825,25 @@
         
         // 生成图表
         async function generateChart() {
+            console.log('[generateChart] currentContext:', currentContext);
+            console.log('[generateChart] datasourceId:', currentContext?.datasourceId);
+            console.log('[generateChart] sql:', currentContext?.sql);
+            console.log('[generateChart] generatedSQL:', currentContext?.generatedSQL);
+            
             if (!currentContext || !currentContext.data || currentContext.data.length === 0) {
                 addMessage('❌ 没有可生成图表的数据', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            if (!currentContext.datasourceId) {
+                addMessage('❌ 缺少数据源信息，请重新执行查询', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            if (!currentContext.sql && !currentContext.generatedSQL) {
+                addMessage('❌ 缺少 SQL 信息，请重新执行查询', 'agent');
                 removeTypingIndicator();
                 return;
             }
@@ -829,9 +856,14 @@
                         'Authorization': token 
                     },
                     body: JSON.stringify({
-                        message: '生成图表',
+                        message: '[INTENT:GENERATE_CHART] 请生成图表',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId
+                        datasourceId: currentContext.datasourceId,
+                        // ⚠️ 关键修复：传递 context，包含 SQL 信息
+                        context: {
+                            chartType: null,  // 不指定类型，让后端智能推荐
+                            generatedSQL: currentContext.sql || currentContext.generatedSQL
+                        }
                     })
                 });
                 
@@ -904,7 +936,8 @@
         // 渲染图表选择按钮
         function renderChartSelectionButtons(suggestedChartsStr) {
             if (!suggestedChartsStr) {
-                generateChart();
+                // ✅ 如果没有推荐类型，默认生成柱状图
+                generateChartWithType('bar');
                 return;
             }
             
@@ -1316,6 +1349,60 @@
         }
         
         // 处理图表生成
+        /**
+         * 从配置直接渲染图表（用于查询结果中直接包含图表的场景）
+         */
+        function renderChartFromConfig(echartsConfig, chartTypeName) {
+            console.log('[renderChartFromConfig] 渲染图表:', chartTypeName);
+            
+            const chartId = 'chart_' + Date.now();
+            let html = '<div class="chart-container">';
+            html += `<div class="chart-title">📊 ${escapeHtml(chartTypeName)}</div>`;
+            html += `<div id="${chartId}" class="chart-wrapper" style="height:400px;"></div>`;
+            html += '</div>';
+            
+            // 延迟渲染，等待 DOM 插入
+            setTimeout(() => {
+                try {
+                    const container = document.getElementById(chartId);
+                    if (container && window.echarts) {
+                        renderECharts(container, echartsConfig);
+                    } else {
+                        console.error('ECharts 未加载或容器不存在');
+                    }
+                } catch (e) {
+                    console.error('图表渲染失败:', e);
+                }
+            }, 100);
+            
+            return html;
+        }
+        
+        // 处理图表推荐（让用户选择图表类型）
+        function handleChartRecommendation(data) {
+            console.log('[图表推荐] 收到推荐:', data.recommendedCharts);
+            
+            if (!data.recommendedCharts || data.recommendedCharts.length === 0) {
+                addMessage('❌ 无法推荐适合的图表类型', 'agent');
+                return;
+            }
+            
+            let html = '<div class="ai-summary" style="background:linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);border-left-color:#2196f3;">';
+            html += '<strong>📊 图表类型推荐:</strong><br>'; 
+            html += '根据数据特征，推荐以下图表类型：';
+            html += '</div>';
+            
+            html += '<div class="follow-up-suggestions">';
+            data.recommendedCharts.forEach(chartType => {
+                const typeConfig = getChartTypeConfig(chartType);
+                html += `<button class="suggestion-btn" onclick="generateChartWithType('${chartType}')">${typeConfig.icon} ${typeConfig.name}</button>`;
+            });
+            html += '</div>';
+            
+            addMessage(html, 'agent');
+        }
+        
+        // 处理图表生成完成
         function handleChartGenerated(data) {
             let html = '<div class="chart-container">';
             html += `<div class="chart-title">📊 ${escapeHtml(data.chartType || '图表')}</div>`;
