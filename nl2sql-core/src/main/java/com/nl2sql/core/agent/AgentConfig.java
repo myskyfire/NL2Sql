@@ -245,6 +245,7 @@ public class AgentConfig {
                     Map<String, Object> result = new java.util.HashMap<>();
                     result.put("status", "success");
                     result.put("summary", summary);
+                    result.put("datasourceId", dsId);  // ⚠️ 重要：返回 datasourceId 供前端后续使用
                     return mapper.writeValueAsString(result);
                 } catch (Exception e) {
                     log.error("[summarize_result] 执行失败", e);
@@ -290,6 +291,7 @@ public class AgentConfig {
                 result.put("chartType", getChartTypeName(chartType));
                 result.put("echartsConfig", echartsConfig);
                 result.put("data", queryData);
+                result.put("datasourceId", dsId);  // ⚠️ 重要：返回 datasourceId 供前端后续使用
                 
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 return mapper.writeValueAsString(result);

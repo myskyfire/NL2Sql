@@ -293,12 +293,16 @@ ${sql}
         // ✅ 根据数据特征智能生成追问建议
         List<Map<String, String>> followUpSuggestions = generateFollowUpSuggestions(data, rowCount, sql)
         
+        // ⚠️ 重要：获取 datasourceId 并添加到返回结果
+        Long datasourceId = context.getParameter("datasourceId")
+        
         def result = [
             success: true,
             data: data,
             rowCount: rowCount,
             executionTime: executionTime,
-            sql: sql
+            sql: sql,
+            datasourceId: datasourceId  // ⚠️ 重要：返回 datasourceId 供前端后续使用
         ]
         
         // 只有当有追问建议时才添加

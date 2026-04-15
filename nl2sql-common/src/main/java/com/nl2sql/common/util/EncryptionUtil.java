@@ -78,13 +78,12 @@ public class EncryptionUtil {
     }
     
     /**
-     * 从密码生成密钥
+     * 从密码生成密钥 - 使用固定密钥确保跨平台一致性
      */
     private static SecretKey generateKeyFromPassword(String password) throws Exception {
-        KeyGenerator keyGenerator = KeyGenerator.getInstance(ALGORITHM);
-        SecureRandom secureRandom = SecureRandom.getInstance("SHA1PRNG");
-        secureRandom.setSeed(password.getBytes("UTF-8"));
-        keyGenerator.init(KEY_SIZE, secureRandom);
-        return keyGenerator.generateKey();
+        // 使用SHA-256哈希生成固定长度的密钥,避免SecureRandom的不确定性
+        java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] keyBytes = sha.digest(password.getBytes("UTF-8"));
+        return new SecretKeySpec(keyBytes, ALGORITHM);
     }
 }
