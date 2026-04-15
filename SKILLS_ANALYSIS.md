@@ -1,4 +1,4 @@
-# Skills vs Tools 架构分析
+﻿# Skills vs Tools 架构分析
 
 ## 一、核心概念对比
 
@@ -36,7 +36,7 @@
 
 **实现位置**：
 ```
-nlp2sql-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java
+NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java
 ```
 
 **使用方式**：
@@ -62,7 +62,7 @@ String result = agent.execute("standard_query", {
 
 **实现位置**：
 ```
-nlp2sql-core/src/main/java/com/nl2sql/core/agent/skills/ReportWithInsightsSkill.java
+NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/ReportWithInsightsSkill.java
 ```
 
 **使用方式**：

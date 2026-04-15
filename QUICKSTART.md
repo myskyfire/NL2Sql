@@ -1,4 +1,4 @@
-# NLP2SQL 快速启动指南 v1.2.0
+﻿# NL2SQL 快速启动指南 v1.2.0
 
 ## 📋 环境要求
 
@@ -15,7 +15,7 @@
 
 ### 步骤1: 克隆项目
 ```bash
-cd "E:\work\idea workspace\NLP2Sql"
+cd "E:\work\idea workspace\NL2SQL"
 ```
 
 ### 步骤2: 初始化数据库
@@ -74,7 +74,7 @@ curl http://localhost:11434/api/generate -d '{
 
 ### 步骤5: 配置应用
 
-编辑 `nlp2sql-web/src/main/resources/application.yml`:
+编辑 `NL2SQL-web/src/main/resources/application.yml`:
 
 ```yaml
 spring:
@@ -96,7 +96,7 @@ ollama:
 
 ### 步骤6: 编译项目
 ```bash
-cd "E:\work\idea workspace\NLP2Sql"
+cd "E:\work\idea workspace\NL2SQL"
 mvn clean package -DskipTests
 ```
 
@@ -105,14 +105,14 @@ mvn clean package -DskipTests
 #### 方式1: IDE运行（推荐开发时使用）
 ```
 在IDEA中打开项目
-找到 nlp2sql-web/src/main/java/com/nl2sql/web/NLP2SQLApplication.java
-右键 -> Run 'NLP2SQLApplication'
+找到 NL2SQL-web/src/main/java/com/nl2sql/web/NL2SQLApplication.java
+右键 -> Run 'NL2SQLApplication'
 ```
 
 #### 方式2: JAR包运行
 ```bash
-cd nlp2sql-web/target
-java -jar nlp2sql-web-1.0.0.jar
+cd NL2SQL-web/target
+java -jar NL2SQL-web-1.0.0.jar
 ```
 
 ### 步骤8: 访问系统
@@ -180,12 +180,12 @@ POST /api/query
 ## 🏗️ 项目结构
 
 ```
-NLP2Sql/
-├── nlp2sql-common/          # 公共模块
+NL2SQL/
+├── NL2SQL-common/          # 公共模块
 │   ├── result/              # 统一返回结果
 │   └── util/                # 工具类（MDC日志等）
 │
-├── nlp2sql-core/            # 核心业务
+├── NL2SQL-core/            # 核心业务
 │   ├── metadata/            # 元数据管理
 │   ├── retriever/           # 向量检索
 │   ├── llm/                 # LLM服务
@@ -202,14 +202,14 @@ NLP2Sql/
 │   └── visualization/       # 可视化
 │       └── ChartRecommendationService.java  # 图表推荐
 │
-├── nlp2sql-security/        # 安全模块
+├── NL2SQL-security/        # 安全模块
 │   ├── SQLSecurityValidator.java    # SQL校验
 │   └── ColumnPermissionService.java # 列级权限
 │
-├── nlp2sql-conversation/    # 对话管理
-├── nlp2sql-audit/           # 审计日志
+├── NL2SQL-conversation/    # 对话管理
+├── NL2SQL-audit/           # 审计日志
 │
-├── nlp2sql-web/             # Web层
+├── NL2SQL-web/             # Web层
 │   ├── controller/          # REST API
 │   ├── filter/              # 过滤器（日志等）
 │   └── resources/static/    # 前端页面
@@ -370,7 +370,7 @@ sudo systemctl start redis
 
 ### 1. JVM参数调优
 ```bash
-java -Xms2g -Xmx4g -XX:+UseG1GC -jar nlp2sql-web-1.0.0.jar
+java -Xms2g -Xmx4g -XX:+UseG1GC -jar NL2SQL-web-1.0.0.jar
 ```
 
 ### 2. Redis配置

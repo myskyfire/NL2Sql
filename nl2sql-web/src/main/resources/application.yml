@@ -1,0 +1,137 @@
+﻿server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+      force-request: true
+      force-response: true
+  tomcat:
+    uri-encoding: UTF-8
+
+# 本地元数据存储库配置（唯一数据源）
+spring:
+  http:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+      force-request: true
+      force-response: true
+  datasource:
+    url: jdbc:mysql://localhost:3306/nl2sql_meta_db?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      connection-timeout: 60000
+      maximum-pool-size: 10
+      minimum-idle: 5
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 3000ms
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+# LLM Configuration - 双模型架构
+llm:
+  # LLM提供者类型: ollama | openai-compatible
+  provider: ollama
+  
+  # 推理模型配置（用于Agent决策、总结等）
+  reasoning:
+    model: qwen2.5-coder:7b-instruct-q4_0
+    temperature: 0.7
+  
+  # 代码模型配置（用于SQL生成）
+  code:
+    model: qwen2.5-coder:7b-instruct-q4_0
+    temperature: 0.0
+  
+  # Ollama专用配置
+  ollama:
+    base-url: http://localhost:11434
+    timeout: 60
+  
+  # OpenAI兼容API配置（企业内部部署）
+  openai-compatible:
+    base-url: https://api.internal.company.com/v1
+    api-key: ${LLM_API_KEY:}
+    timeout: 30
+  
+  # 降级策略
+  fallback:
+    single-model-mode: auto  # auto | true | false
+
+# 旧配置保留（向后兼容）
+ollama:
+  base-url: http://localhost:11434
+  model: qwen2.5-coder:7b-instruct-q4_0
+  nlp-model: qwen2.5-coder:7b-instruct-q4_0
+
+# Chroma Vector Database Configuration (RAG)
+chroma:
+  enabled: true
+  url: http://localhost:8000
+  collection-name: NL2SQL_rag
+
+# MyBatis Plus Configuration
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# Logging
+logging:
+  level:
+    com.nl2sql: DEBUG
+    dev.langchain4j: DEBUG
+    org.springframework.jdbc.core: DEBUG
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+
+# SQL执行配置
+sql:
+  execution:
+    query-timeout: 30
+    slow-query-threshold: 5
+    max-rows: 100
+    table-stats-cache-hours: 12
+
+# Skills 配置
+skills:
+  groovy:
+    # 自动扫描的 Skills 目录列表（相对于 classpath:skills/）
+    scan-dirs:
+      - standard-query
+      - report-with-insights
+
+# Spring Boot Actuator 配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true

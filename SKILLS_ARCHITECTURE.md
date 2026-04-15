@@ -1,4 +1,4 @@
-# Skills 架构设计文档
+﻿# Skills 架构设计文档
 
 ## 1. 什么是 Skills？
 
@@ -20,7 +20,7 @@
 
 ### 2.1 StandardQuerySkill（标准查询技能）
 
-**文件位置**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java`
+**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java`
 
 **功能描述**:  
 封装完整的查询生命周期，适用于大多数数据查询场景。
@@ -73,7 +73,7 @@ QueryResult {
 
 ### 2.2 ReportWithInsightsSkill（报表与洞察技能）
 
-**文件位置**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/skills/ReportWithInsightsSkill.java`
+**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/ReportWithInsightsSkill.java`
 
 **功能描述**:  
 在标准查询基础上，增加 AI 智能总结和图表推荐，适用于深度分析场景。
@@ -123,7 +123,7 @@ ReportResult {
 
 ### 3.1 StandardQuerySkillTool
 
-**文件位置**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/StandardQuerySkillTool.java`
+**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/StandardQuerySkillTool.java`
 
 ```java
 @Tool("执行标准查询流程。适用于用户有明确查询需求的场景。" +
@@ -137,7 +137,7 @@ public String executeStandardQuery(String question, Long datasourceId, Long user
 
 ### 3.2 ReportWithInsightsSkillTool
 
-**文件位置**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/ReportWithInsightsSkillTool.java`
+**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/ReportWithInsightsSkillTool.java`
 
 ```java
 @Tool("生成数据分析报告和洞察。适用于用户需要深度分析的场景。" +
@@ -153,7 +153,7 @@ public String generateReportWithInsights(String question, Long datasourceId, Lon
 
 ## 4. Skills 注册与发现
 
-**配置文件**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
+**配置文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
 
 ```java
 @Configuration
