@@ -1,4 +1,4 @@
-# NLP2SQL 企业级智能查询系统 - 项目技术白皮书
+﻿# NL2SQL 企业级智能查询系统 - 项目技术白皮书
 
 **版本**: v2.0.0  
 **日期**: 2026-04-06  
@@ -8,7 +8,7 @@
 
 ## 📋 执行摘要
 
-NLP2SQL是一款基于Spring Boot和LangChain4j构建的企业级自然语言转SQL智能查询系统。系统通过深度学习模型理解用户的自然语言查询意图，自动生成标准SQL语句并执行，最终将结果以可视化图表和AI智能总结的形式呈现给用户。
+NL2SQL是一款基于Spring Boot和LangChain4j构建的企业级自然语言转SQL智能查询系统。系统通过深度学习模型理解用户的自然语言查询意图，自动生成标准SQL语句并执行，最终将结果以可视化图表和AI智能总结的形式呈现给用户。
 
 ### 核心价值主张
 
@@ -277,14 +277,14 @@ date | total_order_amount
 
 ### 2.2 模块划分
 
-#### nlp2sql-common (公共模块)
+#### NL2SQL-common (公共模块)
 - **职责**: 提供通用工具类和基础组件
 - **核心类**:
   - `Result<T>`: 统一API响应封装
   - `EncryptionUtil`: AES-256-GCM加解密工具
   - `LogContextUtil`: MDC日志上下文管理
 
-#### nlp2sql-core (核心业务模块)
+#### NL2SQL-core (核心业务模块)
 - **职责**: 实现NL2SQL核心逻辑
 - **子模块**:
   - `datasource/`: 动态数据源管理器
@@ -299,23 +299,23 @@ date | total_order_amount
   - `template/`: 查询模板服务
   - `security/`: 列级权限控制
 
-#### nlp2sql-security (安全模块)
+#### NL2SQL-security (安全模块)
 - **职责**: SQL安全验证
 - **核心类**:
   - `SQLSecurityValidator`: SQL合法性校验（JSqlParser解析）
   - `ColumnPermissionService`: 列级权限过滤
 
-#### nlp2sql-conversation (对话管理模块)
+#### NL2SQL-conversation (对话管理模块)
 - **职责**: 多轮对话上下文管理
 - **核心类**:
   - `ConversationService`: 对话历史存储和检索
 
-#### nlp2sql-audit (审计模块)
+#### NL2SQL-audit (审计模块)
 - **职责**: 操作审计日志
 - **核心类**:
   - `AuditService`: 审计日志记录和查询
 
-#### nlp2sql-web (Web模块)
+#### NL2SQL-web (Web模块)
 - **职责**: REST API控制器和前端页面
 - **核心类**:
   - `NL2SQLController`: 查询接口
@@ -904,7 +904,7 @@ ollama serve
 #### 2. 编译打包
 
 ```bash
-cd /path/to/NLP2Sql
+cd /path/to/NL2SQL
 mvn clean package -DskipTests
 ```
 
@@ -919,8 +919,8 @@ export OLLAMA_URL=http://localhost:11434
 #### 4. 启动应用
 
 ```bash
-cd nlp2sql-web/target
-nohup java -jar nlp2sql-web-1.0.0.jar > app.log 2>&1 &
+cd NL2SQL-web/target
+nohup java -jar NL2SQL-web-1.0.0.jar > app.log 2>&1 &
 ```
 
 #### 5. 验证部署
@@ -1050,7 +1050,7 @@ INSERT INTO whitelist (user_id) VALUES (LAST_INSERT_ID());
 
 MIT License
 
-Copyright (c) 2026 NLP2SQL Team
+Copyright (c) 2026 NL2SQL Team
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1073,4 +1073,4 @@ in the Software without restriction...
 
 **文档版本**: v1.0  
 **最后更新**: 2026-04-06  
-**维护团队**: NLP2SQL Development Team
+**维护团队**: NL2SQL Development Team

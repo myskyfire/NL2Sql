@@ -1,4 +1,4 @@
-# NLP2SQL 企业级智能查询系统 v2.0.0
+﻿# NL2SQL 企业级智能查询系统 v2.0.0
 
 <div align="center">
 
@@ -13,7 +13,7 @@
 
 ## 🎯 项目简介
 
-NLP2SQL是一款基于Spring Boot + LangChain4j的企业级自然语言转SQL智能查询系统。用户只需用自然语言描述数据需求（如“查询最近7天的订单总额”），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
+NL2SQL是一款基于Spring Boot + LangChain4j的企业级自然语言转SQL智能查询系统。用户只需用自然语言描述数据需求（如“查询最近7天的订单总额”），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
 
 ### 核心价值
 
@@ -31,10 +31,10 @@ redis-server
 ollama pull qwen2.5-coder:7b-instruct && ollama serve
 
 # 2. 编译运行
-cd "E:\work\idea workspace\NLP2Sql"
+cd "E:\work\idea workspace\NL2SQL"
 mvn clean package -DskipTests
-cd nlp2sql-web/target
-java -jar nlp2sql-web-1.0.0.jar
+cd NL2SQL-web/target
+java -jar NL2SQL-web-1.0.0.jar
 
 # 3. 访问系统
 浏览器打开: http://localhost:8080
@@ -166,24 +166,24 @@ curl http://localhost:11434/api/generate -d '{
 ## 🚀 快速启动
 
 ### 1. 修改配置文件
-编辑 `nlp2sql-web/src/main/resources/application.yml`:
+编辑 `NL2SQL-web/src/main/resources/application.yml`:
 ```yaml
 spring.datasource.password=你的MySQL密码
 ```
 
 ### 2. 编译项目
 ```bash
-cd "E:\work\idea workspace\NLP2Sql"
+cd "E:\work\idea workspace\NL2SQL"
 mvn clean package -DskipTests
 ```
 
 ### 3. 启动应用
 ```bash
-cd nlp2sql-web/target
-java -jar nlp2sql-web-1.0.0.jar
+cd NL2SQL-web/target
+java -jar NL2SQL-web-1.0.0.jar
 ```
 
-或者在IDE中直接运行 `NLP2SQLApplication.java`
+或者在IDE中直接运行 `NL2SQLApplication.java`
 
 ### 4. 访问系统
 打开浏览器访问: http://localhost:8080
@@ -335,13 +335,13 @@ GET http://localhost:8080/api/monitor/stats
 ## 🏗️ 项目结构
 
 ```
-NLP2Sql/
-├── nlp2sql-common/          # 公共模块
+NL2SQL/
+├── NL2SQL-common/          # 公共模块
 │   └── src/main/java/com/nl2sql/common/
 │       ├── result/Result.java
 │       └── util/LogContextUtil.java  # MDC日志上下文
 │
-├── nlp2sql-core/            # 核心业务模块
+├── NL2SQL-core/            # 核心业务模块
 │   └── src/main/java/com/nl2sql/core/
 │       ├── metadata/        # 元数据管理
 │       ├── retriever/       # 向量检索
@@ -368,23 +368,23 @@ NLP2Sql/
 │       └── visualization/  # 可视化
 │           └── ChartRecommendationService.java  # 图表推荐
 │
-├── nlp2sql-security/        # 安全模块
+├── NL2SQL-security/        # 安全模块
 │   └── src/main/java/com/nl2sql/security/
 │       ├── SQLSecurityValidator.java    # SQL安全校验
 │       └── ColumnPermissionService.java # 列级权限
 │
-├── nlp2sql-conversation/    # 对话管理模块
+├── NL2SQL-conversation/    # 对话管理模块
 │   └── src/main/java/com/nl2sql/conversation/
 │       └── ConversationService.java
 │
-├── nlp2sql-audit/           # 审计模块
+├── NL2SQL-audit/           # 审计模块
 │   └── src/main/java/com/nl2sql/audit/
 │       └── AuditService.java
 │
-├── nlp2sql-web/             # Web模块
+├── NL2SQL-web/             # Web模块
 │   └── src/main/
 │       ├── java/com/nl2sql/web/
-│       │   ├── NLP2SQLApplication.java
+│       │   ├── NL2SQLApplication.java
 │       │   ├── controller/
 │       │   │   ├── NL2SQLController.java
 │       │   │   └── AuthController.java

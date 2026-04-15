@@ -1,4 +1,4 @@
-# NLP2SQL 项目开发问题记录
+﻿# NL2SQL 项目开发问题记录
 
 ## 2026-04-10
 
@@ -19,7 +19,7 @@
 4. 基于关联关系自动扩展表列表（第217-231行），从`table_relationships`中提取所有涉及的表名
 
 **代码位置：**
-- `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java`
+- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java`
   - 第70-77行：表选择迭代中获取关联关系
   - 第217-231行：基于关联关系扩展表列表
   - 第336-355行：增强`buildTableCheckPrompt`方法
@@ -50,8 +50,8 @@ JOIN product_categories pc ON oi.product_id IN (SELECT id FROM products WHERE ca
 3. 在StandardQuerySkill中添加`optimizeSQL`检测方法（仅警告，暂未实际修复）
 
 **代码位置：**
-- `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java` 第264-270行
-- `nlp2sql-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java` 第93-109行
+- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java` 第264-270行
+- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java` 第93-109行
 - Database: `nl2sql_meta_db.table_relationships` 新增4条关联关系
 
 **经验教训：**
@@ -79,7 +79,7 @@ SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS order_date
 ```
 
 **代码位置：**
-- `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java` 第244-250行
+- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java` 第244-250行
 
 **经验教训：**
 - 不要在后端硬编码业务逻辑判断
@@ -111,7 +111,7 @@ SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS order_date
 - 重命名所有行的列key
 
 **代码位置：**
-- `nlp2sql-core/src/main/java/com/nl2sql/core/executor/SQLExecutor.java`
+- `NL2SQL-core/src/main/java/com/nl2sql/core/executor/SQLExecutor.java`
   - 第26行：注入NL2SQLTool
   - 第167-171行：调用翻译方法
   - 第340-406行：`translateColumnNames`方法实现
@@ -143,7 +143,7 @@ colName.replaceAll("([a-z])([A-Z])", "$1 $2")
 ```
 
 **代码位置：**
-- `nlp2sql-web/src/main/java/com/nl2sql/web/controller/TranslationController.java` 第120-125行
+- `NL2SQL-web/src/main/java/com/nl2sql/web/controller/TranslationController.java` 第120-125行
 
 ---
 
@@ -168,7 +168,7 @@ private NL2SQLTool nl2sqlTool;
 ```
 
 **代码位置：**
-- `nlp2sql-web/src/main/java/com/nl2sql/web/controller/TranslationController.java`
+- `NL2SQL-web/src/main/java/com/nl2sql/web/controller/TranslationController.java`
 
 ---
 
@@ -205,7 +205,7 @@ private NL2SQLTool nl2sqlTool;
 - ✅ **保持架构一致**：评估在Skill内部完成，不暴露底层工具
 
 **代码位置**：
-- `nlp2sql-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java`
+- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java`
   - 第39-43行：注入SQLRiskAnalyzer和LLMService
   - 第68-79行：Step 2.5 风险评估流程
   - 第129-161行：`assessSQLRisk`方法实现

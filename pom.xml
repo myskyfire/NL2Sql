@@ -13,19 +13,19 @@
     </parent>
 
     <groupId>com.nl2sql</groupId>
-    <artifactId>nlp2sql</artifactId>
+    <artifactId>nl2sql</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-    <name>NLP2SQL Enterprise Agent</name>
+    <name>NL2SQL Enterprise Agent</name>
     <description>Enterprise Natural Language to SQL Agent</description>
 
     <modules>
-        <module>nlp2sql-common</module>
-        <module>nlp2sql-core</module>
-        <module>nlp2sql-security</module>
-        <module>nlp2sql-conversation</module>
-        <module>nlp2sql-audit</module>
-        <module>nlp2sql-web</module>
+        <module>nl2sql-common</module>
+        <module>nl2sql-core</module>
+        <module>nl2sql-security</module>
+        <module>nl2sql-conversation</module>
+        <module>nl2sql-audit</module>
+        <module>nl2sql-web</module>
     </modules>
 
     <properties>
@@ -44,27 +44,27 @@
         <dependencies>
             <dependency>
                 <groupId>com.nl2sql</groupId>
-                <artifactId>nlp2sql-common</artifactId>
+                <artifactId>nl2sql-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.nl2sql</groupId>
-                <artifactId>nlp2sql-core</artifactId>
+                <artifactId>nl2sql-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.nl2sql</groupId>
-                <artifactId>nlp2sql-security</artifactId>
+                <artifactId>nl2sql-security</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.nl2sql</groupId>
-                <artifactId>nlp2sql-conversation</artifactId>
+                <artifactId>nl2sql-conversation</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.nl2sql</groupId>
-                <artifactId>nlp2sql-audit</artifactId>
+                <artifactId>nl2sql-audit</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

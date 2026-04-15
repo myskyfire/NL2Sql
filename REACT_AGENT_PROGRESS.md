@@ -1,4 +1,4 @@
-# NLP2SQL 项目演进路线图 (Roadmap)
+﻿# NL2SQL 项目演进路线图 (Roadmap)
 
 ## 📊 当前状态概览
 
@@ -13,7 +13,7 @@
 ### Phase 1: 核心架构重构 (100% 完成)
 
 #### Step 1: 重写 SystemMessage ✅
-**文件**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/NLP2SQLAgent.java`
+**文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/NL2SQLAgent.java`
 
 **改动**:
 - ❌ 移除：硬编码的7步固定流程
@@ -38,7 +38,7 @@
 ```
 
 #### Step 2: 增强 AgentConfig ✅
-**文件**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
+**文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
 
 **改动**:
 - ✅ 添加可选Tools的动态注册（ContextSummarizerTool, ConversationMemoryTool等）
@@ -56,7 +56,7 @@ if (contextSummarizerTool != null) {
 ```
 
 #### Step 3: 增强 Controller 监控 ✅
-**文件**: `nlp2sql-web/src/main/java/com/nl2sql/web/controller/AgentController.java`
+**文件**: `NL2SQL-web/src/main/java/com/nl2sql/web/controller/AgentController.java`
 
 **改动**:
 - ✅ 添加执行时间统计
@@ -70,7 +70,7 @@ if (contextSummarizerTool != null) {
 [Agent对话] 用户消息: 查询上月订单
 [Agent对话] SessionId: xxx
 [Agent对话] DatasourceId: 1
-[Agent对话] 调用 NLP2SQLAgent.chat()...
+[Agent对话] 调用 NL2SQLAgent.chat()...
 [Agent对话] Agent响应长度: 1234 字符
 [Agent对话] 执行耗时: 5678 ms
 [Agent对话] ========== 处理完成 ==========
@@ -81,7 +81,7 @@ if (contextSummarizerTool != null) {
 ### Phase 2: Skills 深度集成 (100% 完成)
 
 #### Step 4: 创建 StandardQuerySkillTool ✅
-**文件**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/StandardQuerySkillTool.java`
+**文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/StandardQuerySkillTool.java`
 
 **功能**:
 - ✅ 将 StandardQuerySkill 包装成 LangChain4j Tool
@@ -98,7 +98,7 @@ Agent决策：是否需要进一步分析？如果需要，可以调用 summariz
 ```
 
 #### Step 5: 创建 ReportWithInsightsSkillTool ✅
-**文件**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/tools/ReportWithInsightsSkillTool.java`
+**文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/ReportWithInsightsSkillTool.java`
 
 **功能**:
 - ✅ 将 ReportWithInsightsSkill 包装成 LangChain4j Tool
@@ -114,7 +114,7 @@ Agent决策：直接返回给用户，无需额外操作
 ```
 
 #### Step 6: 注册 Skills 到 Agent ✅
-**文件**: `nlp2sql-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
+**文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
 
 **改动**:
 - ✅ 注入 StandardQuerySkillTool 和 ReportWithInsightsSkillTool
