@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP2SQL - 表授权管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group select, .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        tr:hover { background: #f9f9f9; }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .badge-success { background: #4caf50; color: white; }
+        .badge-warning { background: #ff9800; color: white; }
+        
+        .alert {
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 生产库表信息 -->
+        <div class="card">
+            <h2>🗄️ 生产库表信息</h2>
+            <button class="btn btn-primary" onclick="loadTableMetadata()" style="margin-bottom:15px;">刷新表信息</button>
+            <table id="metadataTable">
+                <thead>
+                    <tr>
+                        <th>表名</th>
+                        <th>表说明</th>
+                        <th>字段数</th>
+                        <th>已授权用户数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="metadataBody">
+                    <tr><td colspan="5" style="text-align:center;color:#999;">点击刷新按钮加载表信息</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 授权表单 -->
+        <div class="card">
+            <h2>🔑 表授权</h2>
+            <div id="message"></div>
+            
+            <div class="form-group">
+                <label for="userSelect">选择用户</label>
+                <select id="userSelect">
+                    <option value="">请选择用户</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="tableSelect">选择表</label>
+                <select id="tableSelect">
+                    <option value="">请选择表</option>
+                </select>
+            </div>
+            
+            <button class="btn btn-primary" onclick="grantPermission()">授权</button>
+        </div>
+        
+        <!-- 用户的表权限列表 -->
+        <div class="card">
+            <h2>📋 按用户查询权限</h2>
+            <div class="form-group">
+                <label for="viewUserSelect">选择用户</label>
+                <select id="viewUserSelect" onchange="loadUserPermissions()">
+                    <option value="">请选择用户</option>
+                </select>
+            </div>
+            
+            <table id="permissionsTable">
+                <thead>
+                    <tr>
+                        <th>表名</th>
+                        <th>授权时间</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="permissionsBody">
+                    <tr><td colspan="4" style="text-align:center;color:#999;">请选择用户查看权限</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 按表查询已授权用户 -->
+        <div class="card">
+            <h2>📊 按表查询已授权用户</h2>
+            <div class="form-group">
+                <label for="viewTableSelect">选择表</label>
+                <select id="viewTableSelect" onchange="loadTablePermissions()">
+                    <option value="">请选择表</option>
+                </select>
+            </div>
+            
+            <table id="tablePermissionsTable">
+                <thead>
+                    <tr>
+                        <th>用户名</th>
+                        <th>姓名</th>
+                        <th>邮箱</th>
+                        <th>角色</th>
+                        <th>授权人</th>
+                        <th>授权时间</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tablePermissionsBody">
+                    <tr><td colspan="8" style="text-align:center;color:#999;">请选择表查看已授权用户</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 所有表的授权统计 -->
+        <div class="card">
+            <h2>📈 表授权统计</h2>
+            <button class="btn btn-primary" onclick="loadAllPermissions()" style="margin-bottom:15px;">刷新统计</button>
+            <table id="statsTable">
+                <thead>
+                    <tr>
+                        <th>表名</th>
+                        <th>授权用户数</th>
+                        <th>已授权用户</th>
+                    </tr>
+                </thead>
+                <tbody id="statsBody">
+                    <tr><td colspan="3" style="text-align:center;color:#999;">点击刷新按钮加载数据</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        let token = localStorage.getItem('token');
+        let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+        
+        // 检查管理员权限
+        if (!token || userInfo.role !== 'admin') {
+            alert('需要管理员权限');
+            window.location.href = '/login.html';
+        }
+        
+        // 页面加载时初始化
+        window.onload = function() {
+            loadUsers();
+            loadTables();
+            loadAllPermissions();
+        };
+        
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/auth/users', {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const userSelect = document.getElementById('userSelect');
+                    const viewUserSelect = document.getElementById('viewUserSelect');
+                    
+                    result.data.forEach(user => {
+                        const option1 = new Option(`${user.username} (${user.realName || '未填写'})`, user.userId);
+                        const option2 = new Option(`${user.username} (${user.realName || '未填写'})`, user.userId);
+                        userSelect.add(option1);
+                        viewUserSelect.add(option2);
+                    });
+                }
+            } catch (error) {
+                console.error('加载用户失败:', error);
+            }
+        }
+        
+        // 加载表列表
+        async function loadTables() {
+            try {
+                const response = await fetch('/api/admin/metadata/list', {
+                    headers: { 'Authorization': token }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data.tables) {
+                    const tableSelect = document.getElementById('tableSelect');
+                    const viewTableSelect = document.getElementById('viewTableSelect');
+                    
+                    Object.keys(result.data.tables).forEach(tableName => {
+                        const option1 = new Option(tableName, tableName);
+                        const option2 = new Option(tableName, tableName);
+                        tableSelect.add(option1);
+                        viewTableSelect.add(option2);
+                    });
+                }
+            } catch (error) {
+                console.error('加载表列表失败:', error);
+            }
+        }
+        
+        // 加载表元数据
+        async function loadTableMetadata() {
+            try {
+                const response = await fetch('/api/admin/metadata/list', {
+                    headers: { 'Authorization': token }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data.tables) {
+                    const tables = result.data.tables;
+                    const tbody = document.getElementById('metadataBody');
+                    
+                    // 获取所有表的授权统计
+                    const statsResponse = await fetch('/api/auth/table-permission/all', {
+                        headers: { 'Authorization': token }
+                    });
+                    const statsResult = await statsResponse.json();
+                    
+                    const statsMap = {};
+                    if (statsResult.code === 200) {
+                        statsResult.data.forEach(stat => {
+                            statsMap[stat.table_name] = stat.user_count;
+                        });
+                    }
+                    
+                    tbody.innerHTML = Object.keys(tables).map(tableName => {
+                        const table = tables[tableName];
+                        const fieldCount = table.columns ? table.columns.length : 0;
+                        const authCount = statsMap[tableName.toLowerCase()] || 0;
+                        
+                        return `
+                            <tr>
+                                <td><strong>${tableName}</strong></td>
+                                <td>${table.tableComment || tableName}</td>
+                                <td>${fieldCount}</td>
+                                <td><span class="badge badge-success">${authCount} 人</span></td>
+                                <td>
+                                    <button class="btn btn-primary" onclick="quickGrant('${tableName}')">快速授权</button>
+                                    <button class="btn btn-primary" onclick="viewTableUsers('${tableName}')">查看用户</button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+            } catch (error) {
+                console.error('加载表元数据失败:', error);
+                showMessage('加载表信息失败', 'error');
+            }
+        }
+        
+        // 快速授权
+        function quickGrant(tableName) {
+            document.getElementById('tableSelect').value = tableName;
+            document.querySelector('.card').scrollIntoView({ behavior: 'smooth' });
+            showMessage(`已选择表: ${tableName}，请选择用户后点击授权`, 'success');
+        }
+        
+        // 查看表的已授权用户
+        function viewTableUsers(tableName) {
+            document.getElementById('viewTableSelect').value = tableName;
+            loadTablePermissions();
+            document.querySelectorAll('.card')[3].scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // 授权
+        async function grantPermission() {
+            const userId = document.getElementById('userSelect').value;
+            const tableName = document.getElementById('tableSelect').value;
+            
+            if (!userId || !tableName) {
+                showMessage('请选择用户和表', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/table-permission/grant', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token
+                    },
+                    body: JSON.stringify({ userId, tableName })
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    showMessage('授权成功', 'success');
+                    loadUserPermissions();
+                    loadAllPermissions();
+                } else {
+                    showMessage(result.message || '授权失败', 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误', 'error');
+                console.error('授权失败:', error);
+            }
+        }
+        
+        // 撤销权限
+        async function revokePermission(userId, tableName) {
+            if (!confirm(`确定要撤销用户对 ${tableName} 的访问权限吗？`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/table-permission/revoke', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token
+                    },
+                    body: JSON.stringify({ userId, tableName })
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    showMessage('撤销成功', 'success');
+                    loadUserPermissions();
+                    loadAllPermissions();
+                } else {
+                    showMessage(result.message || '撤销失败', 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误', 'error');
+                console.error('撤销失败:', error);
+            }
+        }
+        
+        // 加载用户权限
+        async function loadUserPermissions() {
+            const userId = document.getElementById('viewUserSelect').value;
+            
+            if (!userId) {
+                document.getElementById('permissionsBody').innerHTML = 
+                    '<tr><td colspan="4" style="text-align:center;color:#999;">请选择用户查看权限</td></tr>';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/auth/table-permission/user/${userId}`, {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const tbody = document.getElementById('permissionsBody');
+                    
+                    if (result.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">该用户暂无任何表权限</td></tr>';
+                        return;
+                    }
+                    
+                    tbody.innerHTML = result.data.map(perm => `
+                        <tr>
+                            <td>${perm.tableName}</td>
+                            <td>${new Date(perm.grantedAt).toLocaleString('zh-CN')}</td>
+                            <td><span class="badge ${perm.isActive ? 'badge-success' : 'badge-warning'}">${perm.isActive ? '有效' : '已撤销'}</span></td>
+                            <td>
+                                ${perm.isActive ? `<button class="btn btn-danger" onclick="revokePermission(${perm.userId}, '${perm.tableName}')">撤销</button>` : '-'}
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('加载权限失败:', error);
+            }
+        }
+        
+        // 按表查询已授权用户
+        async function loadTablePermissions() {
+            const tableName = document.getElementById('viewTableSelect').value;
+            
+            if (!tableName) {
+                document.getElementById('tablePermissionsBody').innerHTML = 
+                    '<tr><td colspan="8" style="text-align:center;color:#999;">请选择表查看已授权用户</td></tr>';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/auth/table-permission/table/${encodeURIComponent(tableName)}`, {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const tbody = document.getElementById('tablePermissionsBody');
+                    
+                    if (result.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">该表暂无已授权用户</td></tr>';
+                        return;
+                    }
+                    
+                    tbody.innerHTML = result.data.map(perm => `
+                        <tr>
+                            <td>${perm.username}</td>
+                            <td>${perm.realName || '-'}</td>
+                            <td>${perm.email || '-'}</td>
+                            <td><span class="badge badge-success">${perm.role}</span></td>
+                            <td>${perm.grantedByUsername || '-'}</td>
+                            <td>${new Date(perm.grantedAt).toLocaleString('zh-CN')}</td>
+                            <td><span class="badge badge-success">有效</span></td>
+                            <td>
+                                <button class="btn btn-danger" onclick="revokePermission(${perm.userId}, '${perm.tableName}')">撤销</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('加载表权限失败:', error);
+            }
+        }
+        
+        // 加载所有表的授权统计
+        async function loadAllPermissions() {
+            try {
+                const response = await fetch('/api/auth/table-permission/all', {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const tbody = document.getElementById('statsBody');
+                    
+                    if (result.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;">暂无授权记录</td></tr>';
+                        return;
+                    }
+                    
+                    tbody.innerHTML = result.data.map(stat => `
+                        <tr>
+                            <td>${stat.table_name}</td>
+                            <td>${stat.user_count}</td>
+                            <td>${stat.usernames || '-'}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+        }
+        
+        // 显示消息
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="alert alert-${type}">${text}</div>`;
+            setTimeout(() => messageDiv.innerHTML = '', 3000);
+        }
+    </script>
+</body>
+</html>

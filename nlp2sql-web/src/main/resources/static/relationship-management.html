@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表关联关系管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .btn-danger {
+            background: #ff4d4f;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #ff7875;
+        }
+        
+        .content {
+            padding: 32px;
+        }
+        
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .datasource-selector {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .datasource-selector label {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .datasource-selector select {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .datasource-selector select:focus {
+            border-color: #667eea;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        th {
+            background: #f5f7fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        tr:hover {
+            background: #fafafa;
+        }
+        
+        .arrow {
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .badge-warning {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h2 {
+            font-size: 18px;
+            color: #333;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .modal-close:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            padding: 24px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .form-group select,
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .form-group select:focus,
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: #667eea;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .btn-cancel {
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .btn-cancel:hover {
+            background: #e0e0e0;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔗 表关联关系管理</h1>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="openSQLParseModal()">📝 从SQL提取</button>
+                <button class="btn btn-secondary" onclick="autoDetect()">🤖 自动推断</button>
+                <button class="btn btn-primary" onclick="openCreateModal()">+ 新增关联</button>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="toolbar">
+                <div class="datasource-selector">
+                    <label>数据源：</label>
+                    <select id="datasourceSelect" onchange="loadRelationships()">
+                        <option value="">请选择数据源</option>
+                    </select>
+                </div>
+                <div>
+                    <span id="totalCount" style="color: #666;">共 0 条关联关系</span>
+                </div>
+            </div>
+            
+            <table id="relationshipTable">
+                <thead>
+                    <tr>
+                        <th>源表</th>
+                        <th>源字段</th>
+                        <th></th>
+                        <th>目标表</th>
+                        <th>目标字段</th>
+                        <th>关联类型</th>
+                        <th>描述</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="9" class="empty-state">
+                            <div class="empty-state-icon">📋</div>
+                            <div>请先选择数据源</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- 创建/编辑模态框 -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">新增关联关系</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="relationshipForm">
+                    <input type="hidden" id="editId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>源表 *</label>
+                            <select id="sourceTable" required onchange="loadSourceColumns()">
+                                <option value="">请选择表</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>源字段 *</label>
+                            <select id="sourceColumn" required>
+                                <option value="">请先选择源表</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>目标表 *</label>
+                            <select id="targetTable" required onchange="loadTargetColumns()">
+                                <option value="">请选择表</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>目标字段 *</label>
+                            <select id="targetColumn" required>
+                                <option value="">请先选择目标表</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>关联类型</label>
+                        <select id="relationshipType">
+                            <option value="MANY_TO_ONE">多对一 (Many to One)</option>
+                            <option value="ONE_TO_MANY">一对多 (One to Many)</option>
+                            <option value="ONE_TO_ONE">一对一 (One to One)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>描述</label>
+                        <textarea id="description" rows="3" placeholder="例如：订单通过user_id关联用户"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveRelationship()">保存</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- SQL解析模态框 -->
+    <div class="modal-overlay" id="sqlParseModal">
+        <div class="modal" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2>📝 从SQL提取关联关系</h2>
+                <button class="modal-close" onclick="closeSQLParseModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>粘贴SQL语句</label>
+                    <textarea id="sqlInput" rows="8" placeholder="SELECT o.*, u.name FROM orders o JOIN users u ON o.user_id = u.id WHERE ..." style="font-family: monospace;"></textarea>
+                </div>
+                
+                <button class="btn btn-primary" onclick="parseSQL()" style="width: 100%; margin-bottom: 20px;">🔍 解析SQL</button>
+                
+                <div id="parseResults" style="display: none;">
+                    <h3 style="margin-bottom: 12px; color: #333;">提取到的关联关系：</h3>
+                    <table id="extractedTable" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f5f7fa;">
+                                <th style="padding: 8px; text-align: left;">源表.字段</th>
+                                <th style="padding: 8px; text-align: center;">→</th>
+                                <th style="padding: 8px; text-align: left;">目标表.字段</th>
+                                <th style="padding: 8px; text-align: left;">类型</th>
+                                <th style="padding: 8px; text-align: left;">说明</th>
+                            </tr>
+                        </thead>
+                        <tbody id="extractedBody"></tbody>
+                    </table>
+                    
+                    <div style="margin-top: 16px; display: flex; gap: 12px;">
+                        <button class="btn btn-primary" onclick="saveExtractedRelationships()" style="flex: 1;">💾 保存所有关联关系</button>
+                        <button class="btn btn-cancel" onclick="closeSQLParseModal()">取消</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        let currentDatasourceId = null;
+        let allTables = [];
+        
+        // 初始化
+        window.onload = function() {
+            loadDatasources();
+        };
+        
+        // 加载数据源列表
+        async function loadDatasources() {
+            try {
+                const response = await fetch('/api/datasources', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const select = document.getElementById('datasourceSelect');
+                    result.data.forEach(ds => {
+                        const option = document.createElement('option');
+                        option.value = ds.id;
+                        option.textContent = ds.name;
+                        select.appendChild(option);
+                    });
+                    
+                    // 默认选中第一个
+                    if (result.data.length > 0) {
+                        select.value = result.data[0].id;
+                        loadRelationships();
+                    }
+                }
+            } catch (error) {
+                console.error('加载数据源失败:', error);
+            }
+        }
+        
+        // 加载关联关系
+        async function loadRelationships() {
+            const datasourceId = document.getElementById('datasourceSelect').value;
+            if (!datasourceId) return;
+            
+            currentDatasourceId = datasourceId;
+            
+            try {
+                const response = await fetch(`/api/relationships?datasourceId=${datasourceId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    renderTable(result.data);
+                    document.getElementById('totalCount').textContent = `共 ${result.data.length} 条关联关系`;
+                }
+            } catch (error) {
+                console.error('加载关联关系失败:', error);
+                alert('加载失败: ' + error.message);
+            }
+        }
+        
+        // 渲染表格
+        function renderTable(relationships) {
+            const tbody = document.getElementById('tableBody');
+            
+            if (relationships.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="empty-state">
+                            <div class="empty-state-icon">🔍</div>
+                            <div>暂无关联关系，点击"新增关联"添加</div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = relationships.map(rel => `
+                <tr>
+                    <td><strong>${rel.source_table}</strong></td>
+                    <td>${rel.source_column}</td>
+                    <td class="arrow">→</td>
+                    <td><strong>${rel.target_table}</strong></td>
+                    <td>${rel.target_column}</td>
+                    <td><span class="badge badge-success">${rel.relationship_type}</span></td>
+                    <td>${rel.description || '-'}</td>
+                    <td>${rel.is_active ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-warning">禁用</span>'}</td>
+                    <td class="actions">
+                        <button class="btn btn-small btn-primary" onclick="editRelationship(${rel.id})">编辑</button>
+                        <button class="btn btn-small btn-danger" onclick="deleteRelationship(${rel.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        // 打开创建模态框
+        async function openCreateModal() {
+            document.getElementById('modalTitle').textContent = '新增关联关系';
+            document.getElementById('editId').value = '';
+            document.getElementById('relationshipForm').reset();
+            
+            // 加载表列表
+            await loadTables();
+            
+            document.getElementById('modalOverlay').classList.add('active');
+        }
+        
+        // 编辑关联关系
+        async function editRelationship(id) {
+            try {
+                const response = await fetch(`/api/relationships?datasourceId=${currentDatasourceId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                const rel = result.data.find(r => r.id === id);
+                if (!rel) return;
+                
+                document.getElementById('modalTitle').textContent = '编辑关联关系';
+                document.getElementById('editId').value = rel.id;
+                
+                await loadTables();
+                
+                document.getElementById('sourceTable').value = rel.source_table;
+                await loadSourceColumns();
+                document.getElementById('sourceColumn').value = rel.source_column;
+                
+                document.getElementById('targetTable').value = rel.target_table;
+                await loadTargetColumns();
+                document.getElementById('targetColumn').value = rel.target_column;
+                
+                document.getElementById('relationshipType').value = rel.relationship_type;
+                document.getElementById('description').value = rel.description || '';
+                
+                document.getElementById('modalOverlay').classList.add('active');
+            } catch (error) {
+                console.error('加载关联关系详情失败:', error);
+            }
+        }
+        
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+        
+        // 加载表列表
+        async function loadTables() {
+            try {
+                const response = await fetch(`/api/relationships/tables?datasourceId=${currentDatasourceId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    allTables = result.data;
+                    
+                    const sourceSelect = document.getElementById('sourceTable');
+                    const targetSelect = document.getElementById('targetTable');
+                    
+                    // 保存当前选中值
+                    const currentSource = sourceSelect.value;
+                    const currentTarget = targetSelect.value;
+                    
+                    // 清空并重新填充
+                    sourceSelect.innerHTML = '<option value="">请选择表</option>';
+                    targetSelect.innerHTML = '<option value="">请选择表</option>';
+                    
+                    result.data.forEach(table => {
+                        const option1 = document.createElement('option');
+                        option1.value = table.table_name;
+                        option1.textContent = `${table.table_name}${table.table_comment ? ' - ' + table.table_comment : ''}`;
+                        sourceSelect.appendChild(option1);
+                        
+                        const option2 = document.createElement('option');
+                        option2.value = table.table_name;
+                        option2.textContent = `${table.table_name}${table.table_comment ? ' - ' + table.table_comment : ''}`;
+                        targetSelect.appendChild(option2);
+                    });
+                    
+                    // 恢复选中值
+                    sourceSelect.value = currentSource;
+                    targetSelect.value = currentTarget;
+                }
+            } catch (error) {
+                console.error('加载表列表失败:', error);
+            }
+        }
+        
+        // 加载源表字段
+        async function loadSourceColumns() {
+            const tableName = document.getElementById('sourceTable').value;
+            if (!tableName) return;
+            
+            await loadColumns(tableName, 'sourceColumn');
+        }
+        
+        // 加载目标表字段
+        async function loadTargetColumns() {
+            const tableName = document.getElementById('targetTable').value;
+            if (!tableName) return;
+            
+            await loadColumns(tableName, 'targetColumn');
+        }
+        
+        // 加载字段列表
+        async function loadColumns(tableName, selectId) {
+            try {
+                const response = await fetch(`/api/relationships/columns?datasourceId=${currentDatasourceId}&tableName=${tableName}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const select = document.getElementById(selectId);
+                    select.innerHTML = '<option value="">请选择字段</option>';
+                    
+                    result.data.forEach(col => {
+                        const option = document.createElement('option');
+                        option.value = col.column_name;
+                        option.textContent = `${col.column_name} (${col.data_type})${col.column_comment ? ' - ' + col.column_comment : ''}${col.is_primary_key === '1' ? ' [主键]' : ''}`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载字段列表失败:', error);
+            }
+        }
+        
+        // 保存关联关系
+        async function saveRelationship() {
+            const editId = document.getElementById('editId').value;
+            const data = {
+                datasourceId: parseInt(currentDatasourceId),
+                sourceTable: document.getElementById('sourceTable').value,
+                sourceColumn: document.getElementById('sourceColumn').value,
+                targetTable: document.getElementById('targetTable').value,
+                targetColumn: document.getElementById('targetColumn').value,
+                relationshipType: document.getElementById('relationshipType').value,
+                description: document.getElementById('description').value
+            };
+            
+            // 验证
+            if (!data.sourceTable || !data.sourceColumn || !data.targetTable || !data.targetColumn) {
+                alert('请填写所有必填字段');
+                return;
+            }
+            
+            try {
+                let response;
+                if (editId) {
+                    // 更新
+                    response = await fetch(`/api/relationships/${editId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+                } else {
+                    // 创建
+                    response = await fetch('/api/relationships', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+                }
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert(editId ? '更新成功' : '创建成功');
+                    closeModal();
+                    loadRelationships();
+                } else {
+                    alert(result.message || '操作失败');
+                }
+            } catch (error) {
+                console.error('保存失败:', error);
+                alert('保存失败: ' + error.message);
+            }
+        }
+        
+        // 删除关联关系
+        async function deleteRelationship(id) {
+            if (!confirm('确定要删除这条关联关系吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/relationships/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('删除成功');
+                    loadRelationships();
+                } else {
+                    alert(result.message || '删除失败');
+                }
+            } catch (error) {
+                console.error('删除失败:', error);
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
+        // 自动推断
+        async function autoDetect() {
+            if (!currentDatasourceId) {
+                alert('请先选择数据源');
+                return;
+            }
+            
+            if (!confirm('这将使用LLM自动推断表关联关系，可能需要较长时间，是否继续？')) return;
+            
+            try {
+                const response = await fetch(`/api/relationships/auto-detect?datasourceId=${currentDatasourceId}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert(`推断完成，发现 ${result.data.length} 条关联关系`);
+                    loadRelationships();
+                } else {
+                    alert(result.message || '推断失败');
+                }
+            } catch (error) {
+                console.error('自动推断失败:', error);
+                alert('推断失败: ' + error.message);
+            }
+        }
+        
+        // 打开SQL解析模态框
+        function openSQLParseModal() {
+            if (!currentDatasourceId) {
+                alert('请先选择数据源');
+                return;
+            }
+            document.getElementById('sqlParseModal').classList.add('active');
+            document.getElementById('parseResults').style.display = 'none';
+            document.getElementById('sqlInput').value = '';
+        }
+        
+        // 关闭SQL解析模态框
+        function closeSQLParseModal() {
+            document.getElementById('sqlParseModal').classList.remove('active');
+        }
+        
+        // 解析SQL
+        async function parseSQL() {
+            const sql = document.getElementById('sqlInput').value.trim();
+            if (!sql) {
+                alert('请输入SQL语句');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/relationships/extract-from-sql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        sql: sql,
+                        datasourceId: parseInt(currentDatasourceId)
+                    })
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    renderExtractedRelationships(result.data);
+                } else {
+                    alert(result.message || '解析失败');
+                }
+            } catch (error) {
+                console.error('解析SQL失败:', error);
+                alert('解析失败: ' + error.message);
+            }
+        }
+        
+        // 渲染提取的关联关系
+        function renderExtractedRelationships(relationships) {
+            const tbody = document.getElementById('extractedBody');
+            
+            if (relationships.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #999;">未提取到关联关系</td></tr>';
+                document.getElementById('parseResults').style.display = 'block';
+                return;
+            }
+            
+            tbody.innerHTML = relationships.map(rel => `
+                <tr>
+                    <td style="padding: 8px;"><strong>${rel.sourceTable}</strong>.${rel.sourceColumn}</td>
+                    <td style="padding: 8px; text-align: center; color: #667eea;">→</td>
+                    <td style="padding: 8px;"><strong>${rel.targetTable}</strong>.${rel.targetColumn}</td>
+                    <td style="padding: 8px;"><span class="badge badge-success">${rel.relationshipType}</span></td>
+                    <td style="padding: 8px; font-size: 12px; color: #666;">
+                        ${rel.description}
+                        ${rel.warning ? `<br><span style="color: #ff9800;">⚠️ ${rel.warning}</span>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('parseResults').style.display = 'block';
+            
+            // 保存提取结果供后续使用
+            window.extractedRelationships = relationships;
+        }
+        
+        // 保存提取的关联关系
+        async function saveExtractedRelationships() {
+            if (!window.extractedRelationships || window.extractedRelationships.length === 0) {
+                alert('没有可保存的关联关系');
+                return;
+            }
+            
+            try {
+                const relationships = window.extractedRelationships.map(rel => ({
+                    datasourceId: parseInt(currentDatasourceId),
+                    sourceTable: rel.sourceTable,
+                    sourceColumn: rel.sourceColumn,
+                    targetTable: rel.targetTable,
+                    targetColumn: rel.targetColumn,
+                    relationshipType: rel.relationshipType,
+                    description: rel.description
+                }));
+                
+                const response = await fetch('/api/relationships/batch-save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ relationships })
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('保存成功！');
+                    closeSQLParseModal();
+                    loadRelationships();
+                } else {
+                    alert(result.message || '保存失败');
+                }
+            } catch (error) {
+                console.error('保存失败:', error);
+                alert('保存失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

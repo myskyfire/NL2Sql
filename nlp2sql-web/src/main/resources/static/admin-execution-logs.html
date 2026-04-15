@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL执行日志</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f7fa; padding: 20px; }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .card h3 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-item label {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .filter-item input, .filter-item select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 150px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #409eff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #66b1ff;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+        }
+        
+        th {
+            background: #f5f7fa;
+            color: #606266;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: #f5f7fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .badge-success { background: #e1f3d8; color: #67c23a; }
+        .badge-warning { background: #fdf6ec; color: #e6a23c; }
+        .badge-danger { background: #fef0f0; color: #f56c6c; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        
+        .sql-text {
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 统计卡片 -->
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+            <div class="stat-value" id="totalCount">0</div>
+            <div class="stat-label">总执行次数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="slowCount">0</div>
+            <div class="stat-label">慢查询数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="failedCount">0</div>
+            <div class="stat-label">失败次数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="avgTime">0ms</div>
+            <div class="stat-label">平均耗时</div>
+        </div>
+    </div>
+    
+    <!-- 筛选条件 -->
+    <div class="card">
+        <h3>🔍 筛选条件</h3>
+        <div class="filter-bar">
+            <div class="filter-item">
+                <label>开始日期</label>
+                <input type="date" id="startDate">
+            </div>
+            <div class="filter-item">
+                <label>结束日期</label>
+                <input type="date" id="endDate">
+            </div>
+            <div class="filter-item">
+                <label>状态</label>
+                <select id="statusFilter">
+                    <option value="">全部</option>
+                    <option value="SUCCESS">成功</option>
+                    <option value="FAILED">失败</option>
+                    <option value="TIMEOUT">超时</option>
+                </select>
+            </div>
+            <div class="filter-item">
+                <label>慢查询</label>
+                <select id="slowQueryFilter">
+                    <option value="">全部</option>
+                    <option value="1">是</option>
+                    <option value="0">否</option>
+                </select>
+            </div>
+            <div class="filter-item" style="justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="loadLogs()">查询</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 日志列表 -->
+    <div class="card">
+        <h3>📋 执行日志列表</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>用户</th>
+                    <th>SQL</th>
+                    <th>耗时(ms)</th>
+                    <th>行数</th>
+                    <th>状态</th>
+                    <th>执行时间</th>
+                </tr>
+            </thead>
+            <tbody id="logsTableBody">
+                <tr><td colspan="7" style="text-align: center; color: #999;">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        
+        // 页面加载时初始化
+        window.onload = function() {
+            // 设置默认日期范围（最近7天）
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 7);
+            
+            document.getElementById('endDate').value = formatDate(endDate);
+            document.getElementById('startDate').value = formatDate(startDate);
+            
+            loadStats();
+            loadLogs();
+        };
+        
+        // 格式化日期
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+        
+        // 加载统计数据
+        async function loadStats() {
+            try {
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+                
+                const url = `/api/admin/execution-logs/stats?startDate=${startDate}&endDate=${endDate}`;
+                const response = await fetch(url, {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    const stats = result.data;
+                    document.getElementById('totalCount').textContent = stats.total_count || 0;
+                    document.getElementById('slowCount').textContent = stats.slow_count || 0;
+                    document.getElementById('failedCount').textContent = stats.failed_count || 0;
+                    document.getElementById('avgTime').textContent = Math.round(stats.avg_time || 0) + 'ms';
+                }
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+        }
+        
+        // 加载日志列表
+        async function loadLogs() {
+            try {
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+                const status = document.getElementById('statusFilter').value;
+                const isSlowQuery = document.getElementById('slowQueryFilter').value;
+                
+                let url = `/api/admin/execution-logs/list?startDate=${startDate}&endDate=${endDate}&limit=100`;
+                if (status) url += `&status=${status}`;
+                if (isSlowQuery !== '') url += `&isSlowQuery=${isSlowQuery}`;
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    renderLogs(result.data);
+                } else {
+                    document.getElementById('logsTableBody').innerHTML = 
+                        '<tr><td colspan="7" style="text-align: center; color: #f44336;">加载失败</td></tr>';
+                }
+            } catch (error) {
+                console.error('加载日志失败:', error);
+                document.getElementById('logsTableBody').innerHTML = 
+                    '<tr><td colspan="7" style="text-align: center; color: #f44336;">网络错误</td></tr>';
+            }
+        }
+        
+        // 渲染日志列表
+        function renderLogs(logs) {
+            const tbody = document.getElementById('logsTableBody');
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #999;">暂无数据</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = logs.map(log => {
+                const statusClass = log.status === 'SUCCESS' ? 'badge-success' : 
+                                   log.status === 'TIMEOUT' ? 'badge-warning' : 'badge-danger';
+                const statusText = log.status === 'SUCCESS' ? '成功' : 
+                                  log.status === 'TIMEOUT' ? '超时' : '失败';
+                
+                return `
+                    <tr>
+                        <td>${log.id}</td>
+                        <td>${log.username || '-'}</td>
+                        <td><div class="sql-text" title="${escapeHtml(log.sql_text)}">${escapeHtml(log.sql_text)}</div></td>
+                        <td>${log.execution_time_ms}</td>
+                        <td>${log.row_count || 0}</td>
+                        <td><span class="badge ${statusClass}">${statusText}</span></td>
+                        <td>${formatDateTime(log.created_at)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // 转义HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 格式化日期时间
+        function formatDateTime(datetime) {
+            if (!datetime) return '-';
+            const date = new Date(datetime);
+            return date.toLocaleString('zh-CN', { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+    </script>
+</body>
+</html>

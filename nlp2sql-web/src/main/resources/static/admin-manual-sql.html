@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP2SQL - 手动执行SQL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn-group {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-export {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .alert {
+            padding: 12px 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        
+        .alert.show { display: block; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        
+        .result-section {
+            margin-top: 20px;
+        }
+        
+        .result-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .result-info span {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .result-info strong {
+            color: #333;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            overflow-x: auto;
+            display: block;
+        }
+        
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+            white-space: nowrap;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        
+        tr:nth-child(even) { background: #f9f9f9; }
+        tr:hover { background: #f0f0f0; }
+        
+        .sql-preview {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 图表样式 */
+        .chart-section { 
+            margin-top: 20px; 
+            padding: 16px; 
+            background: #f9f9f9; 
+            border-radius: 6px; 
+        }
+        .chart-tabs { 
+            display: flex; 
+            gap: 10px; 
+            margin-bottom: 12px; 
+        }
+        .chart-tab { 
+            padding: 8px 16px; 
+            background: white; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            cursor: pointer; 
+        }
+        .chart-tab.active { 
+            background: #667eea; 
+            color: white; 
+            border-color: #667eea; 
+        }
+        .chart-container { 
+            min-height: 300px; 
+            background: white; 
+            padding: 16px; 
+            border-radius: 6px; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- SQL输入区域 -->
+        <div class="card">
+            <h3>✍️ 编写SQL语句</h3>
+            <div id="message"></div>
+            
+            <!-- 数据源选择 -->
+            <div style="margin-bottom: 15px;">
+                <label style="display:block;margin-bottom:5px;color:#555;font-weight:500;">📊 选择数据源：</label>
+                <select id="datasourceSelect" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px;">
+                    <option value="">-- 请选择数据源 --</option>
+                </select>
+            </div>
+            
+            <textarea id="sqlInput" placeholder="-- 在此输入SQL查询语句&#10;-- 例如：SELECT * FROM users LIMIT 10;&#10;&#10;注意：仅支持SELECT查询语句，不支持修改操作"></textarea>
+            
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="executeSQL()">▶️ 执行SQL</button>
+                <button class="btn btn-export" id="exportBtn" onclick="exportToExcel()" style="display:none;">📊 导出Excel</button>
+                <button class="btn btn-secondary" onclick="clearSQL()">🗑️ 清空</button>
+                <button class="btn btn-secondary" onclick="formatSQL()">✨ 格式化</button>
+            </div>
+        </div>
+        
+        <!-- 执行结果区域 -->
+        <div class="card" id="resultCard" style="display:none;">
+            <h3>📊 执行结果</h3>
+            <div id="sqlPreview"></div>
+            <div id="resultInfo"></div>
+            <div id="chartSection" class="chart-section" style="display:none;">
+                <h4 style="margin-bottom: 12px;">📊 图表推荐</h4>
+                <div id="chartTabs" class="chart-tabs"></div>
+                <div id="chartContainer" class="chart-container"></div>
+            </div>
+            <div id="resultTable"></div>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        let currentSQL = null;
+        let currentData = null;
+        
+        // 页面加载时获取数据源列表
+        window.onload = async function() {
+            await loadDatasources();
+        };
+        
+        // 加载数据源列表
+        async function loadDatasources() {
+            try {
+                const response = await fetch('/api/admin/datasource/list', {
+                    headers: { 'Authorization': token }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    const select = document.getElementById('datasourceSelect');
+                    
+                    if (result.data.length === 0) {
+                        select.innerHTML = '<option value="">暂无可用数据源，请先配置</option>';
+                        return;
+                    }
+                    
+                    select.innerHTML = '<option value="">-- 请选择数据源 --</option>' + 
+                        result.data.map(ds => `<option value="${ds.id}">${escapeHtml(ds.name)} (${escapeHtml(ds.host)})</option>`).join('');
+                }
+            } catch (error) {
+                console.error('加载数据源失败:', error);
+            }
+        }
+        
+        // 执行SQL
+        async function executeSQL() {
+            const sql = document.getElementById('sqlInput').value.trim();
+            
+            if (!sql) {
+                showMessage('请输入SQL语句', 'error');
+                return;
+            }
+            
+            const datasourceId = document.getElementById('datasourceSelect').value;
+            if (!datasourceId) {
+                showMessage('⚠️ 请先选择数据源', 'warning');
+                return;
+            }
+            
+            // 基本安全检查
+            const upperSQL = sql.toUpperCase().trim();
+            if (!upperSQL.startsWith('SELECT')) {
+                showMessage('⚠️ 仅支持SELECT查询语句，不允许执行INSERT/UPDATE/DELETE等操作', 'error');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/api/manual-sql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token
+                    },
+                    body: JSON.stringify({ 
+                        sql,
+                        datasourceId: parseInt(datasourceId)
+                    })
+                });
+                
+                const result = await response.json();
+                
+                hideLoading();
+                
+                if (result.code === 200) {
+                    if (result.data.error) {
+                        showMessage(`❌ 执行失败: ${result.data.error}`, 'error');
+                        document.getElementById('exportBtn').style.display = 'none';
+                    } else {
+                        displayResult(result.data, sql);
+                        showMessage('✅ 执行成功', 'success');
+                    }
+                } else {
+                    showMessage(`❌ ${result.message}`, 'error');
+                    document.getElementById('exportBtn').style.display = 'none';
+                }
+            } catch (error) {
+                hideLoading();
+                showMessage(`❌ 网络错误: ${error.message}`, 'error');
+                console.error('执行SQL失败:', error);
+            }
+        }
+        
+        // 显示结果
+        function displayResult(data, sql) {
+            const resultCard = document.getElementById('resultCard');
+            const sqlPreview = document.getElementById('sqlPreview');
+            const resultInfo = document.getElementById('resultInfo');
+            const resultTable = document.getElementById('resultTable');
+            const chartSection = document.getElementById('chartSection');
+            const exportBtn = document.getElementById('exportBtn');
+            
+            resultCard.style.display = 'block';
+            
+            // 保存当前SQL和数据
+            currentSQL = sql;
+            currentData = data.data;
+            
+            // 显示SQL预览
+            sqlPreview.innerHTML = `<div class="sql-preview">${escapeHtml(sql)}</div>`;
+            
+            // 显示结果信息
+            resultInfo.innerHTML = `
+                <div class="result-info">
+                    <span>返回行数: <strong>${data.rowCount || 0}</strong></span>
+                    <span>执行时间: <strong>${data.executionTime ? data.executionTime.toFixed(3) : 0}s</strong></span>
+                </div>
+            `;
+            
+            // 渲染图表推荐（如果有）
+            if (data.chartRecommendation && data.chartRecommendation.charts && data.chartRecommendation.charts.length > 0) {
+                renderCharts(data.chartRecommendation);
+                chartSection.style.display = 'block';
+            } else {
+                chartSection.style.display = 'none';
+            }
+            
+            // 显示表格
+            if (data.data && data.data.length > 0) {
+                const columns = Object.keys(data.data[0]);
+                let html = '<table><thead><tr>';
+                columns.forEach(col => {
+                    html += `<th>${escapeHtml(col)}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                data.data.forEach(row => {
+                    html += '<tr>';
+                    columns.forEach(col => {
+                        const value = row[col] === null ? '<em style="color:#999;">NULL</em>' : escapeHtml(String(row[col]));
+                        html += `<td>${value}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table>';
+                resultTable.innerHTML = html;
+                
+                // 显示导出按钮
+                exportBtn.style.display = 'inline-block';
+            } else {
+                resultTable.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">查询结果为空</p>';
+                exportBtn.style.display = 'none';
+            }
+        }
+        
+        // 清空SQL
+        function clearSQL() {
+            document.getElementById('sqlInput').value = '';
+            document.getElementById('resultCard').style.display = 'none';
+            hideMessage();
+        }
+        
+        // 格式化SQL（简单实现）
+        function formatSQL() {
+            const textarea = document.getElementById('sqlInput');
+            let sql = textarea.value.trim();
+            
+            if (!sql) return;
+            
+            // 简单的SQL格式化
+            sql = sql.replace(/\s+/g, ' ');
+            sql = sql.replace(/SELECT/gi, '\nSELECT');
+            sql = sql.replace(/FROM/gi, '\nFROM');
+            sql = sql.replace(/WHERE/gi, '\nWHERE');
+            sql = sql.replace(/ORDER BY/gi, '\nORDER BY');
+            sql = sql.replace(/GROUP BY/gi, '\nGROUP BY');
+            sql = sql.replace(/LIMIT/gi, '\nLIMIT');
+            sql = sql.replace(/JOIN/gi, '\nJOIN');
+            sql = sql.replace(/LEFT JOIN/gi, '\nLEFT JOIN');
+            sql = sql.replace(/RIGHT JOIN/gi, '\nRIGHT JOIN');
+            sql = sql.replace(/INNER JOIN/gi, '\nINNER JOIN');
+            sql = sql.replace(/ON/gi, '\n  ON');
+            sql = sql.replace(/AND/gi, '\n  AND');
+            sql = sql.replace(/OR/gi, '\n  OR');
+            
+            textarea.value = sql.trim();
+        }
+        
+        // 显示消息
+        function showMessage(message, type) {
+            const msgDiv = document.getElementById('message');
+            msgDiv.className = `alert alert-${type} show`;
+            msgDiv.textContent = message;
+            
+            setTimeout(() => {
+                msgDiv.classList.remove('show');
+            }, 5000);
+        }
+        
+        function hideMessage() {
+            document.getElementById('message').classList.remove('show');
+        }
+        
+        // 显示加载状态
+        function showLoading() {
+            const resultCard = document.getElementById('resultCard');
+            resultCard.style.display = 'block';
+            document.getElementById('resultTable').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>正在执行SQL...</p>
+                </div>
+            `;
+        }
+        
+        function hideLoading() {
+            // 由displayResult或showMessage处理
+        }
+        
+        // HTML转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 渲染图表
+        function renderCharts(recommendation) {
+            const chartTabs = document.getElementById('chartTabs');
+            const chartContainer = document.getElementById('chartContainer');
+            
+            chartTabs.innerHTML = '';
+            chartContainer.innerHTML = '';
+            
+            const charts = recommendation.charts;
+            
+            // 创建标签页
+            charts.forEach((chart, index) => {
+                const tab = document.createElement('div');
+                tab.className = 'chart-tab' + (index === 0 ? ' active' : '');
+                tab.textContent = chart.type === 'TABLE' ? '📋 表格' : 
+                                 chart.type === 'BAR' ? '📊 柱状图' :
+                                 chart.type === 'LINE' ? '📈 折线图' :
+                                 chart.type === 'PIE' ? '🥧 饼图' : chart.type;
+                tab.onclick = () => showChart(index);
+                chartTabs.appendChild(tab);
+            });
+            
+            // 显示第一个图表
+            showChart(0);
+        }
+        
+        // 显示指定图表
+        function showChart(index) {
+            const chartTabs = document.querySelectorAll('.chart-tab');
+            const chartContainer = document.getElementById('chartContainer');
+            
+            if (!currentData || currentData.length === 0) return;
+            
+            // 更新标签激活状态
+            chartTabs.forEach((tab, i) => {
+                tab.classList.toggle('active', i === index);
+            });
+            
+            const chart = { type: 'TABLE', title: '详细数据', series: currentData };
+            
+            // 简单展示：如果是TABLE类型，直接显示表格
+            let html = `<h4 style="margin-bottom:12px;color:#667eea;">${chart.title}</h4>`;
+            html += '<table><thead><tr>';
+            
+            if (currentData.length > 0) {
+                const columns = Object.keys(currentData[0]);
+                columns.forEach(col => {
+                    html += `<th>${escapeHtml(col)}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                currentData.forEach(row => {
+                    html += '<tr>';
+                    columns.forEach(col => {
+                        const value = row[col] === null ? '<em style="color:#999;">NULL</em>' : escapeHtml(String(row[col]));
+                        html += `<td>${value}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+            }
+            
+            chartContainer.innerHTML = html;
+        }
+        
+        // 导出Excel
+        async function exportToExcel() {
+            if (!currentSQL || !currentData) {
+                alert('没有可导出的查询');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/export/excel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token
+                    },
+                    body: JSON.stringify({
+                        data: currentData,
+                        fileName: '查询结果'
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '导出失败');
+                }
+                
+                // 下载文件
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // 从响应头获取文件名
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let fileName = '查询结果.xlsx';
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+                    if (filenameMatch && filenameMatch[1]) {
+                        fileName = decodeURIComponent(filenameMatch[1].replace(/"/g, ''));
+                    }
+                }
+                
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                alert('导出成功！');
+                
+            } catch (error) {
+                alert('导出失败: ' + error.message);
+                console.error('导出错误:', error);
+            }
+        }
+        
+        // 支持Ctrl+Enter执行
+        document.getElementById('sqlInput').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                executeSQL();
+            }
+        });
+    </script>
+</body>
+</html>

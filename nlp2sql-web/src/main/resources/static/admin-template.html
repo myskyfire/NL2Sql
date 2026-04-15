@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP2SQL - 查询模板管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .form-group textarea {
+            min-height: 120px;
+            font-family: 'Consolas', monospace;
+            resize: vertical;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        tr:hover { background: #f9f9f9; }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .badge-success { background: #4caf50; color: white; }
+        .badge-info { background: #2196f3; color: white; }
+        
+        .alert {
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        .hidden { display: none; }
+        
+        .template-sql {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            max-width: 400px;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 创建模板 -->
+        <div class="card">
+            <h2>➕ 创建查询模板</h2>
+            <div id="message"></div>
+            
+            <div class="form-group">
+                <label for="templateName">模板名称 *</label>
+                <input type="text" id="templateName" placeholder="例如：月度销售统计">
+            </div>
+            
+            <div class="form-group">
+                <label for="templateDesc">描述</label>
+                <input type="text" id="templateDesc" placeholder="模板用途说明">
+            </div>
+            
+            <div class="form-group">
+                <label for="templateSql">SQL语句 *</label>
+                <textarea id="templateSql" placeholder="SELECT * FROM orders WHERE ..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="templateCategory">分类</label>
+                <select id="templateCategory">
+                    <option value="sales">销售分析</option>
+                    <option value="inventory">库存管理</option>
+                    <option value="user">用户分析</option>
+                    <option value="finance">财务报表</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="isPublic"> 公开此模板（其他用户可见）
+                </label>
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveTemplate()">💾 保存模板</button>
+        </div>
+        
+        <!-- 模板列表 -->
+        <div class="card">
+            <h2>📋 模板列表</h2>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('my')">我的模板</div>
+                <div class="tab" onclick="switchTab('public')">公共模板</div>
+            </div>
+            
+            <table id="templateTable">
+                <thead>
+                    <tr>
+                        <th>模板名称</th>
+                        <th>分类</th>
+                        <th>描述</th>
+                        <th>SQL预览</th>
+                        <th>创建人</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="templateBody">
+                    <tr><td colspan="6" style="text-align:center;color:#999;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        let currentTab = 'my';
+        
+        // 切换标签
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            loadTemplates();
+        }
+        
+        // 加载模板列表
+        async function loadTemplates() {
+            const tbody = document.getElementById('templateBody');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">加载中...</td></tr>';
+            
+            try {
+                const url = currentTab === 'my' 
+                    ? '/api/template/my' 
+                    : '/api/template/public';
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    if (result.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">暂无模板</td></tr>';
+                        return;
+                    }
+                    
+                    tbody.innerHTML = result.data.map(template => `
+                        <tr>
+                            <td><strong>${escapeHtml(template.name)}</strong></td>
+                            <td><span class="badge badge-info">${getCategoryName(template.category)}</span></td>
+                            <td>${escapeHtml(template.description || '-')}</td>
+                            <td><div class="template-sql">${escapeHtml(template.templateSql.substring(0, 50))}...</div></td>
+                            <td>${template.createdBy || '-'}</td>
+                            <td>
+                                <button class="btn btn-primary" onclick="useTemplate('${template.id}')">使用</button>
+                                ${currentTab === 'my' ? `<button class="btn btn-danger" onclick="deleteTemplate('${template.id}')">删除</button>` : ''}
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">加载失败</td></tr>';
+                }
+            } catch (error) {
+                console.error('加载模板失败:', error);
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">网络错误</td></tr>';
+            }
+        }
+        
+        // 保存模板
+        async function saveTemplate() {
+            const name = document.getElementById('templateName').value.trim();
+            const description = document.getElementById('templateDesc').value.trim();
+            const templateSql = document.getElementById('templateSql').value.trim();
+            const category = document.getElementById('templateCategory').value;
+            const isPublic = document.getElementById('isPublic').checked;
+            
+            if (!name || !templateSql) {
+                showMessage('请填写模板名称和SQL语句', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/template/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token
+                    },
+                    body: JSON.stringify({
+                        name,
+                        description,
+                        templateSql,
+                        category,
+                        isPublic
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    showMessage('✅ 模板保存成功', 'success');
+                    clearForm();
+                    loadTemplates();
+                } else {
+                    showMessage(`❌ ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showMessage('❌ 网络错误', 'error');
+                console.error('保存模板失败:', error);
+            }
+        }
+        
+        // 使用模板
+        function useTemplate(templateId) {
+            // 这里可以跳转到查询页面并自动填充SQL
+            alert('模板ID: ' + templateId + '\n\n功能开发中：点击后将跳转到查询页面并自动填充SQL');
+        }
+        
+        // 删除模板
+        async function deleteTemplate(templateId) {
+            if (!confirm('确定要删除这个模板吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/template/${templateId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': token }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    showMessage('✅ 模板已删除', 'success');
+                    loadTemplates();
+                } else {
+                    showMessage(`❌ ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showMessage('❌ 网络错误', 'error');
+                console.error('删除模板失败:', error);
+            }
+        }
+        
+        // 清空表单
+        function clearForm() {
+            document.getElementById('templateName').value = '';
+            document.getElementById('templateDesc').value = '';
+            document.getElementById('templateSql').value = '';
+            document.getElementById('templateCategory').value = 'sales';
+            document.getElementById('isPublic').checked = false;
+        }
+        
+        // 显示消息
+        function showMessage(message, type) {
+            const msgDiv = document.getElementById('message');
+            msgDiv.className = `alert alert-${type}`;
+            msgDiv.textContent = message;
+            
+            setTimeout(() => {
+                msgDiv.className = 'alert';
+                msgDiv.textContent = '';
+            }, 3000);
+        }
+        
+        // 获取分类名称
+        function getCategoryName(category) {
+            const categories = {
+                'sales': '销售分析',
+                'inventory': '库存管理',
+                'user': '用户分析',
+                'finance': '财务报表',
+                'other': '其他'
+            };
+            return categories[category] || category;
+        }
+        
+        // HTML转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 页面加载时获取模板列表
+        window.onload = () => {
+            loadTemplates();
+        };
+    </script>
+</body>
+</html>

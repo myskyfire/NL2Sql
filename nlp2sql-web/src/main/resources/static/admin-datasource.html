@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据源管理 - NLP2SQL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f7fa; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #333; margin-bottom: 20px; }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #409eff;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #409eff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #66b1ff;
+        }
+        
+        .btn-success {
+            background: #67c23a;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #85ce61;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+        
+        .alert-success {
+            background: #f0f9ff;
+            border: 1px solid #67c23a;
+            color: #67c23a;
+        }
+        
+        .alert-error {
+            background: #fef0f0;
+            border: 1px solid #f56c6c;
+            color: #f56c6c;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        th {
+            background: #f5f7fa;
+            color: #606266;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: #f5f7fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .badge-success {
+            background: #e1f3d8;
+            color: #67c23a;
+        }
+        
+        .badge-warning {
+            background: #fdf6ec;
+            color: #e6a23c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗄️ 数据源管理</h1>
+        
+        <!-- 配置表单 -->
+        <div class="card">
+            <h2 style="margin-bottom: 20px;">添加数据源</h2>
+            <form id="configForm">
+                <div class="form-group">
+                    <label>数据源名称 *</label>
+                    <input type="text" id="name" required placeholder="例如：生产库">
+                </div>
+                
+                <div class="form-group">
+                    <label>数据库类型 *</label>
+                    <select id="dbType" required>
+                        <option value="MYSQL">MySQL</option>
+                        <option value="ORACLE">Oracle</option>
+                        <option value="DAMENG">达梦</option>
+                        <option value="POSTGRESQL">PostgreSQL</option>
+                    </select>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label>主机地址 *</label>
+                        <input type="text" id="host" required placeholder="localhost 或 IP">
+                    </div>
+                    <div class="form-group">
+                        <label>端口 *</label>
+                        <input type="number" id="port" required value="3306">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>数据库名 *</label>
+                    <input type="text" id="databaseName" required placeholder="数据库名称">
+                </div>
+                
+                <div class="form-group">
+                    <label>用户名 *</label>
+                    <input type="text" id="username" required placeholder="数据库用户名">
+                </div>
+                
+                <div class="form-group">
+                    <label>密码 *</label>
+                    <input type="password" id="password" required placeholder="数据库密码">
+                </div>
+                
+                <div class="form-group">
+                    <label>描述</label>
+                    <input type="text" id="description" placeholder="可选描述">
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button type="button" class="btn btn-primary" onclick="testConnection()">🔍 测试连接</button>
+                    <button type="submit" class="btn btn-success">💾 保存配置</button>
+                </div>
+            </form>
+            
+            <div id="message"></div>
+        </div>
+        
+        <!-- 数据源列表 -->
+        <div class="card">
+            <h2 style="margin-bottom: 20px;">已配置的数据源</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>名称</th>
+                        <th>类型</th>
+                        <th>主机</th>
+                        <th>数据库</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="datasourceList">
+                    <tr><td colspan="7" style="text-align: center;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/api/admin';
+        
+        // 页面加载时获取列表
+        window.onload = function() {
+            loadDatasourceList();
+        };
+        
+        // 测试连接
+        async function testConnection() {
+            const config = getFormData();
+            if (!config) return;
+            
+            showMessage('正在测试连接...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/datasource/test`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data.success) {
+                    showMessage('✅ 连接成功！', 'success');
+                } else {
+                    showMessage('❌ 连接失败：' + (result.message || '未知错误'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ 请求失败：' + error.message, 'error');
+            }
+        }
+        
+        // 保存配置
+        document.getElementById('configForm').onsubmit = async function(e) {
+            e.preventDefault();
+            
+            const config = getFormData();
+            if (!config) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/datasource/save`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    showMessage('✅ 配置保存成功！', 'success');
+                    loadDatasourceList();
+                    document.getElementById('configForm').reset();
+                } else {
+                    showMessage('❌ 保存失败：' + result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('❌ 请求失败：' + error.message, 'error');
+            }
+        };
+        
+        // 同步元数据
+        async function syncMetadata(datasourceId) {
+            if (!confirm('确定要同步该数据源的元数据吗？这可能需要几分钟时间。')) return;
+            
+            showMessage('正在同步元数据...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/metadata/sync/${datasourceId}?operatorId=1`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    let msg = `✅ 同步成功！\n表数量: ${data.tableCount}\n字段数量: ${data.columnCount}\n耗时: ${data.durationSeconds}秒`;
+                    alert(msg);
+                    loadDatasourceList();
+                } else {
+                    showMessage('❌ 同步失败：' + result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('❌ 请求失败：' + error.message, 'error');
+            }
+        }
+        
+        // 加载数据源列表
+        async function loadDatasourceList() {
+            try {
+                const response = await fetch(`${API_BASE}/datasource/list`);
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    renderList(result.data);
+                }
+            } catch (error) {
+                console.error('加载列表失败:', error);
+            }
+        }
+        
+        // 渲染列表
+        function renderList(datasources) {
+            const tbody = document.getElementById('datasourceList');
+            
+            if (datasources.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">暂无数据源</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = datasources.map(ds => `
+                <tr>
+                    <td>${ds.id}</td>
+                    <td>${ds.name}</td>
+                    <td><span class="badge badge-success">${ds.dbType}</span></td>
+                    <td>${ds.host}:${ds.port}</td>
+                    <td>${ds.databaseName}</td>
+                    <td><span class="badge ${ds.isActive ? 'badge-success' : 'badge-warning'}">${ds.isActive ? '启用' : '禁用'}</span></td>
+                    <td>
+                        <button class="btn btn-primary" onclick="syncMetadata(${ds.id})" style="padding: 6px 12px; font-size: 12px;">
+                            🔄 同步元数据
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        // 获取表单数据
+        function getFormData() {
+            const password = document.getElementById('password').value;
+            if (!password) {
+                showMessage('❌ 请输入密码', 'error');
+                return null;
+            }
+            
+            return {
+                name: document.getElementById('name').value,
+                dbType: document.getElementById('dbType').value,
+                host: document.getElementById('host').value,
+                port: parseInt(document.getElementById('port').value),
+                databaseName: document.getElementById('databaseName').value,
+                username: document.getElementById('username').value,
+                password: password,
+                description: document.getElementById('description').value,
+                isActive: 1
+            };
+        }
+        
+        // 显示消息
+        function showMessage(text, type) {
+            const msgDiv = document.getElementById('message');
+            msgDiv.innerHTML = `<div class="alert alert-${type === 'info' ? 'success' : type}">${text}</div>`;
+            setTimeout(() => msgDiv.innerHTML = '', 5000);
+        }
+    </script>
+</body>
+</html>

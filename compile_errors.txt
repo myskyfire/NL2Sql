@@ -1,0 +1,113 @@
+﻿[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] NLP2SQL Enterprise Agent                                           [pom]
+[INFO] nlp2sql-common                                                     [jar]
+[INFO] nlp2sql-security                                                   [jar]
+[INFO] nlp2sql-core                                                       [jar]
+[INFO] nlp2sql-conversation                                               [jar]
+[INFO] nlp2sql-audit                                                      [jar]
+[INFO] nlp2sql-web                                                        [jar]
+[INFO] 
+[INFO] -------------------------< com.nl2sql:nlp2sql >-------------------------
+[INFO] Building NLP2SQL Enterprise Agent 1.0.0                            [1/7]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ nlp2sql ---
+[INFO] 
+[INFO] ---------------------< com.nl2sql:nlp2sql-common >----------------------
+[INFO] Building nlp2sql-common 1.0.0                                      [2/7]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ nlp2sql-common ---
+[INFO] Deleting E:\work\idea workspace\NLP2Sql\nlp2sql-common\target
+[INFO] 
+[INFO] --- maven-resources-plugin:3.2.0:resources (default-resources) @ nlp2sql-common ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Using 'UTF-8' encoding to copy filtered properties files.
+[INFO] skip non existing resourceDirectory E:\work\idea workspace\NLP2Sql\nlp2sql-common\src\main\resources
+[INFO] skip non existing resourceDirectory E:\work\idea workspace\NLP2Sql\nlp2sql-common\src\main\resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.10.1:compile (default-compile) @ nlp2sql-common ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 3 source files to E:\work\idea workspace\NLP2Sql\nlp2sql-common\target\classes
+[INFO] 
+[INFO] --------------------< com.nl2sql:nlp2sql-security >---------------------
+[INFO] Building nlp2sql-security 1.0.0                                    [3/7]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ nlp2sql-security ---
+[INFO] Deleting E:\work\idea workspace\NLP2Sql\nlp2sql-security\target
+[INFO] 
+[INFO] --- maven-resources-plugin:3.2.0:resources (default-resources) @ nlp2sql-security ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Using 'UTF-8' encoding to copy filtered properties files.
+[INFO] skip non existing resourceDirectory E:\work\idea workspace\NLP2Sql\nlp2sql-security\src\main\resources
+[INFO] skip non existing resourceDirectory E:\work\idea workspace\NLP2Sql\nlp2sql-security\src\main\resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.10.1:compile (default-compile) @ nlp2sql-security ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 2 source files to E:\work\idea workspace\NLP2Sql\nlp2sql-security\target\classes
+[INFO] 
+[INFO] ----------------------< com.nl2sql:nlp2sql-core >-----------------------
+[INFO] Building nlp2sql-core 1.0.0                                        [4/7]
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact mysql:mysql-connector-java:jar:8.0.33 has been relocated to com.mysql:mysql-connector-j:jar:8.0.33
+[INFO] 
+[INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ nlp2sql-core ---
+[INFO] Deleting E:\work\idea workspace\NLP2Sql\nlp2sql-core\target
+[INFO] 
+[INFO] --- maven-resources-plugin:3.2.0:resources (default-resources) @ nlp2sql-core ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Using 'UTF-8' encoding to copy filtered properties files.
+[INFO] skip non existing resourceDirectory E:\work\idea workspace\NLP2Sql\nlp2sql-core\src\main\resources
+[INFO] skip non existing resourceDirectory E:\work\idea workspace\NLP2Sql\nlp2sql-core\src\main\resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.10.1:compile (default-compile) @ nlp2sql-core ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 50 source files to E:\work\idea workspace\NLP2Sql\nlp2sql-core\target\classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[118,9] 非法的类型开始
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[118,21] 需要<标识符>
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[124,12] 未命名类 是预览功能，默认情况下禁用。
+  （请使用 --enable-preview 以启用 未命名类）
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[206,1] 需要 class、interface、enum 或 record
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[1,1] 未命名类不应有程序包声明
+[INFO] 5 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for NLP2SQL Enterprise Agent 1.0.0:
+[INFO] 
+[INFO] NLP2SQL Enterprise Agent ........................... SUCCESS [  0.199 s]
+[INFO] nlp2sql-common ..................................... SUCCESS [  3.713 s]
+[INFO] nlp2sql-security ................................... SUCCESS [  2.299 s]
+[INFO] nlp2sql-core ....................................... FAILURE [  1.972 s]
+[INFO] nlp2sql-conversation ............................... SKIPPED
+[INFO] nlp2sql-audit ...................................... SKIPPED
+[INFO] nlp2sql-web ........................................ SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  9.619 s
+[INFO] Finished at: 2026-04-09T22:33:09+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.10.1:compile (default-compile) on project nlp2sql-core: Compilation failure: Compilation failure: 
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[118,9] 非法的类型开始
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[118,21] 需要<标识符>
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[124,12] 未命名类 是预览功能，默认情况下禁用。
+[ERROR]   （请使用 --enable-preview 以启用 未命名类）
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[206,1] 需要 class、interface、enum 或 record
+[ERROR] /E:/work/idea workspace/NLP2Sql/nlp2sql-core/src/main/java/com/nl2sql/core/rag/RagKnowledgeBaseService.java:[1,1] 未命名类不应有程序包声明
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR] 
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <goals> -rf :nlp2sql-core

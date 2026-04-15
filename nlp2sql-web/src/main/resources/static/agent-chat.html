@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 数据助手</title>
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Microsoft YaHei', Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .chat-container {
+            width: 90%;
+            max-width: 1200px;
+            height: 90vh;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* 头部 */
+        .chat-header {
+            padding: 20px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .chat-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .user-info {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        /* 消息区域 */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            background: #f8f9fa;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message.agent {
+            justify-content: flex-start;
+        }
+        
+        .message-bubble {
+            max-width: 70%;
+            padding: 14px 18px;
+            border-radius: 12px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.agent .message-bubble {
+            background: white;
+            color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            max-width: 95%;  /* 增加 Agent 消息最大宽度 */
+        }
+        
+        /* 数据表格 */
+        .data-table {
+            margin-top: 12px;
+            overflow-x: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .data-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        .data-table th, .data-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .data-table th {
+            background: #f5f7fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .data-table tr:hover {
+            background: #f9f9f9;
+        }
+        
+        /* AI 总结 */
+        .ai-summary {
+            margin-top: 12px;
+            padding: 14px;
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border-left: 4px solid #4caf50;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .ai-summary strong {
+            color: #2e7d32;
+        }
+        
+        /* 图表容器 */
+        .chart-container {
+            margin-top: 16px;
+            padding: 16px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            width: 100% !important;
+            max-width: none !important;  /* 突破 message-bubble 的 70% 限制 */
+            min-width: 600px;  /* 最小宽度保证 */
+        }
+        
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .chart-wrapper {
+            width: 100%;
+            height: 400px;
+            margin-top: 12px;
+        }
+        
+        /* 追问建议按钮 */
+        .follow-up-suggestions {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .suggestion-btn {
+            padding: 8px 14px;
+            background: white;
+            border: 1px solid #667eea;
+            color: #667eea;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        
+        .suggestion-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.3);
+        }
+        
+        /* 澄清选择 */
+        .clarification-options {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .clarification-btn {
+            padding: 12px 16px;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .clarification-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        /* 输入区域 */
+        .chat-input-area {
+            padding: 20px 24px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 12px;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 24px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+        
+        .send-btn {
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+        }
+        
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* 加载动画 */
+        .typing-indicator {
+            display: inline-flex;
+            gap: 4px;
+            padding: 8px 12px;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+        
+        /* SQL 展示 */
+        .sql-display {
+            margin-top: 12px;
+            padding: 12px;
+            background: #2d2d2d;
+            color: #f8f8f2;
+            border-radius: 6px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <!-- 头部 -->
+        <div class="chat-header">
+            <h2>🤖 AI 数据助手</h2>
+            <div class="user-info" id="userInfo">加载中...</div>
+        </div>
+        
+        <!-- 消息区域 -->
+        <div class="chat-messages" id="chatMessages">
+            <div class="message agent">
+                <div class="message-bubble">
+                    👋 你好！我是你的 AI 数据助手。<br><br>
+                    你可以用自然语言问我任何数据问题，例如：<br>
+                    • "帮我查最近7天的订单"<br>
+                    • "统计每个地区的销售额"<br>
+                    • "查看用户增长趋势"<br><br>
+                    我会自动执行查询、生成图表并给出分析总结。
+                </div>
+            </div>
+        </div>
+        
+        <!-- 输入区域 -->
+        <div class="chat-input-area">
+            <input type="text" class="chat-input" id="chatInput" 
+                   placeholder="输入你的问题..." 
+                   onkeypress="if(event.key==='Enter') sendMessage()">
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+        let sessionId = 'session_' + Date.now();
+        let currentContext = null;  // 当前会话上下文
+        let pendingDatasourceId = null;  // 待确认的数据源ID（用于智能推荐）
+        let pendingQuery = null;  // ✅ 待执行的原始查询（数据源澄清时保存）
+        let isRelationshipClarifying = false;  // 是否处于关联关系澄清状态
+        
+        // 初始化
+        window.onload = function() {
+            document.getElementById('userInfo').textContent = `当前用户: ${userInfo.username || '未知'}`;
+            document.getElementById('chatInput').focus();
+        };
+        
+        // 发送消息
+        async function sendMessage(customMessage = null) {
+            const input = document.getElementById('chatInput');
+            const message = customMessage || input.value.trim();
+            
+            if (!message) return;
+            
+            // 显示用户消息
+            addMessage(message, 'user');
+            input.value = '';
+            
+            // 显示加载动画
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        sessionId: sessionId,
+                        datasourceId: currentContext?.datasourceId || null  // ✅ 传递当前上下文中的数据源ID
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message || '请求失败'}`, 'agent');
+                }
+                
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 处理 Agent 响应
+        async function handleAgentResponse(data) {
+            console.log('[Agent响应] 完整数据:', data);
+            console.log('[Agent响应] status:', data.status);
+            console.log('[Agent响应] message:', data.message);
+            console.log('[Agent响应] clarificationType:', data.clarificationType);
+            
+            // ⚠️ 重要：保留原有的 sql/generatedSQL，只更新其他字段
+            const preservedFields = ['sql', 'generatedSQL'];
+            const preservedData = {};
+            preservedFields.forEach(field => {
+                if (currentContext && currentContext[field]) {
+                    preservedData[field] = currentContext[field];
+                }
+            });
+            
+            currentContext = { ...data, ...preservedData };
+            
+            // 如果响应中包含 datasourceId，保存到上下文
+            if (data.datasourceId) {
+                currentContext.datasourceId = data.datasourceId;
+            }
+            
+            // 保存最后一次的查询问题（用于AI总结等场景）
+            const lastUserMessage = document.querySelector('.message.user:last-child .message-bubble');
+            if (lastUserMessage) {
+                currentContext.lastQuery = lastUserMessage.textContent.trim();
+            }
+            
+            // ✅ 兼容 forceExecuteQuery 返回的格式（有 success 但没有 status）
+            if (!data.status && data.success !== undefined) {
+                data.status = data.success ? 'success' : 'error';
+                if (data.error && !data.message) {
+                    data.message = data.error;
+                }
+            }
+            
+            switch(data.status) {
+                case 'sql_generated':
+                    handleSQLGenerated(data);
+                    break;
+                    
+                case 'success':
+                    await handleQuerySuccess(data);
+                    break;
+                    
+                case 'clarification_needed':
+                    handleClarification(data);
+                    break;
+                    
+                case 'chart_generated':
+                    handleChartGenerated(data);
+                    break;
+                    
+                case 'error':
+                    addMessage(`❌ ${data.error}`, 'agent');
+                    break;
+                    
+                default:
+                    console.warn('[Agent响应] 未知状态:', data.status);
+                    addMessage(data.agentReply || data.message || '未知响应', 'agent');
+            }
+        }
+        
+        // 处理 SQL 生成完成
+        function handleSQLGenerated(data) {
+            let html = '';
+            
+            // 显示 SQL
+            if (data.generatedSQL || data.sql) {
+                const sqlToDisplay = data.generatedSQL || data.sql;
+                html += `<div class="sql-display"><strong>📝 生成的 SQL:</strong><br>${escapeHtml(sqlToDisplay)}</div>`;
+            }
+            
+            if (data.followUpSuggestions && data.followUpSuggestions.length > 0) {
+                console.log('[SQL生成-追问建议] 数据结构:', data.followUpSuggestions);
+                html += '<div class="follow-up-suggestions">';
+                data.followUpSuggestions.forEach((suggestion, index) => {
+                    console.log('[SQL生成-追问建议] 第' + index + '个:', suggestion);
+                    // 存储追问数据到全局变量
+                    window.suggestionData = window.suggestionData || {};
+                    
+                    // 兼容两种格式：对象数组和字符串数组
+                    let suggestionObj;
+                    let buttonText;
+                    
+                    if (typeof suggestion === 'string') {
+                        // 字符串数组格式
+                        suggestionObj = { text: suggestion, action: 'default' };
+                        buttonText = suggestion;
+                    } else {
+                        // 对象数组格式
+                        suggestionObj = suggestion;
+                        buttonText = suggestion.text || suggestion;
+                    }
+                    
+                    window.suggestionData[index] = suggestionObj;
+                    html += `<button class="suggestion-btn" onclick="handleSuggestionClick(${index})">${escapeHtml(buttonText)}</button>`;
+                });
+                html += '</div>';
+            }
+            
+            addMessage(html, 'agent');
+        }
+        
+        // 处理查询成功
+        async function handleQuerySuccess(data) {
+            let html = '';
+            
+            // 情况1：AI总结结果（有 summary 但没有 data）
+            if (data.summary && !data.data) {
+                console.log('[AI总结] 检测到 summary:', data.summary);
+                const formattedSummary = formatAISummary(data.summary);
+                html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
+                addMessage(html, 'agent');
+                return;
+            }
+            
+            // 情况2：普通查询结果（有 data 字段）
+            // 显示 SQL
+            if (data.generatedSQL || data.sql) {
+                const sqlToDisplay = data.generatedSQL || data.sql;
+                html += `<div class="sql-display"><strong>📝 执行的 SQL:</strong><br>${escapeHtml(sqlToDisplay)}</div>`;
+            }
+            
+            // ✅ 显示数据表格（await异步渲染）
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                html += await renderDataTable(data.data);
+                html += `<div style="margin-top:8px;font-size:13px;color:#666;">✅ 共 ${data.rowCount || data.data.length} 条记录，耗时 ${(data.executionTime || 0).toFixed(2)}秒</div>`;
+            } else if (data.data && Array.isArray(data.data) && data.data.length === 0) {
+                // 查询成功但没有数据
+                html += '<div style="margin-top:12px;padding:16px;background:#f5f7fa;border-radius:6px;text-align:center;color:#999;">📭 未查到数据</div>';
+            }
+            
+            // 显示 AI 总结
+            if (data.aiSummary) {
+                const formattedSummary = formatAISummary(data.aiSummary);
+                html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
+            }
+            
+            // 显示图表推荐
+            if (data.chartRecommendation) {
+                html += `<div class="ai-summary" style="background:linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);border-left-color:#2196f3;"><strong>📊 图表推荐:</strong><br>${escapeHtml(data.chartRecommendation)}</div>`;
+                
+                // 解析推荐的图表类型，动态生成按钮
+                const chartTypes = parseRecommendedChartTypes(data.chartRecommendation);
+                if (chartTypes.length > 0) {
+                    html += '<div class="follow-up-suggestions">';
+                    chartTypes.forEach(chartType => {
+                        const typeConfig = getChartTypeConfig(chartType);
+                        html += `<button class="suggestion-btn" onclick="generateChartWithType('${chartType}')">${typeConfig.icon} ${typeConfig.name}</button>`;
+                    });
+                    html += '</div>';
+                }
+            }
+            
+            // ✅ 显示智能追问建议（由后端根据数据特征动态生成）
+            if (data.followUpSuggestions && data.followUpSuggestions.length > 0) {
+                console.log('[追问建议] 数据结构:', data.followUpSuggestions);
+                html += '<div class="follow-up-suggestions">';
+                data.followUpSuggestions.forEach((suggestion, index) => {
+                    console.log('[追问建议] 第' + index + '个:', suggestion);
+                    // 存储追问数据到全局变量
+                    window.suggestionData = window.suggestionData || {};
+                    
+                    // 兼容两种格式：对象数组和字符串数组
+                    let suggestionObj;
+                    let buttonText;
+                    
+                    if (typeof suggestion === 'string') {
+                        // 字符串数组格式
+                        suggestionObj = { text: suggestion, action: 'default' };
+                        buttonText = suggestion;
+                    } else {
+                        // 对象数组格式
+                        suggestionObj = suggestion;
+                        buttonText = suggestion.text || suggestion;
+                    }
+                    
+                    window.suggestionData[index] = suggestionObj;
+                    html += `<button class="suggestion-btn" onclick="handleSuggestionClick(${index})">${escapeHtml(buttonText)}</button>`;
+                });
+                html += '</div>';
+            }
+            
+            // ✅ 关键修复：只调用一次 addMessage
+            addMessage(html, 'agent');
+            
+            // 如果需要自动下载
+            if (data.autoDownload && data.data) {
+                setTimeout(() => {
+                    downloadExcel(data.data, 'query_result.xlsx');
+                }, 500);
+            }
+        }
+        
+        // 处理澄清需求
+        function handleClarification(data) {
+            // ✅ 关键修复：保存原始查询问题（用于数据源澄清后重新发送）
+            const lastUserMsg = document.querySelector('.message.user:last-child .message-bubble');
+            if (lastUserMsg && data.clarificationType && data.clarificationType.startsWith('datasource_')) {
+                pendingQuery = lastUserMsg.textContent.trim();
+                console.log('[handleClarification] 保存原始问题:', pendingQuery);
+            }
+            
+            let html = `<div>${data.message}</div>`;
+            
+            // 通用澄清（LLM无法理解或需要更多信息）
+            if (data.clarificationType === 'general_clarification') {
+                // 直接显示消息，不需要按钮
+                addMessage(html, 'agent');
+                return;
+            }
+            
+            // 数据源推荐（智能匹配）
+            if (data.clarificationType === 'datasource_recommendation') {
+                // ✅ 如果已自动执行，不显示确认按钮
+                if (data.autoExecuted) {
+                    console.log('[数据源推荐] 已自动执行，跳过确认按钮');
+                    addMessage(html, 'agent');
+                    return;
+                }
+                
+                // 保存推荐的数据源ID
+                pendingDatasourceId = data.recommendedDatasourceId || null;
+                
+                // 添加确认按钮
+                html += '<div class="clarification-options">';
+                html += `<button class="clarification-btn" onclick="confirmDatasource(true)">
+                    ✅ 是的，使用这个数据源
+                </button>`;
+                html += `<button class="clarification-btn" onclick="showAllDatasources()">
+                    ❌ 不，我要选择其他数据源
+                </button>`;
+                html += '</div>';
+            }
+            // 数据源确认（LLM生成的确认问句）
+            else if (data.clarificationType === 'datasource_confirmation') {
+                // 尝试从上下文中获取 datasourceId
+                const dsId = currentContext && currentContext.datasourceId ? currentContext.datasourceId : pendingDatasourceId;
+                
+                if (dsId) {
+                    // 有 datasourceId，显示确认按钮
+                    html += '<div class="clarification-options">';
+                    html += `<button class="clarification-btn" onclick="confirmDatasource(true)">
+                        ✅ 是的，继续查询
+                    </button>`;
+                    html += `<button class="clarification-btn" onclick="showAllDatasources()">
+                        ❌ 不，我要更换数据源
+                    </button>`;
+                    html += '</div>';
+                } else {
+                    // 没有 datasourceId，先获取数据源列表
+                    html += '<div class="clarification-options">';
+                    html += `<button class="clarification-btn" onclick="showAllDatasources()">
+                        📋 查看可用数据源
+                    </button>`;
+                    html += '</div>';
+                }
+            }
+            // 数据源选择（列出所有）
+            else if (data.clarificationType === 'datasource_selection' && data.availableDatasources) {
+                html += '<div class="clarification-options">';
+                data.availableDatasources.forEach(ds => {
+                    html += `<button class="clarification-btn" onclick="selectDatasource(${ds.id}, '${escapeHtml(ds.name)}')">
+                        📊 ${escapeHtml(ds.name)} (${escapeHtml(ds.db_type)}) - ${escapeHtml(ds.database_name)}
+                    </button>`;
+                });
+                html += '</div>';
+            }
+            // 表关联关系澄清
+            else if (data.clarificationType === 'relationship_clarification') {
+                // 标记当前处于关联关系澄清状态
+                isRelationshipClarifying = true;
+                
+                // 添加输入框让用户回答
+                html += '<div style="margin-top:15px;">';
+                html += '<input type="text" id="relationshipAnswer" placeholder="例如：订单表通过user_id关联用户地址表" ';
+                html += 'style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;" />';
+                html += '<button class="clarification-btn" onclick="submitRelationshipAnswer()" ';
+                html += 'style="margin-top:10px;width:100%;">✅ 提交答案</button>';
+                html += '</div>';
+            }
+            
+            addMessage(html, 'agent');
+        }
+        
+        // 处理建议按钮点击
+        function handleSuggestionClick(index) {
+            console.log('[追问点击] index:', index, '数据:', window.suggestionData && window.suggestionData[index]);
+            
+            const suggestion = window.suggestionData && window.suggestionData[index];
+            if (!suggestion) {
+                console.error('追问数据不存在');
+                return;
+            }
+            
+            const text = suggestion.text;
+            const action = suggestion.action;
+            
+            console.log('[追问点击] text:', text, 'action:', action);
+            
+            // 根据 action 执行对应操作
+            switch(action) {
+                case 'export_excel':
+                    // 下载数据 - 显示用户消息
+                    addMessage(text, 'user');
+                    showTypingIndicator();
+                    if (currentContext && currentContext.data) {
+                        downloadExcel(currentContext.data, 'query_result.xlsx');
+                        addMessage('✅ 已开始下载', 'agent');
+                    }
+                    removeTypingIndicator();
+                    break;
+                    
+                case 'generate_summary':
+                    // AI 总结 - 不显示追问文本，直接显示加载状态
+                    showTypingIndicator();
+                    generateAISummary();
+                    break;
+                    
+                case 'generate_chart':
+                    // 生成图表 - 不显示追问文本，直接显示加载状态
+                    showTypingIndicator();
+                    if (suggestion.suggestedCharts) {
+                        // 如果有推荐的图表类型，显示选择按钮
+                        renderChartSelectionButtons(suggestion.suggestedCharts);
+                    } else {
+                        generateChart();
+                    }
+                    break;
+                    
+                default:
+                    // 其他情况，直接发送文本
+                    addMessage(text, 'user');
+                    showTypingIndicator();
+                    sendMessage(text);
+            }
+        }
+        
+        // 提交关联关系答案
+        async function submitRelationshipAnswer() {
+            const answerInput = document.getElementById('relationshipAnswer');
+            const answer = answerInput.value.trim();
+            
+            if (!answer) {
+                alert('请输入关联关系说明');
+                return;
+            }
+            
+            // 显示用户回答
+            addMessage(answer, 'user');
+            showTypingIndicator();
+            
+            // 重置状态
+            isRelationshipClarifying = false;
+            
+            try {
+                // 发送回答，带上之前的 datasourceId
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: answer,
+                        sessionId: sessionId,
+                        datasourceId: currentContext ? currentContext.datasourceId : null
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message || '请求失败'}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 执行上次的 SQL
+        async function executeLastSQL() {
+            if (!currentContext || !currentContext.generatedSQL) {
+                addMessage('❌ 没有可执行的SQL', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: '执行SQL',
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 执行失败: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 生成图表
+        async function generateChart() {
+            if (!currentContext || !currentContext.data || currentContext.data.length === 0) {
+                addMessage('❌ 没有可生成图表的数据', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: '生成图表',
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message || '请求失败'}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 生成 AI 总结
+        async function generateAISummary() {
+            console.log('[AI总结] currentContext:', currentContext);
+            console.log('[AI总结] datasourceId:', currentContext.datasourceId);
+            console.log('[AI总结] sql:', currentContext.sql);
+            
+            if (!currentContext || !currentContext.datasourceId) {
+                addMessage('❌ 缺少数据源信息，请重新执行查询', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            if (!currentContext.sql && !currentContext.generatedSQL) {
+                addMessage('❌ 缺少 SQL 信息，请重新执行查询', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            try {
+                // 发送结构化意图，让 Agent 自主决策
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: `[INTENT:AI_SUMMARY] 请对以下查询结果进行AI分析总结`,
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId,
+                        // 传递 context，Controller 会将其拼接到消息中
+                        context: {
+                            lastQuery: currentContext.lastQuery,
+                            generatedSQL: currentContext.sql || currentContext.generatedSQL
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message || '请求失败'}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 渲染图表选择按钮
+        function renderChartSelectionButtons(suggestedChartsStr) {
+            if (!suggestedChartsStr) {
+                generateChart();
+                return;
+            }
+            
+            const chartTypes = suggestedChartsStr.split(',').map(t => t.trim());
+            let html = '<div class="follow-up-suggestions">';
+            
+            chartTypes.forEach(chartType => {
+                const typeConfig = getChartTypeConfig(chartType);
+                html += `<button class="suggestion-btn" onclick="generateChartWithType('${typeConfig.type}')">${typeConfig.icon} ${typeConfig.name}</button>`;
+            });
+            
+            html += '</div>';
+            addMessage(html, 'agent');
+            removeTypingIndicator();
+        }
+        
+        // 生成指定类型的图表
+        async function generateChartWithType(chartType) {
+            console.log('[生成图表] currentContext:', currentContext);
+            console.log('[生成图表] currentContext keys:', Object.keys(currentContext || {}));
+            console.log('[生成图表] datasourceId:', currentContext?.datasourceId);
+            console.log('[生成图表] sql:', currentContext?.sql);
+            console.log('[生成图表] generatedSQL:', currentContext?.generatedSQL);
+            
+            if (!currentContext || !currentContext.datasourceId) {
+                addMessage('❌ 缺少数据源信息，请重新执行查询', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            if (!currentContext.sql && !currentContext.generatedSQL) {
+                addMessage('❌ 缺少 SQL 信息，请重新执行查询', 'agent');
+                removeTypingIndicator();
+                return;
+            }
+            
+            const typeNames = {
+                'bar': '柱状图',
+                'line': '折线图',
+                'pie': '饼图',
+                'area': '面积图'
+            };
+            
+            const typeName = typeNames[chartType] || '图表';
+            addMessage(`📊 生成${typeName}`, 'user');
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: `[INTENT:GENERATE_CHART] 请生成${typeName}`,
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId,
+                        // 传递 context，Controller 会将其拼接到消息中
+                        context: {
+                            chartType: chartType,
+                            generatedSQL: currentContext.sql || currentContext.generatedSQL
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message || '请求失败'}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 解析推荐的图表类型
+        function parseRecommendedChartTypes(recommendationText) {
+            const chartTypes = [];
+            const lines = recommendationText.split('\n');
+            
+            for (const line of lines) {
+                // 匹配格式："1. LINE - 趋势分析"
+                const match = line.match(/\d+\.\s*(\w+)\s*-/);
+                if (match) {
+                    const type = match[1].toLowerCase();
+                    // 只保留支持的图表类型
+                    if (['bar', 'line', 'pie', 'area'].includes(type)) {
+                        chartTypes.push(type);
+                    }
+                }
+            }
+            
+            return chartTypes;
+        }
+        
+        // 获取图表类型配置
+        function getChartTypeConfig(chartType) {
+            const configs = {
+                'bar': { type: 'bar', icon: '📊', name: '柱状图' },
+                'line': { type: 'line', icon: '📈', name: '折线图' },
+                'pie': { type: 'pie', icon: '🥧', name: '饼图' },
+                'area': { type: 'area', icon: '📉', name: '面积图' }
+            };
+            return configs[chartType] || { type: chartType, icon: '📊', name: chartType };
+        }
+        
+        // 选择数据源
+        function selectDatasource(datasourceId, datasourceName) {
+            addMessage(`我选择了: ${datasourceName}`, 'user');
+            showTypingIndicator();
+            
+            // ✅ 关键修复：先更新 currentContext.datasourceId
+            if (!currentContext) {
+                currentContext = {};
+            }
+            currentContext.datasourceId = datasourceId;
+            
+            // 重新发送最后一条用户消息，并带上数据源ID
+            setTimeout(() => {
+                // ✅ 使用保存的原始问题，而非"我选择了: XXX"
+                const queryToSend = pendingQuery || (currentContext.lastQuery);
+                console.log('[selectDatasource] 发送原始问题:', queryToSend);
+                
+                if (queryToSend) {
+                    sendMessagewithDatasource(queryToSend, datasourceId);
+                    pendingQuery = null;  // 清空待发送的问题
+                } else {
+                    console.error('[selectDatasource] 未找到原始问题');
+                    addMessage('❌ 错误：无法获取原始查询', 'agent');
+                    removeTypingIndicator();
+                }
+            }, 500);
+        }
+        
+        // 确认使用推荐的数据源
+        async function confirmDatasource(confirmed) {
+            if (confirmed && pendingDatasourceId) {
+                addMessage('✅ 是的，使用这个数据源', 'user');
+                showTypingIndicator();
+                
+                // ✅ 关键修复：先更新 currentContext.datasourceId
+                if (!currentContext) {
+                    currentContext = {};
+                }
+                currentContext.datasourceId = pendingDatasourceId;
+                
+                // 重新发送最后一条用户消息，并携带数据源ID
+                setTimeout(() => {
+                    // ✅ 使用保存的原始问题，而非"我选择了: XXX"
+                    const queryToSend = pendingQuery || (currentContext.lastQuery);
+                    console.log('[confirmDatasource] 发送原始问题:', queryToSend);
+                    
+                    if (queryToSend) {
+                        sendMessagewithDatasource(queryToSend, pendingDatasourceId);
+                        pendingQuery = null;  // 清空待发送的问题
+                        pendingDatasourceId = null;  // 清空待确认的ID
+                    } else {
+                        console.error('[confirmDatasource] 未找到原始问题');
+                        addMessage('❌ 错误：无法获取原始查询', 'agent');
+                        removeTypingIndicator();
+                    }
+                }, 500);
+            }
+        }
+        
+        // 显示所有数据源
+        async function showAllDatasources() {
+            addMessage('❌ 不，我要选择其他数据源', 'user');
+            showTypingIndicator();
+            
+            // 发送特殊指令获取所有数据源
+            setTimeout(() => {
+                sendMessage('列出所有数据源');
+            }, 500);
+        }
+        
+        // 发送消息并指定数据源
+        async function sendMessagewithDatasource(message, datasourceId) {
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        sessionId: sessionId,
+                        datasourceId: datasourceId
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message || '请求失败'}`, 'agent');
+                }
+                
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 渲染数据表格
+        async function renderDataTable(data) {
+            if (!data || !Array.isArray(data) || data.length === 0) return '';
+            
+            const columns = Object.keys(data[0]);
+            
+            // 检测是否有英文列名需要翻译
+            const englishColumns = columns.filter(col => col && !/[\u4e00-\u9fa5]/.test(col));
+            
+            let columnTranslations = {};
+            if (englishColumns.length > 0) {
+                try {
+                    // 调用后端LLM翻译
+                    const response = await fetch('/api/translate/column-names', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(englishColumns)
+                    });
+                    const result = await response.json();
+                    if (result.code === 200) {
+                        columnTranslations = result.data;
+                    }
+                } catch (error) {
+                    console.warn('翻译失败，使用默认格式化:', error);
+                }
+            }
+            
+            let html = '<div class="data-table"><table><thead><tr>';
+            
+            columns.forEach(col => {
+                // 优先使用翻译结果，否则使用通用格式化
+                const displayName = columnTranslations[col] || translateColumnName(col);
+                html += `<th>${escapeHtml(displayName)}</th>`;
+            });
+            
+            html += '</tr></thead><tbody>';
+            
+            data.slice(0, 50).forEach(row => {
+                html += '<tr>';
+                columns.forEach(col => {
+                    const value = row[col];
+                    let displayValue;
+                    if (value === null || value === undefined) {
+                        displayValue = '<em style="color:#999;">NULL</em>';
+                    } else {
+                        displayValue = escapeHtml(String(value));
+                    }
+                    html += `<td>${displayValue}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div>';
+            
+            if (data.length > 50) {
+                html += `<div style="margin-top:8px;font-size:13px;color:#999;">仅显示前50条，共${data.length}条</div>`;
+            }
+            
+            return html;
+        }
+        
+        // 智能翻译列名（通用规则，不依赖业务字段）
+        function translateColumnName(colName) {
+            if (!colName) return colName;
+            
+            // 如果包含中文，直接返回
+            if (/[\u4e00-\u9fa5]/.test(colName)) {
+                return colName;
+            }
+            
+            // 尝试将下划线/驼峰命名转换为更易读的形式
+            // total_amount -> Total Amount
+            // createdAt -> Created At
+            let readable = colName
+                .replace(/_/g, ' ')  // 下划线转空格
+                .replace(/([a-z])([A-Z])/g, '$1 $2');  // 驼峰转空格
+            
+            // 首字母大写
+            readable = readable.replace(/\b\w/g, l => l.toUpperCase());
+            
+            // 如果转换后和原样差别不大，保持原样
+            if (readable.toLowerCase() === colName.toLowerCase()) {
+                return colName;
+            }
+            
+            return readable;
+        }
+        
+        // 下载 Excel
+        function downloadExcel(data, filename) {
+            if (!data || data.length === 0) {
+                addMessage('❌ 没有数据可下载', 'agent');
+                return;
+            }
+            
+            // 构造 CSV
+            const columns = Object.keys(data[0]);
+            let csv = columns.join(',') + '\n';
+            
+            data.forEach(row => {
+                const values = columns.map(col => {
+                    const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
+                    return `"${String(value).replace(/"/g, '""')}"`;
+                });
+                csv += values.join(',') + '\n';
+            });
+            
+            // 创建下载链接
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+            
+            addMessage(`✅ 已下载 ${filename}`, 'agent');
+        }
+        
+        // 添加消息
+        function addMessage(content, type) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        // 显示加载动画
+        function showTypingIndicator() {
+            const messagesDiv = document.getElementById('chatMessages');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message agent';
+            typingDiv.id = 'typingIndicator';
+            typingDiv.innerHTML = `
+                <div class="message-bubble">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            `;
+            messagesDiv.appendChild(typingDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            document.getElementById('sendBtn').disabled = true;
+        }
+        
+        // 移除加载动画
+        function removeTypingIndicator() {
+            const typingIndicator = document.getElementById('typingIndicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+            document.getElementById('sendBtn').disabled = false;
+        }
+        
+        // HTML 转义
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 格式化 AI 总结（将 Markdown 转换为 HTML）
+        function formatAISummary(text) {
+            if (!text) return '';
+            
+            let formatted = escapeHtml(text);
+            
+            // 0. 在数字列表前添加换行（处理没有换行符的情况）
+            // 匹配 "数字. " 或 "数字.**" 的模式，在前面添加换行
+            formatted = formatted.replace(/(\s)(\d+\.\s+\*\*)/g, '$1<br>$2');
+            formatted = formatted.replace(/(\s)(\d+\.\s+[\u4e00-\u9fa5])/g, '$1<br>$2');
+            
+            // 1. 处理加粗：**text** → <strong>text</strong>
+            formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            
+            // 2. 处理数字列表：1. text → <div style="margin:8px 0;"><strong>1.</strong> text</div>
+            formatted = formatted.replace(/(\d+)\.\s+(.+?)(?=<br>\d+\.|$)/g, (match, num, content) => {
+                return `<div style="margin:10px 0;padding-left:8px;"><strong>${num}.</strong> ${content.trim()}</div>`;
+            });
+            
+            // 3. 处理破折号列表：- text → <div style="margin:5px 0;padding-left:20px;">• text</div>
+            formatted = formatted.replace(/[-•]\s+(.+?)(?=<br>[-•]|<br>|$)/g, (match, content) => {
+                return `<div style="margin:5px 0;padding-left:24px;">• ${content.trim()}</div>`;
+            });
+            
+            // 4. 处理换行符
+            formatted = formatted.replace(/\n/g, '<br>');
+            
+            return formatted;
+        }
+        
+        // 处理图表生成
+        function handleChartGenerated(data) {
+            let html = '<div class="chart-container">';
+            html += `<div class="chart-title">📊 ${escapeHtml(data.chartType || '图表')}</div>`;
+            html += `<div id="chart_${Date.now()}" class="chart-wrapper"></div>`;
+            html += '</div>';
+            
+            addMessage(html, 'agent');
+            
+            // 渲染 ECharts
+            setTimeout(() => {
+                try {
+                    // 解析 JSON 配置
+                    const chartConfig = typeof data.echartsConfig === 'string' 
+                        ? JSON.parse(data.echartsConfig) 
+                        : data.echartsConfig;
+                    
+                    // 获取最后一个图表容器
+                    const chartDivs = document.querySelectorAll('.chart-wrapper');
+                    const lastChartDiv = chartDivs[chartDivs.length - 1];
+                    
+                    if (lastChartDiv && window.echarts) {
+                        renderECharts(lastChartDiv, chartConfig);
+                    } else {
+                        console.error('ECharts 未加载或容器不存在');
+                    }
+                } catch (e) {
+                    console.error('图表渲染失败:', e);
+                    addMessage(`❌ 图表渲染失败: ${e.message}`, 'agent');
+                }
+            }, 100);
+        }
+        
+        // 渲染 ECharts
+        function renderECharts(container, config) {
+            const chart = echarts.init(container);
+            
+            // 根据配置类型构建 ECharts option
+            let option;
+            
+            if (config.type === 'bar') {
+                option = buildBarChartOption(config);
+            } else if (config.type === 'line') {
+                option = buildLineChartOption(config);
+            } else if (config.type === 'pie') {
+                option = buildPieChartOption(config);
+            } else if (config.type === 'area') {
+                option = buildAreaChartOption(config);
+            } else {
+                // 默认柱状图
+                option = buildBarChartOption(config);
+            }
+            
+            chart.setOption(option);
+            
+            // 响应式
+            window.addEventListener('resize', () => {
+                chart.resize();
+            });
+        }
+        
+        // 构建柱状图配置
+        function buildBarChartOption(config) {
+            return {
+                title: {
+                    text: config.title || '柱状图',
+                    left: 'center',
+                    textStyle: { fontSize: 16 }
+                },
+                tooltip: { trigger: 'axis' },
+                xAxis: {
+                    type: 'category',
+                    data: config.categories || [],
+                    axisLabel: { rotate: 45 }
+                },
+                yAxis: { type: 'value' },
+                series: [{
+                    type: 'bar',
+                    data: config.values || [],
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#667eea' },
+                            { offset: 1, color: '#764ba2' }
+                        ])
+                    }
+                }]
+            };
+        }
+        
+        // 构建折线图配置
+        function buildLineChartOption(config) {
+            return {
+                title: {
+                    text: config.title || '折线图',
+                    left: 'center',
+                    textStyle: { fontSize: 16 }
+                },
+                tooltip: { trigger: 'axis' },
+                xAxis: {
+                    type: 'category',
+                    data: config.categories || [],
+                    axisLabel: { rotate: 45 }
+                },
+                yAxis: { type: 'value' },
+                series: [{
+                    type: 'line',
+                    data: config.values || [],
+                    smooth: config.smooth !== false,
+                    lineStyle: { color: '#667eea', width: 3 },
+                    areaStyle: config.type === 'area' ? {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(102,126,234,0.3)' },
+                            { offset: 1, color: 'rgba(102,126,234,0.05)' }
+                        ])
+                    } : null,
+                    itemStyle: { color: '#667eea' }
+                }]
+            };
+        }
+        
+        // 构建面积图配置（复用折线图）
+        function buildAreaChartOption(config) {
+            return buildLineChartOption(config);
+        }
+        
+        // 构建饼图配置
+        function buildPieChartOption(config) {
+            return {
+                title: {
+                    text: config.title || '饼图',
+                    left: 'center',
+                    textStyle: { fontSize: 16 }
+                },
+                tooltip: { trigger: 'item' },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left'
+                },
+                series: [{
+                    type: 'pie',
+                    radius: '60%',
+                    data: config.data || [],
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowOffsetX: 0,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    },
+                    label: { show: true, formatter: '{b}: {c}' }
+                }]
+            };
+        }
+        
+        // ✅ 暴露函数到全局作用域（供 onclick 调用）
+        window.sendMessage = sendMessage;
+        window.handleSuggestionClick = handleSuggestionClick;
+        window.generateChartWithType = generateChartWithType;
+        window.selectDatasource = selectDatasource;
+        window.confirmDatasource = confirmDatasource;
+        window.showAllDatasources = showAllDatasources;
+        window.submitRelationshipAnswer = submitRelationshipAnswer;
+    </script>
+</body>
+</html>
