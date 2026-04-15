@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <!-- 控制台输出 -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -23,6 +23,7 @@
     
     <!-- 日志级别 -->
     <logger name="com.nl2sql" level="INFO"/>
+    <logger name="com.nl2sql.core.agent.skills.SkillsMetadataLoader" level="DEBUG"/>
     <logger name="org.springframework.jdbc.core" level="DEBUG"/>
     
     <!-- Root Logger -->

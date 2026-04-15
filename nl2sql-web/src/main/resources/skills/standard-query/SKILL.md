@@ -1,4 +1,4 @@
-﻿---
+---
 name: execute_standard_query
 displayName: 标准查询技能
 description: 执行完整的数据查询流程，包括表结构检索、SQL生成、风险评估、执行和自动修正。适用于用户有明确数据查询需求的场景。
@@ -82,7 +82,7 @@ Skill 内置三层风险评估：
 ```json
 {
   "status": "success",
-  "data": [...],
+  "data": [],
   "rowCount": 10,
   "executionTime": 125.5,
   "sql": "SELECT ..."

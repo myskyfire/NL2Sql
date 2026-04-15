@@ -1,4 +1,4 @@
-﻿---
+---
 name: generate_report_with_insights
 displayName: 报表与洞察技能
 description: 在标准查询基础上，增加AI智能总结和图表推荐，生成完整的分析报告。适用于用户需要深度分析、趋势洞察或综合报告的场景。
@@ -66,7 +66,7 @@ Step 3: 推荐合适的图表类型 (ChartRecommendationTool)
 ```json
 {
   "status": "success",
-  "data": [...],
+  "data": [],
   "rowCount": 50,
   "executionTime": 250.8,
   "sql": "SELECT ...",

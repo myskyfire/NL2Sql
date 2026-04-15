@@ -164,14 +164,16 @@ public class SkillsMetadataLoader {
             boolean inFrontmatter = false;
             StringBuilder frontmatterBuilder = new StringBuilder();
             int lineCount = 0;
-            
+
             while ((line = reader.readLine()) != null) {
                 lineCount++;
                 
                 // 检测 frontmatter 边界
-                if (line.trim().equals("---")) {
-                    if (lineCount == 1) {
-                        // 开始的 ---
+                String trimmedLine = line.trim();
+                
+                if (trimmedLine.equals("---")) {
+                    if (!inFrontmatter && lineCount <= 5) {
+                        // 开始的 --- (允许前几行有空行或BOM)
                         inFrontmatter = true;
                         continue;
                     } else if (inFrontmatter) {
