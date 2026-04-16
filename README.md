@@ -307,6 +307,162 @@ java -jar nl2sql-web-1.0.0.jar
 | **日志** | Logback + Logstash | 7.4 | JSON结构化日志 |
 | **前端** | HTML5 + CSS3 + JS | - | 用户界面 |
 
+### 🤖 LLM多提供者架构
+
+#### 设计理念
+
+借鉴LangChain/LangChain4j的设计思路，为多种企业内部部署的LLM提供统一适配层，实现：
+- **配置驱动**: 通过修改配置文件即可切换LLM后端，无需改代码
+- **故障转移**: 支持优先级列表，主LLM不可用时自动降级
+- **企业级安全**: 仅支持内部私有化部署，不依赖公有云API
+
+#### 支持的LLM提供者
+
+| 提供者 | 部署方式 | 状态 | 适用场景 |
+|--------|---------|------|----------|
+| **Ollama** | 本地/内网服务器 | ✅ 默认启用 | 开发测试、小团队 |
+| **ChatGLM** | 企业内部服务器 | 🔧 预留 | 中大型企业 |
+| **Qwen** | 阿里云私有化部署 | 🔧 预留 | 阿里生态企业 |
+| **Baichuan** | 企业内部服务器 | 🔧 预留 | 百川生态企业 |
+
+#### 配置示例
+
+```yaml
+# application.yml
+llm:
+  # 活跃的提供者名称
+  active-provider: ollama
+  
+  # 提供者优先级列表（用于自动故障转移）
+  provider-priority:
+    - ollama
+    - chatglm
+    - qwen
+  
+  # Ollama配置
+  ollama:
+    enabled: true
+    base-url: http://localhost:11434
+    code-model: qwen2.5-coder:7b-instruct-q4_0
+    nlp-model: qwen3:8b
+    timeout: 60
+  
+  # ChatGLM配置（企业内部部署）
+  chatglm:
+    enabled: false
+    base-url: http://chatglm.internal.company.com:8000
+    model: chatglm3-6b
+    api-key: ${CHATGLM_API_KEY:}
+    timeout: 60
+  
+  # Qwen配置（阿里云私有化部署）
+  qwen:
+    enabled: false
+    base-url: http://qwen.internal.company.com:8000
+    model: qwen-7b-chat
+    api-key: ${QWEN_API_KEY:}
+    timeout: 60
+```
+
+#### 架构组件
+
+```
+┌─────────────────────────────────────────────┐
+│         LLMProvider (统一接口)               │
+│  - getName()       // 提供者名称             │
+│  - isAvailable()   // 健康检查              │
+│  - generate()      // 生成文本              │
+│  - generateJson()  // JSON响应              │
+└──────────────┬──────────────────────────────┘
+               │ 实现
+     ┌─────────┼──────────┬──────────┐
+     ▼         ▼          ▼          ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+│Ollama  │ │ChatGLM │ │ Qwen   │ │Baichuan│
+│Provider│ │Provider│ │Provider│ │Provider│
+└────────┘ └────────┘ └────────┘ └────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────┐
+│      LLMProviderManager (管理器)             │
+│  - registerProvider()  // 注册提供者        │
+│  - setActiveProvider() // 切换活跃提供者     │
+│  - healthCheck()       // 健康检查          │
+│  - autoSelectProvider()// 自动选择          │
+└──────────────┬──────────────────────────────┘
+               │ 注入
+               ▼
+┌─────────────────────────────────────────────┐
+│           LLMService (业务服务)              │
+│  - generateSQL()     // SQL生成             │
+│  - summarizeResult() // 结果总结            │
+│  - clarifyQuestion() // 问题澄清            │
+│  - classifyIntent()  // 意图分类            │
+└─────────────────────────────────────────────┘
+```
+
+#### 运行时切换提供者
+
+```java
+@Autowired
+private LLMService llmService;
+
+// 切换到ChatGLM
+llmService.switchProvider("chatglm");
+
+// 查询健康状态
+Map<String, Boolean> status = llmService.getProviderHealthStatus();
+// 返回: {ollama=true, chatglm=false, qwen=true}
+```
+
+#### 扩展新的LLM提供者
+
+只需3步即可接入新的LLM：
+
+1. **实现LLMProvider接口**
+```java
+public class CustomProvider implements LLMProvider {
+    @Override
+    public String getName() { return "custom"; }
+    
+    @Override
+    public boolean isAvailable() { /* 健康检查 */ }
+    
+    @Override
+    public String generate(String prompt, double temperature) {
+        // 调用自定义LLM API
+    }
+    
+    @Override
+    public String generateJson(String systemPrompt, String userPrompt, double temperature) {
+        // 生成JSON响应
+    }
+}
+```
+
+2. **添加配置类**
+```java
+@Configuration
+@ConditionalOnProperty(name = "llm.custom.enabled", havingValue = "true")
+public class CustomConfig {
+    @Bean
+    public LLMProvider customProvider() {
+        return new CustomProvider(...);
+    }
+}
+```
+
+3. **更新配置文件**
+```yaml
+llm:
+  custom:
+    enabled: true
+    base-url: http://custom.llm.com:8000
+    model: custom-model
+```
+
+---
+
 ### 模块划分
 
 ```
