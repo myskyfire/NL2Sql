@@ -83,6 +83,9 @@ public class AgentConfig {
     @Autowired(required = false)
     private com.nl2sql.core.monitor.PerformanceMonitor performanceMonitor;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.metadata.MetadataService metadataService;
+    
     /**
      * 创建 NL2SQL ReAct Agent
      * 
@@ -187,7 +190,50 @@ public class AgentConfig {
                         
                         // 转换为 JSON
                         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                        return mapper.writeValueAsString(result);
+                        String resultJson = mapper.writeValueAsString(result);
+                        
+                        // ✅ 检测是否需要补充表关系
+                        if (resultJson.contains("\"clarificationType\":\"table_missing\"") || 
+                            resultJson.contains("\"missing_tables\"")) {
+                            log.info("[{}] 检测到缺失表，尝试自动补充表关系", skill.getToolName());
+                            
+                            try {
+                                // 解析 missing_tables
+                                Map<String, Object> resultMap = mapper.readValue(resultJson, Map.class);
+                                List<String> missingTables = (List<String>) resultMap.get("missing_tables");
+                                String reason = (String) resultMap.get("reason");
+                                
+                                if (missingTables != null && !missingTables.isEmpty()) {
+                                    log.info("[{}] 缺失表: {}, 原因: {}", skill.getToolName(), missingTables, reason);
+                                    
+                                    // 查询元数据服务获取表结构
+                                    StringBuilder tableInfo = new StringBuilder();
+                                    for (String tableName : missingTables) {
+                                        try {
+                                            com.nl2sql.core.metadata.TableMetadata tableMeta = metadataService.getTableMetadata(tableName);
+                                            if (tableMeta != null) {
+                                                tableInfo.append("表名: ").append(tableName).append("\n");
+                                                tableInfo.append("注释: ").append(tableMeta.getTableComment()).append("\n");
+                                                tableInfo.append("字段: ").append(tableMeta.getColumns()).append("\n\n");
+                                            }
+                                        } catch (Exception e) {
+                                            log.warn("[{}] 获取表 {} 元数据失败: {}", skill.getToolName(), tableName, e.getMessage());
+                                        }
+                                    }
+                                    
+                                    // 将表信息添加到上下文，重新执行
+                                    context.setParameter("additionalTableInfo", tableInfo.toString());
+                                    log.info("[{}] 已补充表信息，重新执行 Skill", skill.getToolName());
+                                    
+                                    Object retryResult = groovySkillExecutor.executeSkill(skill.getSkillPath(), context);
+                                    return mapper.writeValueAsString(retryResult);
+                                }
+                            } catch (Exception e) {
+                                log.error("[{}] 自动补充表关系失败", skill.getToolName(), e);
+                            }
+                        }
+                        
+                        return resultJson;
                         
                     } catch (Exception e) {
                         log.error("[{}] 执行失败", skill.getToolName(), e);
