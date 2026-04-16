@@ -352,6 +352,51 @@ public class AgentConfig {
             log.info("启用 SQLRiskAnalysisTool");
         }
         
+        // ✅ 注册 SQL 优化工具
+        if (sqlOptimizerTool != null) {
+            agent.registerTool("optimize_sql", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return sqlOptimizerTool.analyzeAndOptimize(sql, datasourceId);
+            }, "分析SQL查询的性能问题并提供优化建议。输入SQL语句和数据源ID，返回优化建议和可能的优化后SQL。调用时必须传递参数：{\"sql\": \"SQL语句\", \"datasourceId\": 数据源ID}");
+            log.info("启用 SQLOptimizerTool");
+        }
+        
+        // ✅ 注册报告生成工具
+        if (reportGeneratorTool != null) {
+            agent.registerTool("generate_report", (args, dsId, userId, username, userMessage) -> {
+                Map<String, Object> context = (Map<String, Object>) args.get("context");
+                if (context == null) {
+                    return "{\"status\":\"error\",\"message\":\"缺少上下文数据\"}";
+                }
+                
+                String userQuery = (String) context.get("userQuery");
+                String sql = (String) context.get("generatedSQL");
+                String dataJson = (String) context.get("dataJson");
+                
+                if (sql == null || dataJson == null) {
+                    return "{\"status\":\"error\",\"message\":\"缺少 SQL 或数据\"}";
+                }
+                
+                try {
+                    String report = reportGeneratorTool.generateReport(userQuery, sql, dataJson);
+                    
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("status", "success");
+                    result.put("report", report);
+                    result.put("datasourceId", dsId);
+                    
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    return mapper.writeValueAsString(result);
+                } catch (Exception e) {
+                    log.error("[generate_report] 执行失败", e);
+                    return "{\"status\":\"error\",\"message\":\"报告生成失败: " + e.getMessage() + "\"}";
+                }
+            }, "根据查询结果生成结构化的数据分析报告。当用户需要深度分析时调用此工具，从 context 参数中获取 userQuery、generatedSQL 和 dataJson，返回包含摘要、关键发现、趋势分析和业务建议的完整报告");
+            log.info("启用 ReportGeneratorTool");
+        }
+        
         log.info("NL2SQL ReAct Agent 初始化完成");
         log.info("已注册工具数量: {}", agent.getToolCount());
         
