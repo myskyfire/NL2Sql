@@ -26,6 +26,7 @@ public class SQLExecutor {
     private final ValueMappingService valueMappingService;  // 值映射服务
     private final com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool;  // LLM翻译工具
     private final com.nl2sql.core.llm.ModelRouterService modelRouter;  // 模型路由服务
+    private final com.nl2sql.core.cache.QueryCacheService queryCacheService;  // 查询结果缓存
     
     @Value("${sql.execution.query-timeout:30}")
     private int queryTimeout;
@@ -46,7 +47,8 @@ public class SQLExecutor {
                       DataSourceManager dataSourceManager,
                       ValueMappingService valueMappingService,
                       com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool,
-                      com.nl2sql.core.llm.ModelRouterService modelRouter) {
+                      com.nl2sql.core.llm.ModelRouterService modelRouter,
+                      com.nl2sql.core.cache.QueryCacheService queryCacheService) {
         this.jdbcTemplate = jdbcTemplate;
         this.dataSource = dataSource;
         this.executionLogService = executionLogService;
@@ -54,6 +56,7 @@ public class SQLExecutor {
         this.valueMappingService = valueMappingService;
         this.nl2sqlTool = nl2sqlTool;
         this.modelRouter = modelRouter;
+        this.queryCacheService = queryCacheService;
     }
     
     @Data
@@ -77,6 +80,31 @@ public class SQLExecutor {
     public QueryResult executeQuery(String sql, Long datasourceId, Long userId, String username, String ipAddress) {
         QueryResult result = new QueryResult();
         long startTime = System.currentTimeMillis();
+        
+        // ✅ 步骤1：尝试从缓存获取结果
+        if (queryCacheService != null) {
+            try {
+                com.nl2sql.core.cache.QueryCacheService.CachedResult cachedResult = 
+                    queryCacheService.getFromCache(sql);
+                
+                if (cachedResult != null && cachedResult.getData() != null) {
+                    long cacheHitTime = System.currentTimeMillis() - startTime;
+                    log.info("[✅ 缓存命中] SQL查询结果来自缓存，耗时={}ms, 行数={}", 
+                        cacheHitTime, cachedResult.getData().size());
+                    
+                    result.setData(cachedResult.getData());
+                    result.setRowCount(cachedResult.getRowCount());
+                    result.setExecutionTime(cacheHitTime / 1000.0);
+                    result.setError(null);
+                    
+                    return result; // 直接返回缓存结果
+                }
+            } catch (Exception e) {
+                log.warn("[缓存读取失败] 继续执行数据库查询: {}", e.getMessage());
+            }
+        }
+        
+        log.debug("[❌ 缓存未命中] 执行数据库查询...");
         
         // 最终安全检查：确保只执行查询操作
         String upperSQL = sql.trim().toUpperCase();
@@ -232,6 +260,23 @@ public class SQLExecutor {
                 log.warn("[慢查询] 耗时={}秒, SQL={}", result.getExecutionTime(), sql);
             } else {
                 log.info("查询成功，返回{}行，耗时{}秒", result.getRowCount(), result.getExecutionTime());
+            }
+            
+            // ✅ 步骤3：将查询结果写入缓存
+            if (queryCacheService != null && result.getError() == null && result.getData() != null) {
+                try {
+                    com.nl2sql.core.cache.QueryCacheService.CachedResult cacheData = 
+                        new com.nl2sql.core.cache.QueryCacheService.CachedResult();
+                    cacheData.setData(result.getData());
+                    cacheData.setRowCount(result.getRowCount());
+                    cacheData.setExecutionTime(result.getExecutionTime());
+                    cacheData.setCachedAt(System.currentTimeMillis());
+                    
+                    queryCacheService.putToCache(sql, cacheData);
+                    log.debug("[✅ 缓存写入] SQL查询结果已缓存: 行数={}", result.getRowCount());
+                } catch (Exception e) {
+                    log.warn("[缓存写入失败] 不影响查询结果: {}", e.getMessage());
+                }
             }
             
         } catch (Exception e) {
