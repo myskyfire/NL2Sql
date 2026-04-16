@@ -43,41 +43,49 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
 
-# LLM Configuration - 双模型架构
+# LLM Configuration - 多提供者架构
+# 支持企业内部部署的多种LLM后端（Ollama、ChatGLM、Qwen、Baichuan等）
 llm:
-  # LLM提供者类型: ollama | openai-compatible
-  provider: ollama
+  # 活跃的提供者名称（ollama | chatglm | qwen | baichuan）
+  active-provider: ollama
   
-  # 推理模型配置（用于Agent决策、总结等）
-  reasoning:
-    model: qwen2.5-coder:7b-instruct-q4_0
-    temperature: 0.7
+  # 提供者优先级列表（用于自动故障转移）
+  provider-priority:
+    - ollama
+    - chatglm
+    - qwen
   
-  # 代码模型配置（用于SQL生成）
-  code:
-    model: qwen2.5-coder:7b-instruct-q4_0
-    temperature: 0.0
-  
-  # Ollama专用配置
+  # Ollama配置（本地私有化部署）
   ollama:
+    enabled: true
     base-url: http://localhost:11434
+    code-model: qwen2.5-coder:7b-instruct-q4_0
+    nlp-model: qwen3:8b
     timeout: 60
   
-  # OpenAI兼容API配置（企业内部部署）
-  openai-compatible:
-    base-url: https://api.internal.company.com/v1
-    api-key: ${LLM_API_KEY:}
-    timeout: 30
+  # ChatGLM配置（企业内部部署，预留）
+  chatglm:
+    enabled: false
+    base-url: http://chatglm.internal.company.com:8000
+    model: chatglm3-6b
+    api-key: ${CHATGLM_API_KEY:}
+    timeout: 60
   
-  # 降级策略
-  fallback:
-    single-model-mode: auto  # auto | true | false
-
-# 旧配置保留（向后兼容）
-ollama:
-  base-url: http://localhost:11434
-  model: qwen2.5-coder:7b-instruct-q4_0
-  nlp-model: qwen2.5-coder:7b-instruct-q4_0
+  # Qwen配置（企业内部部署，预留）
+  qwen:
+    enabled: false
+    base-url: http://qwen.internal.company.com:8000
+    model: qwen-7b-chat
+    api-key: ${QWEN_API_KEY:}
+    timeout: 60
+  
+  # Baichuan配置（企业内部部署，预留）
+  baichuan:
+    enabled: false
+    base-url: http://baichuan.internal.company.com:8000
+    model: baichuan2-13b-chat
+    api-key: ${BAICHUAN_API_KEY:}
+    timeout: 60
 
 # Chroma Vector Database Configuration (RAG)
 chroma:

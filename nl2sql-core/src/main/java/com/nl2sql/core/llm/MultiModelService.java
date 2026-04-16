@@ -38,8 +38,7 @@ public class MultiModelService {
             
             // 3. 调用代码模型
             long startTime = System.currentTimeMillis();
-            ChatModel codeModel = llmService.getCodeModel();
-            String response = codeModel.chat(enhancedPrompt);
+            String response = llmService.generateSQL(enhancedPrompt);
             long elapsed = System.currentTimeMillis() - startTime;
             
             log.info("[LLM调用] 响应时间: {}ms", elapsed);
@@ -80,8 +79,7 @@ public class MultiModelService {
             
             // 3. 调用推理模型
             long startTime = System.currentTimeMillis();
-            ChatModel reasoningModel = llmService.getReasoningModel();
-            String response = reasoningModel.chat(enhancedPrompt);
+            String response = llmService.summarizeResult(userQuery, enhancedPrompt);
             long elapsed = System.currentTimeMillis() - startTime;
             
             log.info("[LLM调用-推理模型] 响应时间: {}ms", elapsed);
@@ -111,8 +109,7 @@ public class MultiModelService {
      */
     public String generateSQL(String prompt) {
         try {
-            ChatModel codeModel = llmService.getCodeModel();
-            return codeModel.chat(prompt).trim();
+            return llmService.generateSQL(prompt);
         } catch (Exception e) {
             log.error("[LLM调用] SQL生成失败", e);
             return "SELECT 1 as error -- " + e.getMessage();
@@ -150,8 +147,8 @@ public class MultiModelService {
      */
     public String summarizeResult(String prompt) {
         try {
-            ChatModel reasoningModel = llmService.getReasoningModel();
-            return reasoningModel.chat(prompt).trim();
+            // 使用generateAnswer方法
+            return llmService.generateAnswer(prompt);
         } catch (Exception e) {
             log.error("[LLM调用] 总结失败", e);
             return "无法生成总结";
@@ -173,8 +170,7 @@ public class MultiModelService {
         );
         
         try {
-            ChatModel reasoningModel = llmService.getReasoningModel();
-            return reasoningModel.chat(prompt).trim();
+            return llmService.generateAnswer(prompt);
         } catch (Exception e) {
             log.error("[LLM调用] 答案生成失败", e);
             return "抱歉，无法生成回答: " + e.getMessage();

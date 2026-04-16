@@ -21,11 +21,11 @@ public class DatasourceClarificationTool {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     
-    private final ChatModel chatModel;
+    private final LLMService llmService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     public DatasourceClarificationTool(LLMService llmService) {
-        this.chatModel = llmService.getChatModel();
+        this.llmService = llmService;
     }
     
     /**
@@ -146,7 +146,7 @@ public class DatasourceClarificationTool {
             );
             
             log.info("[DatasourceClarification] 第一层：调用LLM进行数据源初步匹配");
-            String firstResponse = chatModel.chat(firstLayerPrompt);
+            String firstResponse = llmService.generateSQL(firstLayerPrompt);
             log.info("[DatasourceClarification] 第一层LLM响应: {}", firstResponse);
             
             // 解析第一层响应
@@ -256,7 +256,7 @@ public class DatasourceClarificationTool {
             );
             
             log.info("[DatasourceClarification] 第二层：调用LLM进行精确匹配");
-            String secondResponse = chatModel.chat(secondLayerPrompt);
+            String secondResponse = llmService.generateSQL(secondLayerPrompt);
             log.info("[DatasourceClarification] 第二层LLM响应: {}", secondResponse);
             
             // 解析第二层响应

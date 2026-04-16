@@ -48,13 +48,78 @@ AI自动分析数据<br>提供业务建议
 
 ### 🌟 核心特性
 
-- **🧠 智能SQL生成**: 基于RAG检索增强 + 多模型智能路由，准确率>85%
-- **🔐 四层安全防护**: 认证授权 → 表级权限 → 列级权限 → SQL验证
-- **💾 智能缓存**: 语义缓存命中率>60%，避免重复LLM调用
-- **📊 可视化展示**: 智能推荐柱状图/折线图/饼图，一键导出Excel
-- **💬 多轮对话**: 支持上下文理解、指代消解、智能澄清
-- **📈 性能监控**: 实时统计、慢查询告警、全链路追踪
-- **🎨 现代化UI**: 响应式设计，支持PC/移动端访问
+#### 🔍 智能查询引擎
+- **🧠 RAG检索增强**: 双层向量检索（表+字段）+ 历史SQL示例注入，准确率>85%
+- **🎯 多模型智能路由**: SIMPLE/MEDIUM/COMPLEX三级复杂度评估，动态选择最优LLM
+- **💬 同义词词典**: 自动识别业务术语（订单/定单、用户/客户、DAU/GMV等）
+- **⏰ 时间表达式解析**: 智能理解“昨天”、“最近7天”、“上个月”等自然语言
+- **🔄 SQL自动纠错**: 6种错误类型识别（表不存在、字段不存在、语法错误等），最多3次自动重试
+- **📊 分页查询**: 支持大数据量分页返回，默认每页50条
+
+#### 🔐 企业级安全防护
+- **🛡️ 四层防护体系**:
+  - 第一层: JWT Token认证 + 白名单机制 + 角色权限（admin/user）
+  - 第二层: 表级权限控制（用户只能访问授权的表）
+  - 第三层: 列级权限控制（细粒度字段可见性 + 敏感数据脱敏）
+  - 第四层: SQL安全验证（JSqlParser AST解析 + 危险操作拦截）
+- **🚫 危险操作拦截**: DROP/ALTER/DELETE/UPDATE/INSERT全部禁止
+- **🔒 全表扫描防护**: 无WHERE且无LIMIT的查询被拦截
+- **📋 JOIN数量限制**: 最多允许2张表关联，防止性能问题
+- **👤 密码加密存储**: AES-256-GCM加密数据库密码
+
+#### 💾 性能优化与缓存
+- **⚡ 语义缓存**: 基于SQL语义MD5哈希的Redis缓存，命中率>60%，TTL 30分钟
+- **🔗 HikariCP连接池**: 每个数据源独立连接池，懒加载创建
+  - 最大连接数: 10个/数据源
+  - 最小空闲: 2个连接
+  - 空闲回收: 10分钟不使用自动关闭
+  - 泄漏检测: 60秒未释放记录警告
+- **📈 性能监控**: 实时统计成功率、缓存命中率、慢查询告警（>5秒）
+- **🔍 全链路追踪**: MDC上下文（requestId/userId/sessionId），JSON结构化日志便于ELK采集
+
+#### 💬 智能对话系统
+- **🗨️ 多轮对话**: 保存最近10轮对话历史，支持连续追问
+- **🎯 指代消解**: 理解“它”、“这个”、“它们”等代词
+- **📝 上下文压缩**: 智能提取关键信息，避免Prompt过长
+- **❓ 智能澄清**: 当查询意图不明确时主动询问（数据源选择、表关系澄清）
+- **🤖 ReAct Agent架构**: LLM自主决策工具调用，非硬编码路由
+
+#### 📊 可视化与导出
+- **📈 智能图表推荐**: 根据数据特征自动推荐柱状图/折线图/饼图/表格
+- **📄 Excel导出**: Apache POI实现，一键导出.xlsx文件，自动设置列宽和样式
+- **🤖 AI数据总结**: qwen3:8b模型生成关键趋势、异常点、业务建议
+- **🎨 响应式UI**: 支持PC/移动端访问，现代化界面设计
+
+#### 🔧 元数据管理
+- **📋 表关联关系管理**:
+  - 智能SQL提取: 支持9种关联方式（显式JOIN、隐式JOIN、IN/EXISTS子查询等）
+  - 复杂度评分: 0-10分量化SQL复杂度，分级提示优化建议
+  - 标准化描述: 自动生成`{源表注释}通过{源字段}关联{目标表注释}`格式
+  - 表存在性验证: 确保SQL中的表在数据源中真实存在
+  - 去重机制: 避免重复添加相同关联关系
+- **🔄 元数据同步**: 支持从MySQL自动采集表结构、字段注释、索引信息
+- **🌐 多数据源管理**: 动态添加/删除/切换数据源，热插拔支持
+
+#### 📚 RAG知识库
+- **🔍 MySQL全文检索**: MATCH...AGAINST实现高效相似度搜索
+- **📖 Few-shot学习**: 自动注入Top-3最相关SQL示例到Prompt
+- **🎓 自动学习**: 成功执行的SQL自动存入知识库
+- **⭐ 质量评分**: 动态调整样本权重，清理低质量数据
+- **📊 使用统计**: 记录每个样本的使用次数和效果
+
+#### 📝 查询模板管理
+- **👤 个人模板**: 用户私有，仅自己可见
+- **🌍 公共模板**: 全员共享，促进知识沉淀
+- **📂 分类管理**: 按业务域分类（订单分析、用户分析等）
+- **⚡ 一键执行**: 点击模板直接运行，无需重新输入
+
+#### 📋 审计与运维
+- **📊 执行日志**: 记录用户ID、原始查询、生成SQL、执行结果、执行时间
+- **🔍 日志筛选**: 支持按时间、状态、用户、会话ID筛选
+- **⚠️ 慢查询告警**: 执行时间>5秒自动标记
+- **📈 实时监控**: 总查询次数、成功/失败率、P95/P99延迟
+- **🗑️ 缓存管理**: 管理员可手动清除所有缓存
+- **🔐 操作审计**: 全链路追踪，符合企业合规要求
 
 ---
 
@@ -507,10 +572,9 @@ date | total_order_amount
 
 ## 📊 API接口文档
 
-### 认证接口
+### 🔐 认证与授权
 
-#### 用户登录
-
+#### 1. 用户登录
 ```http
 POST /api/auth/login
 Content-Type: application/json
@@ -525,7 +589,6 @@ Content-Type: application/json
 ```json
 {
   "code": 200,
-  "message": "success",
   "data": {
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "userId": 1,
@@ -535,19 +598,160 @@ Content-Type: application/json
 }
 ```
 
-### 查询接口
-
-#### 自然语言查询
-
+#### 2. Token验证
 ```http
-POST /api/query
+GET /api/auth/validate
+Authorization: Bearer {token}
+```
+
+#### 3. 退出登录
+```http
+POST /api/auth/logout
+Authorization: Bearer {token}
+```
+
+#### 4. 修改密码
+```http
+POST /api/auth/password/change
 Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "query": "查询最近7天北京的订单总额",
-  "sessionId": "session_123",
-  "datasourceId": 1
+  "oldPassword": "old123",
+  "newPassword": "new456"
+}
+```
+
+#### 5. 重置密码（管理员）
+```http
+POST /api/auth/password/reset
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "userId": 2,
+  "newPassword": "reset123"
+}
+```
+
+---
+
+### 👥 用户管理
+
+#### 6. 获取用户列表
+```http
+GET /api/auth/users
+Authorization: Bearer {token}
+```
+
+#### 7. 创建用户
+```http
+POST /api/auth/user/create
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "password": "password123",
+  "role": "user"
+}
+```
+
+---
+
+### 🔑 白名单管理
+
+#### 8. 添加白名单
+```http
+POST /api/auth/whitelist/add
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "userId": 2
+}
+```
+
+#### 9. 移除白名单
+```http
+POST /api/auth/whitelist/remove
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "userId": 2
+}
+```
+
+#### 10. 获取白名单列表
+```http
+GET /api/auth/whitelist/list
+Authorization: Bearer {token}
+```
+
+---
+
+### 🛡️ 权限管理
+
+#### 11. 授予表权限
+```http
+POST /api/auth/table-permission/grant
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "userId": 2,
+  "tableName": "orders"
+}
+```
+
+#### 12. 撤销表权限
+```http
+POST /api/auth/table-permission/revoke
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "userId": 2,
+  "tableName": "orders"
+}
+```
+
+#### 13. 查询用户表权限
+```http
+GET /api/auth/table-permission/user/{userId}
+Authorization: Bearer {token}
+```
+
+#### 14. 查询所有表权限配置
+```http
+GET /api/auth/table-permission/all
+Authorization: Bearer {token}
+```
+
+#### 15. 查询表的授权用户
+```http
+GET /api/auth/table-permission/table/{tableName}
+Authorization: Bearer {token}
+```
+
+---
+
+### 💬 Agent对话接口
+
+#### 16. ReAct Agent对话（推荐）
+```http
+POST /api/agent/chat
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "message": "查询最近7天北京的订单总额",
+  "datasourceId": 1,
+  "context": {
+    "lastQuery": "统计订单",
+    "generatedSQL": "SELECT ..."
+  }
 }
 ```
 
@@ -556,21 +760,46 @@ Content-Type: application/json
 {
   "code": 200,
   "data": {
+    "reply": "已为您查询到结果...",
     "sql": "SELECT SUM(actual_amount) ...",
     "data": [...],
-    "rowCount": 100,
-    "chart": {
-      "type": "line",
-      "recommendation": "折线图"
-    },
-    "summary": "北京地区近7天订单总额为123.46万元...",
-    "executionTime": 2.35
+    "chart": {...},
+    "summary": "北京地区近7天订单总额...",
+    "datasourceId": 1
   }
 }
 ```
 
-#### 手动执行SQL
+#### 17. Agent对话测试
+```http
+POST /api/agent/chat/test
+Content-Type: application/json
 
+{
+  "message": "测试消息"
+}
+```
+
+---
+
+### 🔍 查询接口
+
+#### 18. 自然语言查询（已废弃，请使用Agent接口）
+```http
+POST /api/query
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "query": "查询所有用户",
+  "datasourceId": 1,
+  "sessionId": "session_123",
+  "pageNum": 1,
+  "pageSize": 50
+}
+```
+
+#### 19. 手动执行SQL
 ```http
 POST /api/manual-sql
 Authorization: Bearer {token}
@@ -582,17 +811,119 @@ Content-Type: application/json
 }
 ```
 
-### 表关联关系管理
+**响应:**
+```json
+{
+  "code": 200,
+  "data": {
+    "data": [...],
+    "rowCount": 10,
+    "executionTime": 0.15,
+    "chartRecommendation": {
+      "type": "table",
+      "charts": [...]
+    }
+  }
+}
+```
 
-#### 从SQL提取关联关系
+#### 20. SQL纠错
+```http
+POST /api/correct
+Authorization: Bearer {token}
+Content-Type: application/json
 
+{
+  "sql": "SELCT * FROM usrs",
+  "error": "Table 'usrs' doesn't exist"
+}
+```
+
+**响应:**
+```json
+{
+  "code": 200,
+  "data": {
+    "success": true,
+    "correctedSQL": "SELECT * FROM users",
+    "retryCount": 1,
+    "originalError": "Table 'usrs' doesn't exist",
+    "suggestions": ["表名拼写错误"]
+  }
+}
+```
+
+---
+
+### 📤 导出接口
+
+#### 21. 导出Excel
+```http
+POST /api/export/excel
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "data": [...],
+  "fileName": "今日订单",
+  "sheetName": "订单数据"
+}
+```
+
+**响应:** 返回Excel文件的byte数组
+
+---
+
+### 📋 表关联关系管理
+
+#### 22. 获取关联关系列表
+```http
+GET /api/relationships?datasourceId=1
+Authorization: Bearer {token}
+```
+
+#### 23. 创建关联关系
+```http
+POST /api/relationships
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "datasourceId": 1,
+  "sourceTable": "orders",
+  "sourceColumn": "user_id",
+  "targetTable": "users",
+  "targetColumn": "id",
+  "relationshipType": "MANY_TO_ONE"
+}
+```
+
+#### 24. 更新关联关系
+```http
+PUT /api/relationships/{id}
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "description": "订单通过user_id关联用户",
+  "isActive": 1
+}
+```
+
+#### 25. 删除关联关系
+```http
+DELETE /api/relationships/{id}
+Authorization: Bearer {token}
+```
+
+#### 26. 从SQL提取关联关系（智能版）
 ```http
 POST /api/relationships/extract-with-suggestions
 Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "sql": "SELECT * FROM orders o JOIN users u ON o.user_id = u.id",
+  "sql": "SELECT * FROM orders o JOIN users u ON o.user_id = u.id WHERE EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id)",
   "datasourceId": 1
 }
 ```
@@ -610,16 +941,25 @@ Content-Type: application/json
         "targetTable": "users",
         "targetColumn": "id",
         "relationshipType": "MANY_TO_ONE"
+      },
+      {
+        "sourceTable": "orders",
+        "sourceColumn": "id",
+        "targetTable": "order_items",
+        "targetColumn": "order_id",
+        "relationshipType": "ONE_TO_MANY"
       }
     ],
-    "suggestions": ["✅ SQL格式规范，关联关系清晰"],
-    "extractedCount": 1
+    "suggestions": [
+      "📊 SQL复杂度评估：中等（2分）",
+      "💡 检测到EXISTS子查询，虽然可以提取关联，但如果性能不佳可考虑改为JOIN"
+    ],
+    "extractedCount": 2
   }
 }
 ```
 
-#### 批量保存关联关系
-
+#### 27. 批量保存关联关系
 ```http
 POST /api/relationships/batch-save
 Authorization: Bearer {token}
@@ -639,9 +979,226 @@ Content-Type: application/json
 }
 ```
 
-### 其他接口
+#### 28. 推断关联关系
+```http
+POST /api/relationships/infer
+Authorization: Bearer {token}
+Content-Type: application/json
 
-更多API请参考 [完整API文档](PROJECT_SUMMARY.md#-api接口文档)
+{
+  "datasourceId": 1
+}
+```
+
+---
+
+### 🗄️ 数据源管理
+
+#### 29. 测试数据源连接
+```http
+POST /api/admin/datasource/test
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "测试库",
+  "dbType": "MYSQL",
+  "host": "localhost",
+  "port": 3306,
+  "databaseName": "test_db",
+  "username": "root",
+  "password": "password"
+}
+```
+
+#### 30. 保存数据源
+```http
+POST /api/admin/datasource/save
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "生产库",
+  "dbType": "MYSQL",
+  "host": "192.168.1.100",
+  "port": 3306,
+  "databaseName": "prod_db",
+  "username": "app_user",
+  "password": "encrypted_password",
+  "isActive": 1
+}
+```
+
+#### 31. 获取数据源列表
+```http
+GET /api/admin/datasource/list
+Authorization: Bearer {token}
+```
+
+---
+
+### 🔄 元数据管理
+
+#### 32. 同步元数据
+```http
+POST /api/admin/metadata/sync/{datasourceId}
+Authorization: Bearer {token}
+```
+
+**响应:**
+```json
+{
+  "code": 200,
+  "data": {
+    "tablesSynced": 15,
+    "columnsSynced": 120,
+    "duration": "2.5s"
+  }
+}
+```
+
+#### 33. 获取元数据列表
+```http
+GET /api/admin/metadata/list?datasourceId=1&tableName=orders
+Authorization: Bearer {token}
+```
+
+---
+
+### 📝 查询模板管理
+
+#### 34. 保存查询模板
+```http
+POST /api/template/save
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "每日订单统计",
+  "description": "查看当天的订单数量和金额",
+  "templateSql": "SELECT COUNT(*) as count, SUM(amount) as total FROM orders WHERE DATE(created_at) = CURDATE()",
+  "category": "订单分析",
+  "isPublic": true
+}
+```
+
+#### 35. 获取我的模板
+```http
+GET /api/template/my?category=订单分析&page=1&size=20
+Authorization: Bearer {token}
+```
+
+#### 36. 获取公共模板
+```http
+GET /api/template/public?page=1&size=20
+```
+
+#### 37. 更新模板
+```http
+PUT /api/template/{id}
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "更新后的名称",
+  "isPublic": false
+}
+```
+
+#### 38. 删除模板
+```http
+DELETE /api/template/{id}
+Authorization: Bearer {token}
+```
+
+---
+
+### 📊 监控与审计
+
+#### 39. 获取执行日志
+```http
+GET /api/audit/logs?page=1&size=20&status=SUCCESS&startDate=2026-04-01&endDate=2026-04-16
+Authorization: Bearer {token}
+```
+
+**响应:**
+```json
+{
+  "code": 200,
+  "data": {
+    "logs": [
+      {
+        "id": 1,
+        "userId": 1,
+        "username": "admin",
+        "query": "查询订单",
+        "sql": "SELECT * FROM orders",
+        "status": "SUCCESS",
+        "executionTime": 0.25,
+        "createdAt": "2026-04-16T10:30:00"
+      }
+    ],
+    "total": 150,
+    "page": 1,
+    "size": 20
+  }
+}
+```
+
+#### 40. 获取监控统计
+```http
+GET /api/monitor/stats
+Authorization: Bearer {token}
+```
+
+**响应:**
+```json
+{
+  "code": 200,
+  "data": {
+    "totalQueries": 150,
+    "successQueries": 145,
+    "failedQueries": 5,
+    "slowQueries": 3,
+    "cacheHitRate": 62.5,
+    "avgExecutionTime": 0.35,
+    "p95ExecutionTime": 1.2,
+    "p99ExecutionTime": 2.5
+  }
+}
+```
+
+#### 41. 清除缓存
+```http
+POST /api/cache/clear
+Authorization: Bearer {token}
+```
+
+---
+
+### 🌐 翻译服务
+
+#### 42. 字段翻译
+```http
+POST /api/translate/field
+Content-Type: application/json
+
+{
+  "fieldName": "actual_amount",
+  "tableName": "orders"
+}
+```
+
+**响应:**
+```json
+{
+  "code": 200,
+  "data": {
+    "chinese": "实际金额",
+    "english": "Actual Amount"
+  }
+}
+```
 
 ---
 
@@ -682,6 +1239,34 @@ datasource:
     idle-timeout: 600000  # 10分钟
     leak-detection: 60000 # 60秒
 ```
+
+---
+
+## 🎨 前端页面
+
+系统提供以下Web界面：
+
+### 👤 用户界面
+
+| 页面 | 路径 | 功能描述 |
+|------|------|----------|
+| **登录页** | `/login.html` | 用户登录、Token认证 |
+| **主入口** | `/index.html` | 侧边栏导航，统一入口 |
+| **Agent对话** | `/agent-chat.html` | ReAct Agent对话式查询（推荐） |
+| **传统查询** | `/query.html` | NL2SQL查询界面（已废弃） |
+| **修改密码** | `/change-password.html` | 用户自助修改密码 |
+
+### 🔧 管理后台
+
+| 页面 | 路径 | 功能描述 |
+|------|------|----------|
+| **数据源管理** | `/admin-datasource.html` | 添加/编辑/删除/测试数据源 |
+| **元数据同步** | `/admin-manual-sql.html` | 手动执行SQL、同步元数据 |
+| **表权限管理** | `/admin-table-permission.html` | 配置用户表级访问权限 |
+| **用户管理** | `/admin-user-management.html` | 创建用户、重置密码、白名单管理 |
+| **查询模板** | `/admin-template.html` | 管理个人/公共查询模板 |
+| **执行日志** | `/admin-execution-logs.html` | 查看审计日志、筛选导出 |
+| **关联关系** | `/relationship-management.html` | 可视化维护表关联关系 |
 
 ---
 
@@ -737,36 +1322,110 @@ redis-server
 
 ### ✅ 已完成功能
 
-- [x] 自然语言转SQL
-- [x] 企业级安全控制 (表级/列级权限)
-- [x] 多轮对话与上下文理解
-- [x] Web交互界面 (统一入口)
-- [x] 审计日志与监控
-- [x] JSON结构化日志
-- [x] SQL自动纠错与自愈
-- [x] 智能缓存层
-- [x] 可视化图表推荐
-- [x] Excel导出
-- [x] 查询结果分页
-- [x] 同义词词典与业务术语
-- [x] 时间表达式智能解析
-- [x] RAG检索增强 (历史问答对)
-- [x] 多模型智能路由
-- [x] 性能监控与告警
-- [x] 查询模板与收藏
-- [x] 表关联关系管理 (智能提取+复杂度评分)
-- [x] HikariCP动态连接池 (空闲回收+泄漏检测)
+#### 核心查询引擎
+- [x] 自然语言转SQL（RAG检索增强）
+- [x] 多模型智能路由（SIMPLE/MEDIUM/COMPLEX）
+- [x] 同义词词典与业务术语识别
+- [x] 时间表达式智能解析（昨天、最近7天等）
+- [x] SQL自动纠错与自愈（6种错误类型，最多3次重试）
+- [x] 查询结果分页（默认50条/页）
+
+#### 安全防护
+- [x] JWT Token认证（有效期2小时）
+- [x] 白名单机制（仅授权用户可用）
+- [x] 角色权限管理（admin/user）
+- [x] 表级权限控制（用户只能访问授权的表）
+- [x] 列级权限控制（细粒度字段可见性）
+- [x] 敏感数据脱敏（手机号/邮箱/密码）
+- [x] SQL安全验证（JSqlParser AST解析）
+- [x] 危险操作拦截（DROP/ALTER/DELETE等）
+- [x] 全表扫描防护（无WHERE且无LIMIT的查询被拦截）
+- [x] JOIN数量限制（最多2张表关联）
+- [x] 密码加密存储（AES-256-GCM）
+
+#### 性能优化
+- [x] 语义缓存（基于SQL语义MD5哈希，Redis存储）
+- [x] HikariCP动态连接池（懒加载创建）
+  - [x] 最大连接数: 10个/数据源
+  - [x] 最小空闲: 2个连接
+  - [x] 空闲回收: 10分钟不使用自动关闭
+  - [x] 泄漏检测: 60秒未释放记录警告
+- [x] 性能监控（实时统计、慢查询告警）
+- [x] 全链路追踪（MDC上下文、JSON结构化日志）
+
+#### 对话系统
+- [x] ReAct Agent架构（LLM自主决策工具调用）
+- [x] 多轮对话（保存最近10轮历史）
+- [x] 指代消解（理解“它”、“这个”等代词）
+- [x] 上下文压缩（智能提取关键信息）
+- [x] 智能澄清追问（数据源选择、表关系澄清）
+
+#### 可视化与导出
+- [x] 智能图表推荐（柱状图/折线图/饼图/表格）
+- [x] Excel导出（Apache POI实现）
+- [x] AI数据总结（qwen3:8b模型生成分析）
+- [x] 响应式UI（支持PC/移动端）
+
+#### 元数据管理
+- [x] 表关联关系管理
+  - [x] 智能SQL提取（9种关联方式）
+  - [x] 复杂度评分系统（0-10分量化）
+  - [x] 标准化描述生成（禁止手动输入）
+  - [x] 表存在性验证
+  - [x] 去重机制
+- [x] 元数据同步（从MySQL自动采集表结构）
+- [x] 多数据源管理（动态添加/删除/切换）
+
+#### RAG知识库
+- [x] MySQL全文检索（MATCH...AGAINST）
+- [x] Few-shot学习（自动注入Top-3相似SQL示例）
+- [x] 自动学习（成功执行的SQL自动存入）
+- [x] 质量评分（动态调整样本权重）
+- [x] 使用统计（记录使用次数和效果）
+
+#### 查询模板
+- [x] 个人模板（用户私有）
+- [x] 公共模板（全员共享）
+- [x] 分类管理（按业务域分类）
+- [x] 一键执行（点击模板直接运行）
+
+#### 审计与运维
+- [x] 执行日志（记录完整操作信息）
+- [x] 日志筛选（按时间/状态/用户/会话ID）
+- [x] 慢查询告警（执行时间>5秒）
+- [x] 实时监控（成功率、缓存命中率、P95/P99延迟）
+- [x] 缓存管理（管理员可手动清除）
+- [x] 操作审计（全链路追踪，符合企业合规）
+
+#### 其他功能
+- [x] 字段翻译服务
+- [x] 用户自助修改密码
+- [x] 管理员重置密码
+- [x] 白名单管理（添加/移除/查看）
+- [x] 表权限配置（授予/撤销/查询）
+
+---
 
 ### 📋 待实现
 
-- [ ] 支持更多数据库 (PostgreSQL、Oracle等)
-- [ ] WebSocket实时推送
-- [ ] Docker容器化部署
-- [ ] API文档 (Swagger/OpenAPI)
-- [ ] 测试覆盖率提升至80%
-- [ ] LLM Fallback机制 (程序解析失败时调用LLM)
-- [ ] ECharts图表集成
-- [ ] 数据源健康检查自动切换
+#### 高优先级
+- [ ] LLM Fallback机制（程序解析失败时调用LLM提取关联关系）
+- [ ] ECharts图表集成（替换文本化展示）
+- [ ] WebSocket实时推送（流式返回查询结果）
+- [ ] Docker容器化部署（docker-compose一键启动）
+
+#### 中优先级
+- [ ] 支持更多数据库（PostgreSQL、Oracle、SQL Server）
+- [ ] API文档自动生成（Swagger/OpenAPI集成）
+- [ ] 测试覆盖率提升至80%（单元测试+集成测试）
+- [ ] 数据源健康检查自动切换（主从切换）
+
+#### 低优先级
+- [ ] 多租户支持（隔离不同团队的数据）
+- [ ] SQL版本管理（记录SQL变更历史）
+- [ ] 定时任务调度（定期执行常用查询）
+- [ ] 数据血缘分析（追踪字段来源和去向）
+- [ ] BI报表功能（自定义仪表盘）
 
 ---
 

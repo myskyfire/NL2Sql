@@ -1,61 +1,153 @@
 package com.nl2sql.core.llm.provider;
 
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.ollama.OllamaChatModel;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Ollama LLM提供者
+ * Ollama LLM提供者实现
+ * 
+ * 支持企业内部部署的Ollama服务
+ * 模型示例：qwen2.5-coder, qwen3, llama3, chatglm等
  */
 @Slf4j
-@Component
-@ConditionalOnProperty(name = "llm.provider", havingValue = "ollama", matchIfMissing = true)
 public class OllamaProvider implements LLMProvider {
     
-    private final ChatModel chatModel;
     private final String baseUrl;
     private final String modelName;
+    private final int timeout;
+    private final HttpClient httpClient;
+    private final ObjectMapper objectMapper;
     
-    public OllamaProvider(
-        @org.springframework.beans.factory.annotation.Value("${llm.ollama.base-url:http://localhost:11434}") String baseUrl,
-        @org.springframework.beans.factory.annotation.Value("${llm.reasoning.model:qwen3:8b}") String modelName,
-        @org.springframework.beans.factory.annotation.Value("${llm.reasoning.temperature:0.7}") double temperature,
-        @org.springframework.beans.factory.annotation.Value("${llm.ollama.timeout:60}") int timeout
-    ) {
+    public OllamaProvider(String baseUrl, String modelName, int timeout) {
         this.baseUrl = baseUrl;
         this.modelName = modelName;
-        
-        this.chatModel = OllamaChatModel.builder()
-            .baseUrl(baseUrl)
-            .modelName(modelName)
-            .temperature(temperature)
-            .timeout(java.time.Duration.ofSeconds(timeout))
+        this.timeout = timeout;
+        this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(timeout))
             .build();
+        this.objectMapper = new ObjectMapper();
         
-        log.info("[OllamaProvider] 初始化完成: model={}, url={}", modelName, baseUrl);
+        log.info("[OllamaProvider] 初始化完成: model={}, url={}, timeout={}s", 
+            modelName, baseUrl, timeout);
     }
     
     @Override
-    public ChatModel getChatModel() {
-        return chatModel;
+    public String getName() {
+        return "ollama";
     }
     
     @Override
     public boolean isAvailable() {
         try {
-            // 简单健康检查：尝试调用模型
-            chatModel.chat("test");
-            return true;
+            // 调用Ollama的健康检查API
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/api/tags"))
+                .timeout(Duration.ofSeconds(5))
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, 
+                HttpResponse.BodyHandlers.ofString());
+            
+            return response.statusCode() == 200;
         } catch (Exception e) {
-            log.warn("[OllamaProvider] 服务不可用: {}", e.getMessage());
+            log.warn("[OllamaProvider] 健康检查失败: {}", e.getMessage());
             return false;
         }
     }
     
     @Override
-    public String getProviderName() {
-        return "Ollama (" + modelName + ")";
+    public String generate(String prompt, double temperature) {
+        try {
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", modelName);
+            requestBody.put("prompt", prompt);
+            requestBody.put("temperature", temperature);
+            requestBody.put("stream", false);
+            
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+            
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/api/generate"))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(timeout))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, 
+                HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Ollama API返回错误: " + response.body());
+            }
+            
+            return extractResponse(response.body());
+            
+        } catch (Exception e) {
+            log.error("[OllamaProvider] 生成文本失败", e);
+            throw new RuntimeException("Ollama调用失败: " + e.getMessage(), e);
+        }
+    }
+    
+    @Override
+    public String generateJson(String systemPrompt, String userPrompt, double temperature) {
+        // Ollama支持format参数来强制JSON输出
+        try {
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", modelName);
+            requestBody.put("prompt", systemPrompt + "\n\n" + userPrompt);
+            requestBody.put("temperature", temperature);
+            requestBody.put("stream", false);
+            requestBody.put("format", "json");  // 强制JSON格式
+            
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+            
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/api/generate"))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(timeout))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, 
+                HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Ollama API返回错误: " + response.body());
+            }
+            
+            return extractResponse(response.body());
+            
+        } catch (Exception e) {
+            log.error("[OllamaProvider] 生成JSON失败", e);
+            throw new RuntimeException("Ollama JSON生成失败: " + e.getMessage(), e);
+        }
+    }
+    
+    @Override
+    public Map<String, Object> getConfig() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("type", "ollama");
+        config.put("baseUrl", baseUrl);
+        config.put("modelName", modelName);
+        config.put("timeout", timeout);
+        return config;
+    }
+    
+    /**
+     * 从Ollama响应中提取文本
+     */
+    private String extractResponse(String responseBody) throws IOException {
+        Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
+        return (String) responseMap.getOrDefault("response", "");
     }
 }

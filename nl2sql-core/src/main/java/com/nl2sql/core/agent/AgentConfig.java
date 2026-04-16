@@ -5,6 +5,7 @@ import com.nl2sql.core.agent.skills.SkillContext;
 import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
 import com.nl2sql.core.agent.tools.*;
 import com.nl2sql.core.llm.LLMService;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -90,8 +91,9 @@ public class AgentConfig {
     public ReActAgent reActAgent() {
         log.info("初始化 NL2SQL ReAct Agent...");
         
-        ChatModel model = llmService.getChatModel();
-        ReActAgent agent = new ReActAgent(model);
+        // 创建LangChain4j ChatModel适配器，使用LLMService
+        ChatModel chatModel = createChatModelAdapter();
+        ReActAgent agent = new ReActAgent(chatModel);
         
         // 注入 Skills 元数据加载器（如果存在）
         if (skillsMetadataLoader != null) {
@@ -464,5 +466,35 @@ public class AgentConfig {
             case "area": return "面积图";
             default: return "图表";
         }
+    }
+    
+    /**
+     * 创建ChatModel适配器，将LLMService包装为LangChain4j的ChatModel
+     */
+    private ChatModel createChatModelAdapter() {
+        return new ChatModel() {
+            @Override
+            public dev.langchain4j.model.chat.response.ChatResponse chat(dev.langchain4j.model.chat.request.ChatRequest request) {
+                // 从request中提取消息
+                StringBuilder prompt = new StringBuilder();
+                for (dev.langchain4j.data.message.ChatMessage msg : request.messages()) {
+                    if (msg instanceof dev.langchain4j.data.message.SystemMessage) {
+                        prompt.append(((dev.langchain4j.data.message.SystemMessage) msg).text()).append("\n\n");
+                    } else if (msg instanceof dev.langchain4j.data.message.UserMessage) {
+                        prompt.append(((dev.langchain4j.data.message.UserMessage) msg).singleText()).append("\n\n");
+                    } else if (msg instanceof AiMessage) {
+                        prompt.append("Assistant: ").append(((AiMessage) msg).text()).append("\n\n");
+                    }
+                }
+                
+                // 调用LLMService
+                String response = llmService.generateSQL(prompt.toString());
+                
+                // 包装为LangChain4j的ChatResponse
+                return dev.langchain4j.model.chat.response.ChatResponse.builder()
+                    .aiMessage(new AiMessage(response))
+                    .build();
+            }
+        };
     }
 }

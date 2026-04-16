@@ -19,10 +19,9 @@ public class OpenAICompatibleConfig {
         @Value("${llm.openai-compatible.base-url}") String baseUrl,
         @Value("${llm.openai-compatible.api-key:}") String apiKey,
         @Value("${llm.reasoning.model:qwen-plus}") String modelName,
-        @Value("${llm.reasoning.temperature:0.7}") double temperature,
         @Value("${llm.openai-compatible.timeout:30}") int timeout
     ) {
-        return new OpenAICompatibleProvider(baseUrl, apiKey, modelName, temperature, timeout);
+        return new OpenAICompatibleProvider("openai-compatible", baseUrl, modelName, apiKey, timeout);
     }
     
     @Bean("codeProvider")
@@ -30,9 +29,8 @@ public class OpenAICompatibleConfig {
         @Value("${llm.openai-compatible.base-url}") String baseUrl,
         @Value("${llm.openai-compatible.api-key:}") String apiKey,
         @Value("${llm.code.model:qwen-coder}") String modelName,
-        @Value("${llm.code.temperature:0.0}") double temperature,
         @Value("${llm.openai-compatible.timeout:30}") int timeout
     ) {
-        return new OpenAICompatibleProvider(baseUrl, apiKey, modelName, temperature, timeout);
+        return new OpenAICompatibleProvider("openai-compatible-code", baseUrl, modelName, apiKey, timeout);
     }
 }
