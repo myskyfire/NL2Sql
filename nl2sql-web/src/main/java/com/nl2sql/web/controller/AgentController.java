@@ -41,6 +41,9 @@ public class AgentController {
     @Autowired(required = false)
     private com.nl2sql.core.rag.SQLFeedbackService feedbackService;
     
+    @Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    
     /**
      * Agent 对话接口 - 测试版本（无需认证）
      */
@@ -165,6 +168,9 @@ public class AgentController {
                 response.put("datasourceId", request.getDatasourceId());
             }
             
+            // 6. 记录查询日志到 nl2sql_query_log 表（用于默认评分功能）
+            logQueryToDatabase(request, response, userInfo);
+            
             log.info("[Agent对话] 最终响应: {}", response);
             
             return Result.success(response);
@@ -201,6 +207,70 @@ public class AgentController {
         userInfoMap.put("username", userInfo.getUsername());
         userInfoMap.put("realName", userInfo.getRealName());
         return userInfoMap;
+    }
+    
+    /**
+     * 记录查询日志到数据库（用于默认评分功能）
+     */
+    private void logQueryToDatabase(ChatRequest request, Map<String, Object> response, AuthService.UserInfo userInfo) {
+        if (jdbcTemplate == null) {
+            log.debug("[查询日志] JdbcTemplate 未注入，跳过日志记录");
+            return;
+        }
+        
+        try {
+            // 只记录成功且有SQL的查询
+            Boolean success = (Boolean) response.get("success");
+            String sql = (String) response.get("sql");
+            
+            if (success != null && success && sql != null && !sql.trim().isEmpty()) {
+                String insertSql = "INSERT INTO nl2sql_query_log " +
+                    "(session_id, user_id, question, generated_sql, executed_sql, " +
+                    "execution_success, row_count, execution_time_ms, datasource_id) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                
+                // 提取数据
+                String sessionId = request.getSessionId() != null ? 
+                    request.getSessionId() : "default_" + userInfo.getUserId();
+                String question = request.getMessage();
+                String executedSql = sql; // 实际执行的SQL（可能经过修正）
+                Integer rowCount = 0;
+                Double executionTimeMs = 0.0;
+                Long datasourceId = request.getDatasourceId();
+                
+                // 尝试从 response 中提取更多信息
+                if (response.containsKey("rowCount")) {
+                    Object rc = response.get("rowCount");
+                    if (rc instanceof Number) {
+                        rowCount = ((Number) rc).intValue();
+                    }
+                }
+                
+                if (response.containsKey("executionTime")) {
+                    Object et = response.get("executionTime");
+                    if (et instanceof Number) {
+                        executionTimeMs = ((Number) et).doubleValue();
+                    }
+                }
+                
+                jdbcTemplate.update(insertSql,
+                    sessionId,
+                    userInfo.getUserId(),
+                    question,
+                    sql,
+                    executedSql,
+                    true,  // execution_success
+                    rowCount,
+                    executionTimeMs,
+                    datasourceId
+                );
+                
+                log.debug("[查询日志] 已记录: sessionId={}, rowCount={}", sessionId, rowCount);
+            }
+        } catch (Exception e) {
+            // 日志记录失败不影响主流程
+            log.warn("[查询日志] 记录失败: {}", e.getMessage());
+        }
     }
     
     /**

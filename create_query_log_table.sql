@@ -1,29 +1,29 @@
 -- ============================================
--- 创建 nl2sql_query_log 表
--- 用于记录所有NL2SQL查询历史，支持默认评分功能
+-- Create nl2sql_query_log table
+-- For recording all NL2SQL query history, supporting default rating feature
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS `nl2sql_query_log` (
-    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `session_id` VARCHAR(128) NOT NULL COMMENT '会话ID',
-    `user_id` BIGINT DEFAULT NULL COMMENT '用户ID',
-    `question` TEXT NOT NULL COMMENT '用户问题（自然语言）',
-    `generated_sql` TEXT NOT NULL COMMENT '生成的SQL语句',
-    `executed_sql` TEXT DEFAULT NULL COMMENT '实际执行的SQL（可能经过修正）',
-    `execution_success` BOOLEAN DEFAULT FALSE COMMENT '执行是否成功',
-    `row_count` INT DEFAULT 0 COMMENT '返回行数',
-    `execution_time_ms` DOUBLE DEFAULT 0 COMMENT '执行耗时（毫秒）',
-    `error_message` TEXT DEFAULT NULL COMMENT '错误信息（如果失败）',
-    `datasource_id` BIGINT DEFAULT NULL COMMENT '数据源ID',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key ID',
+    `session_id` VARCHAR(128) NOT NULL COMMENT 'Session ID',
+    `user_id` BIGINT DEFAULT NULL COMMENT 'User ID',
+    `question` TEXT NOT NULL COMMENT 'User question (natural language)',
+    `generated_sql` TEXT NOT NULL COMMENT 'Generated SQL statement',
+    `executed_sql` TEXT DEFAULT NULL COMMENT 'Actually executed SQL (may be corrected)',
+    `execution_success` BOOLEAN DEFAULT FALSE COMMENT 'Execution success or not',
+    `row_count` INT DEFAULT 0 COMMENT 'Returned row count',
+    `execution_time_ms` DOUBLE DEFAULT 0 COMMENT 'Execution time (milliseconds)',
+    `error_message` TEXT DEFAULT NULL COMMENT 'Error message (if failed)',
+    `datasource_id` BIGINT DEFAULT NULL COMMENT 'Datasource ID',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
     
     PRIMARY KEY (`id`),
     INDEX `idx_session_id` (`session_id`),
     INDEX `idx_user_id` (`user_id`),
     INDEX `idx_created_at` (`created_at`),
     INDEX `idx_datasource_id` (`datasource_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='NL2SQL查询日志表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='NL2SQL Query Log Table';
 
--- 添加索引优化查询性能
+-- Add index to optimize query performance
 CREATE INDEX `idx_session_created` ON `nl2sql_query_log` (`session_id`, `created_at` DESC);

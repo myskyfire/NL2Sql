@@ -206,11 +206,6 @@ public class SQLFeedbackService {
      * @return 是否成功应用默认评分
      */
     public boolean applyDefaultRating(String sessionId) {
-        // ⚠️ 临时禁用：需要创建 nl2sql_query_log 表才能启用此功能
-        log.debug("[默认评分] 功能已禁用，等待 nl2sql_query_log 表创建");
-        return false;
-        
-        /*
         if (sessionId == null || sessionId.trim().isEmpty()) {
             return false;
         }
@@ -267,6 +262,5 @@ public class SQLFeedbackService {
             log.error("[默认评分] 应用默认评分失败: sessionId={}", sessionId, e);
             return false;
         }
-        */
     }
 }
