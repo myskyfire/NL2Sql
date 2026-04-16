@@ -38,6 +38,9 @@ public class AgentController {
     @Autowired
     private AgentResponseProcessor responseProcessor;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.rag.SQLFeedbackService feedbackService;
+    
     /**
      * Agent 对话接口 - 测试版本（无需认证）
      */
@@ -95,6 +98,20 @@ public class AgentController {
         LogContextUtil.setUserContext(userInfo.getUserId(), userInfo.getUsername());
         
         try {
+            // ✅ 新增：在处理新查询前，给上次未评分的结果赋予默认3星评分
+            String sessionId = request.getSessionId() != null ? 
+                request.getSessionId() : "default_" + userInfo.getUserId();
+            if (feedbackService != null) {
+                try {
+                    boolean applied = feedbackService.applyDefaultRating(sessionId);
+                    if (applied) {
+                        log.info("[Agent对话] 已应用默认评分: sessionId={}", sessionId);
+                    }
+                } catch (Exception e) {
+                    log.warn("[Agent对话] 应用默认评分失败，继续处理: {}", e.getMessage());
+                }
+            }
+            
             // ✅ 关键修复：检测并修复中文乱码
             String originalMessage = request.getMessage();
             String fixedMessage = fixEncoding(originalMessage);

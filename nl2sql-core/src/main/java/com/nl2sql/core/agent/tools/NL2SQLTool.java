@@ -249,15 +249,40 @@ public class NL2SQLTool {
                         StringBuilder ragBuilder = new StringBuilder();
                         ragBuilder.append("\n\n参考示例（历史成功案例，请借鉴其JOIN方式和字段选择）:\n");
                         
+                        int validCount = 0;
                         for (int i = 0; i < Math.min(similarItems.size(), 3); i++) {
                             RagKnowledgeBaseService.KnowledgeItem item = similarItems.get(i);
-                            ragBuilder.append(String.format("\n示例%d:\n", i + 1));
+                            
+                            // ✅ 关键过滤：跳过包含GROUP BY但问题未要求统计的示例
+                            if (item.getSqlExample() != null && !item.getSqlExample().isEmpty()) {
+                                String sql = item.getSqlExample().toUpperCase();
+                                boolean hasGroupBy = sql.contains("GROUP BY");
+                                boolean isStatQuestion = item.getQuestion().contains("统计") || 
+                                                       item.getQuestion().contains("汇总") ||
+                                                       item.getQuestion().contains("平均") ||
+                                                       item.getQuestion().contains("合计");
+                                
+                                // 如果SQL有GROUP BY但问题不是统计类，跳过此示例
+                                if (hasGroupBy && !isStatQuestion) {
+                                    log.warn("[NL2SQLTool] 跳过错误的RAG示例: question={}, reason=非统计问题但包含GROUP BY", 
+                                        item.getQuestion());
+                                    continue;
+                                }
+                            }
+                            
+                            ragBuilder.append(String.format("\n示例%d:\n", ++validCount));
                             ragBuilder.append("问题: ").append(item.getQuestion()).append("\n");
                             if (item.getSqlExample() != null && !item.getSqlExample().isEmpty()) {
                                 ragBuilder.append("SQL: ").append(item.getSqlExample()).append("\n");
                             }
                         }
-                        ragEnhancement = ragBuilder.toString();
+                        
+                        if (validCount > 0) {
+                            ragEnhancement = ragBuilder.toString();
+                            log.info("[NL2SQLTool] 有效RAG示例数量: {}", validCount);
+                        } else {
+                            log.info("[NL2SQLTool] 所有RAG示例均被过滤，不使用RAG增强");
+                        }
                     } else {
                         log.debug("[NL2SQLTool] RAG未找到相似示例");
                     }

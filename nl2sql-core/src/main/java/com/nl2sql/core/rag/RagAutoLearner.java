@@ -80,6 +80,12 @@ public class RagAutoLearner {
      * @param executionTime 执行时间（毫秒）
      */
     public void learnFromExecution(String question, String sql, int rowCount, long executionTime) {
+        // ✅ 关键修复：入库前进行语义一致性验证
+        if (!validateSemanticConsistency(question, sql)) {
+            log.warn("[RagAutoLearner] 拒绝学习语义不一致的SQL: question={}, sql={}", question, sql);
+            return;
+        }
+        
         // 计算质量评分
         double qualityScore = calculateQualityScore(rowCount, executionTime);
         
@@ -138,6 +144,62 @@ public class RagAutoLearner {
         }
         
         return "普通查询";
+    }
+    
+    /**
+     * ✅ 关键：验证SQL与问题的语义一致性
+     * 
+     * @param question 用户问题
+     * @param sql 生成的SQL
+     * @return 是否一致
+     */
+    private boolean validateSemanticConsistency(String question, String sql) {
+        String upperSql = sql.toUpperCase();
+        boolean hasGroupBy = upperSql.contains("GROUP BY");
+        
+        // 规则1: 如果SQL有GROUP BY，问题必须包含统计类关键词
+        if (hasGroupBy) {
+            boolean isStatQuestion = question.contains("统计") || 
+                                   question.contains("汇总") ||
+                                   question.contains("平均") ||
+                                   question.contains("合计") ||
+                                   question.contains("每个") ||
+                                   question.contains("各") ||
+                                   question.contains("分组");
+            
+            if (!isStatQuestion) {
+                log.warn("[RagAutoLearner] 语义不一致: SQL包含GROUP BY但问题非统计类: {}", question);
+                return false;
+            }
+        }
+        
+        // 规则2: 如果问题是统计类，SQL必须有聚合函数或GROUP BY
+        boolean isStatQuestion = question.contains("统计") || 
+                               question.contains("汇总") ||
+                               question.contains("平均") ||
+                               question.contains("合计");
+        
+        if (isStatQuestion) {
+            boolean hasAggregation = upperSql.contains("SUM(") || 
+                                   upperSql.contains("COUNT(") ||
+                                   upperSql.contains("AVG(") ||
+                                   upperSql.contains("MAX(") ||
+                                   upperSql.contains("MIN(") ||
+                                   hasGroupBy;
+            
+            if (!hasAggregation) {
+                log.warn("[RagAutoLearner] 语义不一致: 问题是统计类但SQL无聚合: {}", question);
+                return false;
+            }
+        }
+        
+        // 规则3: 禁止SELECT * 用于统计问题
+        if (isStatQuestion && upperSql.contains("SELECT *")) {
+            log.warn("[RagAutoLearner] 语义不一致: 统计问题不应使用SELECT *: {}", question);
+            return false;
+        }
+        
+        return true;
     }
     
     /**

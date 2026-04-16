@@ -326,6 +326,25 @@
             font-size: 13px;
             overflow-x: auto;
         }
+        
+        /* ✅ SQL反馈评分样式 */
+        .rating-stars {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .star-btn {
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+            opacity: 0.5;
+        }
+        
+        .star-btn:hover {
+            opacity: 1;
+            transform: scale(1.2);
+        }
     </style>
 </head>
 <body>
@@ -560,6 +579,13 @@
             } else if (data.data && Array.isArray(data.data) && data.data.length === 0) {
                 // 查询成功但没有数据
                 html += '<div style="margin-top:12px;padding:16px;background:#f5f7fa;border-radius:6px;text-align:center;color:#999;">📭 未查到数据</div>';
+            }
+            
+            // ✅ 新增：SQL反馈评分组件
+            if (data.generatedSQL || data.sql) {
+                const sqlForFeedback = data.generatedSQL || data.sql;
+                const questionForFeedback = lastUserMessage ? lastUserMessage.textContent.trim() : '';
+                html += renderFeedbackButtons(questionForFeedback, sqlForFeedback);
             }
             
             // 显示 AI 总结
@@ -1583,6 +1609,172 @@
             };
         }
         
+        // ✅ 新增：渲染SQL反馈评分按钮
+        function renderFeedbackButtons(question, sql) {
+            const feedbackId = 'feedback_' + Date.now();
+            let html = '<div class="feedback-container" style="margin-top:15px;padding:12px;background:#f9f9f9;border-radius:8px;border-left:3px solid #667eea;">';
+            html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">👍 SQL质量评分（可选，不评默认为3星）</div>';
+            html += '<div class="rating-stars" id="' + feedbackId + '">';
+            
+            for (let i = 1; i <= 5; i++) {
+                html += `<span class="star-btn" onclick="handleStarClick('${feedbackId}', ${i}, '${escapeHtml(question)}', \`${escapeHtml(sql)}\`)" data-rating="${i}">⭐</span>`;
+            }
+            
+            html += '</div>';
+            // 低分输入框（初始隐藏）
+            html += '<div class="feedback-reason" id="' + feedbackId + '_reason" style="display:none;margin-top:10px;">';
+            html += '<textarea id="' + feedbackId + '_reason_text" placeholder="请说明SQL错误原因，帮助AI改进..." '; 
+            html += 'style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;resize:vertical;min-height:60px;"></textarea>';
+            html += '<button onclick="submitFeedbackWithReason(\'' + feedbackId + '\')" '; 
+            html += 'style="margin-top:8px;padding:6px 16px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">提交反馈</button>';
+            html += '</div>';
+            html += '<div class="feedback-text" id="' + feedbackId + '_text" style="display:none;margin-top:8px;font-size:12px;color:#4caf50;"></div>';
+            html += '</div>';
+            
+            return html;
+        }
+        
+        // ✅ 新增：处理星星点击事件
+        function handleStarClick(containerId, rating, question, sql) {
+            // 存储当前评分和问题/SQL到容器元素上
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            container.dataset.rating = rating;
+            container.dataset.question = question;
+            container.dataset.sql = sql;
+            
+            // 如果评分 <= 2，显示低分输入框
+            if (rating <= 2) {
+                const reasonDiv = document.getElementById(containerId + '_reason');
+                if (reasonDiv) {
+                    reasonDiv.style.display = 'block';
+                }
+                
+                // 高亮选中的星星
+                highlightStars(containerId, rating);
+            } else {
+                // 高分直接提交
+                submitFeedback(containerId, rating, question, sql);
+            }
+        }
+        
+        // ✅ 新增：提交带原因的反馈
+        async function submitFeedbackWithReason(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            const rating = parseInt(container.dataset.rating);
+            const question = container.dataset.question;
+            const sql = container.dataset.sql;
+            const reasonText = document.getElementById(containerId + '_reason_text').value.trim();
+            
+            if (!reasonText) {
+                alert('请说明SQL错误原因，帮助AI改进');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/feedback/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: question,
+                        generatedSql: sql,
+                        rating: rating,
+                        feedbackText: reasonText,
+                        sessionId: currentSessionId
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    // 隐藏输入框，显示感谢信息
+                    const reasonDiv = document.getElementById(containerId + '_reason');
+                    const textDiv = document.getElementById(containerId + '_text');
+                    
+                    if (reasonDiv) reasonDiv.style.display = 'none';
+                    if (textDiv) {
+                        textDiv.style.display = 'block';
+                        textDiv.textContent = `✅ 感谢您的详细反馈！我们将根据您的问题改进AI模型。`;
+                    }
+                    
+                    // 禁用所有星星
+                    disableStars(containerId);
+                    
+                    console.log('[SQL反馈] 低分反馈提交成功:', result.data);
+                } else {
+                    console.error('[SQL反馈] 提交失败:', result.message);
+                    alert('提交失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('[SQL反馈] 网络错误:', error);
+                alert('网络错误，请稍后重试');
+            }
+        }
+        
+        // ✅ 新增：提交SQL反馈
+        async function submitFeedback(containerId, rating, question, sql) {
+            try {
+                const response = await fetch('/api/feedback/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: question,
+                        generatedSql: sql,
+                        rating: rating,
+                        sessionId: currentSessionId
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    // 显示感谢信息
+                    const textDiv = document.getElementById(containerId + '_text');
+                    
+                    if (textDiv) {
+                        textDiv.style.display = 'block';
+                        textDiv.textContent = `✅ 感谢您的评分（${rating}星）！`;
+                    }
+                    
+                    // 高亮选中的星星并禁用
+                    highlightStars(containerId, rating);
+                    disableStars(containerId);
+                    
+                    console.log('[SQL反馈] 提交成功:', result.data);
+                } else {
+                    console.error('[SQL反馈] 提交失败:', result.message);
+                }
+            } catch (error) {
+                console.error('[SQL反馈] 网络错误:', error);
+            }
+        }
+        
+        // ✅ 辅助函数：高亮星星
+        function highlightStars(containerId, rating) {
+            const starsDiv = document.getElementById(containerId);
+            if (!starsDiv) return;
+            
+            const stars = starsDiv.querySelectorAll('.star-btn');
+            stars.forEach((star, index) => {
+                star.style.opacity = (index < rating) ? '1' : '0.3';
+            });
+        }
+        
+        // ✅ 辅助函数：禁用所有星星
+        function disableStars(containerId) {
+            const starsDiv = document.getElementById(containerId);
+            if (!starsDiv) return;
+            
+            const stars = starsDiv.querySelectorAll('.star-btn');
+            stars.forEach(star => {
+                star.style.cursor = 'default';
+                star.onclick = null;
+            });
+        }
+        
         // ✅ 暴露函数到全局作用域（供 onclick 调用）
         window.sendMessage = sendMessage;
         window.handleSuggestionClick = handleSuggestionClick;
@@ -1591,6 +1783,9 @@
         window.confirmDatasource = confirmDatasource;
         window.showAllDatasources = showAllDatasources;
         window.submitRelationshipAnswer = submitRelationshipAnswer;
+        window.submitFeedback = submitFeedback;
+        window.submitFeedbackWithReason = submitFeedbackWithReason;
+        window.handleStarClick = handleStarClick;
     </script>
 </body>
 </html>

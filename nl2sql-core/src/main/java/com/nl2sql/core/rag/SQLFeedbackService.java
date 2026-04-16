@@ -23,6 +23,9 @@ public class SQLFeedbackService {
     @Autowired(required = false)
     private RagKnowledgeBaseService ragKnowledgeBaseService;
     
+    @Autowired(required = false)
+    private FeedbackLearningService feedbackLearningService;
+    
     /**
      * 提交SQL反馈
      */
@@ -100,7 +103,20 @@ public class SQLFeedbackService {
                 log.warn("低分反馈 [{}星]: question={}, reason={}", 
                     request.getRating(), request.getQuestion(), request.getFeedbackText());
                 
-                // TODO: 可以触发告警或人工审核流程
+                // ✅ 新增：触发Agent学习修正
+                if (feedbackLearningService != null) {
+                    try {
+                        feedbackLearningService.processLowRatingFeedback(
+                            feedbackId, 
+                            request.getRating(), 
+                            request.getQuestion(), 
+                            request.getGeneratedSql(), 
+                            request.getFeedbackText()
+                        );
+                    } catch (Exception e) {
+                        log.error("[反馈学习] 处理失败: feedbackId={}", feedbackId, e);
+                    }
+                }
             }
             
         } catch (Exception e) {
@@ -179,6 +195,72 @@ public class SQLFeedbackService {
         } catch (Exception e) {
             log.error("获取低分反馈失败", e);
             return List.of();
+        }
+    }
+    
+    /**
+     * ✅ 新增：自动给上次未评分的结果赋予默认评分（3星）
+     * 当用户发起新查询时，如果上次查询没有评分，则认为用户认可，给3星
+     * 
+     * @param sessionId 会话ID
+     * @return 是否成功应用默认评分
+     */
+    public boolean applyDefaultRating(String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            return false;
+        }
+        
+        try {
+            // 查找该会话中最近一次生成的SQL，且没有对应的反馈记录
+            String checkSql = "SELECT q.question, q.generated_sql, q.executed_sql, q.execution_success " +
+                             "FROM nl2sql_query_log q " +
+                             "LEFT JOIN rag_feedback f ON q.session_id = f.session_id " +
+                             "AND q.generated_sql = f.generated_sql " +
+                             "WHERE q.session_id = ? " +
+                             "AND f.id IS NULL " +
+                             "ORDER BY q.created_at DESC " +
+                             "LIMIT 1";
+            
+            List<Map<String, Object>> queries = jdbcTemplate.queryForList(checkSql, sessionId);
+            
+            if (queries.isEmpty()) {
+                log.debug("[默认评分] 会话 {} 没有未评分的查询", sessionId);
+                return false;
+            }
+            
+            Map<String, Object> lastQuery = queries.get(0);
+            String question = (String) lastQuery.get("question");
+            String generatedSql = (String) lastQuery.get("generated_sql");
+            String executedSql = (String) lastQuery.get("executed_sql");
+            Boolean executionSuccess = (Boolean) lastQuery.get("execution_success");
+            
+            // 插入默认3星评分
+            String insertSql = "INSERT INTO rag_feedback (" +
+                              "knowledge_id, user_id, session_id, rating, feedback_text, " +
+                              "question, generated_sql, executed_sql, execution_success, " +
+                              "ip_address, user_agent, created_at" +
+                              ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+            
+            jdbcTemplate.update(insertSql,
+                null,  // knowledgeId
+                null,  // userId
+                sessionId,
+                3,     // 默认3星
+                "用户未评分，默认为中等评价",  // 自动填充的反馈文本
+                question,
+                generatedSql,
+                executedSql,
+                executionSuccess != null ? executionSuccess : false,
+                "system",  // 系统自动评分
+                "auto-rating"
+            );
+            
+            log.info("[默认评分] 会话 {} 自动赋予3星评分: question={}", sessionId, question);
+            return true;
+            
+        } catch (Exception e) {
+            log.error("[默认评分] 应用默认评分失败: sessionId={}", sessionId, e);
+            return false;
         }
     }
 }

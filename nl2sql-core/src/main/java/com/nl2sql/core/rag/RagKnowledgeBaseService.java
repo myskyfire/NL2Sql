@@ -94,12 +94,20 @@ public class RagKnowledgeBaseService {
      * MySQL全文检索（降级方案）
      */
     private List<KnowledgeItem> searchByMySQL(String question, int maxResults) {
-        String sql = "SELECT id, question, answer, sql_example, category, quality_score, usage_count, " +
-                    "MATCH(question) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance " +
-                    "FROM rag_knowledge_base " +
-                    "WHERE MATCH(question) AGAINST(? IN NATURAL LANGUAGE MODE) " +
-                    "AND quality_score >= ? " +
-                    "ORDER BY relevance DESC, quality_score DESC " +
+        // ✅ 关键优化：结合用户反馈评分调整排序权重
+        String sql = "SELECT k.id, k.question, k.answer, k.sql_example, k.category, k.quality_score, k.usage_count, " +
+                    "MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance, " +
+                    "COALESCE(avg_feedback.rating, 3.0) as avg_rating " +  // 平均评分，默认3.0
+                    "FROM rag_knowledge_base k " +
+                    "LEFT JOIN (" +
+                    "    SELECT knowledge_id, AVG(rating) as rating " +
+                    "    FROM rag_feedback " +
+                    "    WHERE rating >= 3 " +  // 只统计正面反馈
+                    "    GROUP BY knowledge_id" +
+                    ") avg_feedback ON k.id = avg_feedback.knowledge_id " +
+                    "WHERE MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) " +
+                    "AND k.quality_score >= ? " +
+                    "ORDER BY (relevance * 0.6 + (avg_rating / 5.0) * 0.4) DESC, k.quality_score DESC " +  // 综合评分
                     "LIMIT ?";
         
         List<KnowledgeItem> results = jdbcTemplate.query(
@@ -109,7 +117,7 @@ public class RagKnowledgeBaseService {
         );
         
         if (!results.isEmpty()) {
-            log.info("RAG检索成功(MySQL): question={}, found={} items", question, results.size());
+            log.info("RAG检索成功(MySQL+Feedback): question={}, found={} items", question, results.size());
         } else {
             log.debug("RAG未找到相似问题: question={}", question);
         }
