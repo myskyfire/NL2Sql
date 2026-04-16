@@ -236,7 +236,7 @@ public class TableRelationshipService {
             throw new IllegalArgumentException("数据源ID不能为空");
         }
         
-        log.info("开始从 SQL提取关联关系: datasourceId={}, SQL={}", datasourceId, sql.substring(0, Math.min(100, sql.length())));
+        log.info("开始从 SQL提取关联关系: datasourceId={}, SQL={}", datasourceId, sql);
         
         // ✅ 验证 SQL 是否包含表关联（支持多种关联方式）
         String upperSQL = sql.toUpperCase();

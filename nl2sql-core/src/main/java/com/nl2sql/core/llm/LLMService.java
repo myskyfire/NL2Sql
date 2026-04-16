@@ -60,12 +60,12 @@ public class LLMService {
      */
     public String generateSQL(String prompt) {
         try {
-            log.debug("发送提示词到LLM: {}", prompt.substring(0, Math.min(100, prompt.length())));
+            log.debug("发送提示词到LLM: {}", prompt);
             
             // 使用低温度以获得更确定的结果
             String response = activeProvider.generate(prompt, 0.0);
             
-            log.debug("LLM响应: {}", response.substring(0, Math.min(100, response.length())));
+            log.debug("LLM响应: {}", response);
             return response.trim();
             
         } catch (Exception e) {
@@ -125,12 +125,12 @@ public class LLMService {
      */
     public String generateAnswer(String prompt) {
         try {
-            log.debug("发送提示词到LLM: {}", prompt.substring(0, Math.min(100, prompt.length())));
+            log.debug("发送提示词到LLM: {}", prompt);
             
             // 使用中等温度以获得更自然的回答
             String response = activeProvider.generate(prompt, 0.7);
             
-            log.debug("LLM响应: {}", response.substring(0, Math.min(100, response.length())));
+            log.debug("LLM响应: {}", response);
             return response.trim();
             
         } catch (Exception e) {

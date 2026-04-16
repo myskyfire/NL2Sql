@@ -327,7 +327,7 @@ public class NL2SQLTool {
             String schemaInfo = buildTableSchemaInfo(new ArrayList<>(expandedTables), datasourceId);
             
             log.info("[NL2SQLTool] ========== SchemaInfo(前500字符) ==========");
-            log.info("[NL2SQLTool] {}", schemaInfo.length() > 500 ? schemaInfo.substring(0, 500) + "..." : schemaInfo);
+            log.info("[NL2SQLTool] {}", schemaInfo);
             log.info("[NL2SQLTool] ================================================");
             
             String joinHint = fullRelationshipInfo.isEmpty() ? "" : 

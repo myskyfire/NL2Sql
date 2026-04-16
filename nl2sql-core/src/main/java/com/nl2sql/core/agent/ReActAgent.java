@@ -166,7 +166,7 @@ public class ReActAgent {
                             performanceMonitor.recordToolEnd(toolName, startTime, true);
                         }
                         
-                        log.info("[ReActAgent] 工具执行结果: {}", observation.substring(0, Math.min(200, observation.length())));
+                        log.info("[ReActAgent] 工具执行结果: {}", observation);
                         
                         // 检查是否是结构化数据（JSON格式）
                         if (isStructuredData(observation)) {
@@ -206,7 +206,7 @@ public class ReActAgent {
                                 performanceMonitor.recordToolEnd(matchedToolName, startTime, true);
                             }
                             
-                            log.info("[ReActAgent] 工具执行结果: {}", observation.substring(0, Math.min(200, observation.length())));
+                            log.info("[ReActAgent] 工具执行结果: {}", observation);
                             
                             if (isStructuredData(observation)) {
                                 log.info("[ReActAgent] 检测到结构化数据，直接返回");
@@ -237,7 +237,7 @@ public class ReActAgent {
                 if (llmOutput.contains("数据源") || llmOutput.contains("推荐使用") || 
                     llmOutput.contains("请确认") || llmOutput.contains("是否使用")) {
                     log.warn("[ReActAgent] LLM输出了数据源确认问句，但没有调用工具！这是错误的行为。");
-                    log.warn("[ReActAgent] LLM输出: {}", llmOutput.substring(0, Math.min(100, llmOutput.length())));
+                    log.warn("[ReActAgent] LLM输出: {}", llmOutput);
                     
                     // ⚠️ 如果当前有 datasourceId，说明之前已经调用了 clarify_datasource
                     // LLM应该直接调用 execute_standard_query，但它失败了

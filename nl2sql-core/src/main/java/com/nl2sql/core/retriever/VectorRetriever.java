@@ -89,7 +89,7 @@ public class VectorRetriever {
         if (cacheService != null) {
             List<String> cachedResult = cacheService.getVectorRetrieval(query);
             if (cachedResult != null && !cachedResult.isEmpty()) {
-                log.debug("[VectorRetriever] 缓存命中: {}", query.substring(0, Math.min(50, query.length())));
+                log.debug("[VectorRetriever] 缓存命中: {}", query);
                 return cachedResult;
             }
         }

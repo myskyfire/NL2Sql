@@ -39,7 +39,7 @@ public class SQLValidationService {
         
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
-            log.debug("[SQLValidation] 语法校验通过: {}", sql.substring(0, Math.min(100, sql.length())));
+            log.debug("[SQLValidation] 语法校验通过: {}", sql);
             return ValidationResult.success(statement);
             
         } catch (JSQLParserException e) {
