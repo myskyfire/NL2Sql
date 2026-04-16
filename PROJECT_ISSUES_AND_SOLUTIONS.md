@@ -650,6 +650,179 @@ private String generateStandardDescription(String sourceTable, String sourceColu
 
 ---
 
+## 15. SQL关联关系智能提取问题
+
+### 问题15.1：复杂SQL关联关系提取与渐进式引导策略
+**时间**：2026-04-16  
+**场景**：用户希望通过输入SQL自动提取表关联关系，但SQL写法千差万别，程序难以完美解析所有情况。
+
+**支持的SQL关联方式**：
+
+| 关联类型 | 示例 | 支持状态 |
+|---------|------|----------|
+| 显式JOIN | `FROM orders o JOIN users u ON o.user_id = u.id` | ✅ 完全支持 |
+| 隐式JOIN | `FROM orders o, users u WHERE o.user_id = u.id` | ✅ 完全支持 |
+| IN子查询 | `WHERE user_id IN (SELECT id FROM users)` | ✅ 完全支持 |
+| EXISTS子查询 | `WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = o.user_id)` | ✅ 完全支持 |
+| NOT EXISTS | `WHERE NOT EXISTS (...)` | ✅ 完全支持 |
+| 比较运算符子查询 | `WHERE id = ANY (SELECT ...)` | ✅ 完全支持 |
+| 函数转换关联 | `WHERE DATE(a.time) = b.date` | ⚠️ 可提取但提示风险 |
+| 多层嵌套(>3层) | 4层以上SELECT嵌套 | ⚠️ 高复杂度警告 |
+| 多表JOIN(>5个) | 6个表以上的关联 | 💡 中等复杂度提示 |
+
+**根本挑战**：
+1. **SQL写法多样性**：同样的关联关系可以有多种SQL表达方式
+2. **复杂度差异大**：简单JOIN vs 多层嵌套EXISTS，解析难度天壤之别
+3. **用户体验平衡**：频繁提示会打扰用户，不提示又可能提取失败
+
+**解决方案：渐进式引导策略**
+
+#### 步骤1：引入复杂度评分系统（0-10分）
+
+```java
+// TableRelationshipService.java - analyzeSQLComplexity()
+private void analyzeSQLComplexity(String sql, List<String> suggestions) {
+    int complexityScore = 0;
+    
+    // 检测多层嵌套（SELECT数量）
+    int selectCount = upperSQL.split("SELECT").length - 1;
+    if (selectCount > 3) {
+        complexityScore += 3;  // 严重复杂
+        suggestions.add("⚠️ 检测到多层嵌套子查询...建议拆分");
+    } else if (selectCount > 2) {
+        complexityScore += 2;  // 较复杂
+        suggestions.add("💡 SQL包含" + selectCount + "层嵌套...");
+    }
+    
+    // 检测EXISTS子查询
+    if (upperSQL.contains("EXISTS")) {
+        complexityScore += 2;
+        suggestions.add("💡 检测到EXISTS子查询...");
+    }
+    
+    // 检测非等值关联（函数转换）
+    if (upperSQL.matches(".*LIKE.*CONCAT.*") || 
+        upperSQL.matches(".*DATE\\(.*\\).*=") || 
+        upperSQL.matches(".*UPPER\\(.*\\).*=")) {
+        complexityScore += 3;  // 难以准确提取
+        suggestions.add("⚠️ 检测到函数转换或模糊匹配关联...");
+    }
+    
+    // 检测多个JOIN（超过5个表）
+    int joinCount = upperSQL.split("JOIN").length - 1;
+    if (joinCount > 5) {
+        complexityScore += 2;
+        suggestions.add("💡 SQL涉及" + (joinCount + 1) + "个表的关联...");
+    }
+    
+    // 分级显示策略
+    if (complexityScore >= 3) {
+        suggestions.add(0, "📊 SQL复杂度评估：较高（" + complexityScore + "分）");
+    } else if (complexityScore >= 2) {
+        suggestions.add(0, "📊 SQL复杂度评估：中等（" + complexityScore + "分）");
+    } else {
+        suggestions.clear();
+        suggestions.add("✅ SQL格式规范，关联关系清晰");
+    }
+}
+```
+
+#### 步骤2：前端友好展示优化建议
+
+```javascript
+// relationship-management.html - showSuggestions()
+function showSuggestions(suggestions) {
+    const modal = document.createElement('div');
+    modal.innerHTML = `
+        <h3>💡 SQL优化建议</h3>
+        <div>${suggestionHtml}</div>
+        <button onclick="closeModal()">我了解了，继续提取</button>
+    `;
+    document.body.appendChild(modal);
+}
+```
+
+**用户体验流程**：
+```
+用户输入SQL
+    ↓
+后端解析 + 复杂度评分
+    ↓
+┌─────────────────────────────┐
+│ 评分 < 2: 不弹窗，直接提取   │ → 简单SQL，不打扰用户
+│ 评分 2-3: 弹出友好提示       │ → 中等复杂，可选优化
+│ 评分 ≥ 3: 弹出警告+建议      │ → 高复杂，强烈建议简化
+└─────────────────────────────┘
+    ↓
+用户点击“我了解了，继续提取”
+    ↓
+返回提取结果（即使有警告也继续）
+```
+
+#### 步骤3：TODO - LLM Fallback机制（待实现）
+
+**触发条件**：当程序化解析失败或提取结果为空时
+
+```java
+public Map<String, Object> extractRelationshipsWithSuggestions(String sql, Long datasourceId) {
+    // 1. 先尝试程序化解析
+    try {
+        relationships = extractRelationshipsFromSQL(sql, datasourceId);
+        if (!relationships.isEmpty()) {
+            return buildSuccessResult(relationships, analyzeSQLComplexity(sql));
+        }
+    } catch (Exception e) {
+        log.warn("程序化解析失败: {}", e.getMessage());
+    }
+    
+    // 2. Fallback到LLM
+    log.info("程序化解析未成功，尝试使用LLM分析");
+    return extractWithLLM(sql, datasourceId);
+}
+```
+
+**LLM提示词设计**：
+```
+你是一个SQL专家，请从以下SQL中提取表之间的关联关系。
+
+SQL语句：{sql}
+数据源ID：{datasourceId}
+
+要求：
+1. 识别所有表之间的关联字段（如：orders.user_id -> users.id）
+2. 判断关联类型（ONE_TO_ONE / ONE_TO_MANY / MANY_TO_ONE / MANY_TO_MANY）
+3. 只返回JSON格式，不要其他内容
+
+返回格式：
+{
+  "relationships": [
+    {
+      "sourceTable": "表名",
+      "sourceColumn": "字段名",
+      "targetTable": "表名",
+      "targetColumn": "字段名",
+      "relationshipType": "关联类型",
+      "confidence": 0.95
+    }
+  ]
+}
+```
+
+**实施优先级**：
+- 🟡 中优先级 - 当前程序化解析已覆盖80%常见场景
+- 📊 建议先收集用户反馈，统计解析失败率
+- 💰 如果失败率<5%，可以暂缓；如果>10%，应尽快实现
+
+**经验教训**：
+- ✅ **不要对所有不规范SQL都提示**：隐式JOIN虽不规范但很常见，频繁提示会影响体验
+- ✅ **量化复杂度**：用数字让用户直观了解SQL复杂度，而非主观判断
+- ✅ **分级提示策略**：不是所有问题都同等重要，聚焦真正影响提取准确性的问题
+- ✅ **尊重用户选择**：即使用户坚持使用复杂SQL，也要允许继续操作
+- ✅ **程序优先，LLM兜底**：80%场景用程序解决（零成本），20%复杂场景用LLM
+- ✅ **前后端协同**：后端评分，前端友好展示，给用户选择权
+
+---
+
 ## 总结
 
 ### 核心原则
@@ -679,7 +852,7 @@ private String generateStandardDescription(String sourceTable, String sourceColu
 
 ---
 
-**文档更新时间**：2026-04-15  
+**文档更新时间**：2026-04-16  
 **项目阶段**：开发中  
 **待补充**：性能优化、安全加固、生产部署经验
 
