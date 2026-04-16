@@ -438,11 +438,14 @@
         
         // 处理 Agent 响应
         async function handleAgentResponse(data) {
-            console.log('[Agent响应] 完整数据:', data);
+            console.log('[Agent响应] ========== 开始处理 ==========');
+            console.log('[Agent响应] 完整数据:', JSON.stringify(data, null, 2));
             console.log('[Agent响应] status:', data.status);
             console.log('[Agent响应] message:', data.message);
             console.log('[Agent响应] clarificationType:', data.clarificationType);
             console.log('[Agent响应] data字段:', data.data ? `有${data.data.length}条` : '无');
+            console.log('[Agent响应] generatedSQL:', data.generatedSQL || data.sql || '无');
+            console.log('[Agent响应] success:', data.success);
             
             // ⚠️ 重要：保留原有的 sql/generatedSQL，只更新其他字段
             const preservedFields = ['sql', 'generatedSQL'];
