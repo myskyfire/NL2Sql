@@ -742,9 +742,11 @@
                     // 下载数据 - 显示用户消息
                     addMessage(text, 'user');
                     showTypingIndicator();
-                    if (currentContext && currentContext.data) {
+                    if (currentContext && currentContext.data && currentContext.data.length > 0) {
                         downloadExcel(currentContext.data, 'query_result.xlsx');
                         addMessage('✅ 已开始下载', 'agent');
+                    } else {
+                        addMessage('❌ 没有可下载的数据，请重新执行查询', 'agent');
                     }
                     removeTypingIndicator();
                     break;
@@ -861,13 +863,7 @@
             console.log('[generateChart] sql:', currentContext?.sql);
             console.log('[generateChart] generatedSQL:', currentContext?.generatedSQL);
             
-            if (!currentContext || !currentContext.data || currentContext.data.length === 0) {
-                addMessage('❌ 没有可生成图表的数据', 'agent');
-                removeTypingIndicator();
-                return;
-            }
-            
-            if (!currentContext.datasourceId) {
+            if (!currentContext || !currentContext.datasourceId) {
                 addMessage('❌ 缺少数据源信息，请重新执行查询', 'agent');
                 removeTypingIndicator();
                 return;

@@ -1,5 +1,6 @@
 import com.nl2sql.core.agent.skills.SkillContext
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.slf4j.LoggerFactory
 
 /**
  * 报表与洞察技能
@@ -11,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
  * 适用于分析型场景
  */
 class ReportWithInsightsSkill {
+    
+    private static final def log = LoggerFactory.getLogger(ReportWithInsightsSkill.class)
     
     /**
      * 执行报表生成流程
@@ -24,7 +27,7 @@ class ReportWithInsightsSkill {
         Long userId = context.getParameter("userId")
         String username = context.getParameter("username")
         
-        println "[ReportWithInsightsSkill] 开始生成报表: question=${question}"
+        log.info("开始生成报表: question={}", question)
         
         try {
             // Step 1: 调用 StandardQuerySkill（通过 GroovyScriptExecutor）
@@ -44,7 +47,7 @@ class ReportWithInsightsSkill {
             def queryResult = groovyExecutor.executeSkill("skills/standard-query/", subContext)
             
             if (!queryResult.success) {
-                println "[ReportWithInsightsSkill] 标准查询失败: ${queryResult.error}"
+                log.error("标准查询失败: {}", queryResult.error)
                 return createFailureResult(queryResult.error)
             }
             
@@ -53,7 +56,7 @@ class ReportWithInsightsSkill {
             // Step 2: 生成智能总结（如果数据量 > 5行）
             String summary = null
             if (data != null && data.size() > 5) {
-                println "[ReportWithInsightsSkill] Step 2: 生成智能总结"
+                log.info("Step 2: 生成智能总结")
                 try {
                     // 取前50行作为样本
                     List<Map<String, Object>> sample = data.subList(0, Math.min(50, data.size()))
@@ -62,25 +65,25 @@ class ReportWithInsightsSkill {
                     def summaryTool = context.getBean("aiSummaryTool")
                     summary = summaryTool.summarize(question, queryResult.sql, dataJson)
                 } catch (Exception e) {
-                    println "[ReportWithInsightsSkill] 生成总结失败: ${e.message}"
+                    log.warn("生成总结失败: {}", e.message)
                 }
             }
             
             // Step 3: 推荐图表
             String chartRecommendation = null
             if (data != null && !data.isEmpty()) {
-                println "[ReportWithInsightsSkill] Step 3: 推荐图表"
+                log.info("Step 3: 推荐图表")
                 try {
                     String dataJson = convertToJson(data)
                     
                     def chartTool = context.getBean("chartRecommendationTool")
                     chartRecommendation = chartTool.recommendCharts(question, dataJson)
                 } catch (Exception e) {
-                    println "[ReportWithInsightsSkill] 推荐图表失败: ${e.message}"
+                    log.warn("推荐图表失败: {}", e.message)
                 }
             }
             
-            println "[ReportWithInsightsSkill] 报表生成完成"
+            log.info("报表生成完成")
             return createSuccessResult(
                 data,
                 queryResult.rowCount,
@@ -91,8 +94,7 @@ class ReportWithInsightsSkill {
             )
             
         } catch (Exception e) {
-            println "[ReportWithInsightsSkill] 执行异常: ${e.message}"
-            e.printStackTrace()
+            log.error("执行异常: {}", e.message, e)
             return createErrorResult(e.message)
         }
     }
@@ -105,7 +107,7 @@ class ReportWithInsightsSkill {
             ObjectMapper mapper = new ObjectMapper()
             return mapper.writeValueAsString(data)
         } catch (Exception e) {
-            println "[ReportWithInsightsSkill] 转换JSON失败: ${e.message}"
+            log.warn("转换JSON失败: {}", e.message)
             return "[]"
         }
     }

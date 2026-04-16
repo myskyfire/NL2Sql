@@ -21,7 +21,7 @@
 
 ## 📖 项目简介
 
-NL2SQL是一款基于 **Spring Boot + LangChain4j + Ollama** 构建的企业级自然语言转SQL智能查询系统。用户只需用自然语言描述数据需求（如"查询最近7天的订单总额"），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
+NL2SQL是一款基于 **Spring Boot + LangChain4j** 构建的企业级自然语言转SQL智能查询系统。**支持多种企业内部部署的LLM**（Ollama、ChatGLM、Qwen等），用户只需用自然语言描述数据需求（如“查询最近7天的订单总额”），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
 
 ### ✨ 核心价值
 
@@ -101,7 +101,8 @@ AI自动分析数据<br>提供业务建议
 - **🌐 多数据源管理**: 动态添加/删除/切换数据源，热插拔支持
 
 #### 📚 RAG知识库
-- **🔍 MySQL全文检索**: MATCH...AGAINST实现高效相似度搜索
+- **🗄️ 多后端向量存储**: Chroma优先 + MySQL降级，支持Milvus/Qdrant扩展
+- **🔍 三级降级策略**: Chroma向量 → MySQL向量 → MySQL全文检索，保证高可用
 - **📖 Few-shot学习**: 自动注入Top-3最相关SQL示例到Prompt
 - **🎓 自动学习**: 成功执行的SQL自动存入知识库
 - **⭐ 质量评分**: 动态调整样本权重，清理低质量数据
@@ -192,8 +193,9 @@ WHERE EXISTS (
 | JDK | 21+ | [下载链接](https://www.oracle.com/java/technologies/downloads/) |
 | MySQL | 8.0+ | [下载链接](https://dev.mysql.com/downloads/) |
 | Redis | 6.x+ | [下载链接](https://redis.io/download) |
-| Ollama | Latest | [下载链接](https://ollama.com/) |
+| LLM服务 | Ollama/ChatGLM/Qwen等（任选其一） | [Ollama](https://ollama.com/) / [ChatGLM](https://github.com/THUDM/ChatGLM3) / [Qwen](https://github.com/QwenLM/Qwen) |
 | Maven | 3.6+ | [下载链接](https://maven.apache.org/) |
+| 向量数据库 | Chroma/Milvus/Qdrant（可选，未配置时自动降级为MySQL） | [Chroma](https://docs.trychroma.com/) / [Milvus](https://milvus.io/) / [Qdrant](https://qdrant.tech/) |
 
 ### 5分钟快速启动
 
@@ -210,10 +212,14 @@ mysql -u root -p < init_complete_database.sql
 # 启动Redis
 redis-server
 
-# 启动Ollama并拉取模型
-ollama pull qwen2.5-coder:7b-instruct-q4_0  # SQL生成
-ollama pull qwen3:8b                         # AI总结
+# 启动LLM服务（以下以Ollama为例，也可使用ChatGLM/Qwen等）
+ollama pull qwen2.5-coder:7b-instruct-q4_0  # SQL生成模型
+ollama pull qwen3:8b                         # AI总结模型
 ollama serve
+
+# 启动向量数据库（可选，未配置时自动降级为MySQL全文检索）
+# Chroma示例：
+# docker run -p 8000:8000 chromadb/chroma
 ```
 
 #### Step 3: 配置应用
@@ -280,14 +286,16 @@ java -jar nl2sql-web-1.0.0.jar
 └────┬──────────┬──────────┬──────────┬──────────┬────────┘
      │          │          │          │          │
 ┌────▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼────┐
-│安全校验 │ │向量检索 │ │LLM服务 │ │SQL执行 │ │缓存服务 │
-│Security │ │Retriever│ │Router  │ │Executor│ │Redis   │
-└────────┘ └────────┘ └───┬───┘ └───┬───┘ └────────┘
-                          │          │
-                   ┌──────▼───┐ ┌───▼──────┐
-                   │Ollama API│ │MySQL DB  │
-                   │(qwen模型) │ │(多数据源) │
-                   └──────────┘ └──────────┘
+│安全校验 │ │RAG检索 │ │LLM服务 │ │SQL执行 │ │缓存服务 │
+│Security │ │Service │ │Router  │ │Executor│ │Redis   │
+└────────┘ └───┬───┘ └───┬───┘ └───┬───┘ └────────┘
+               │          │          │
+        ┌──────▼───┐ ┌───▼──────┐ ┌─▼──────────┐
+        │Chroma/   │ │Ollama/   │ │MySQL DB    │
+        │Milvus/   │ │ChatGLM/  │ │(多数据源)  │
+        │Qdrant/   │ │Qwen/     │ │            │
+        │MySQL     │ │Baichuan  │ │            │
+        └──────────┘ └──────────┘ └────────────┘
 ```
 
 ### 核心技术栈
@@ -299,7 +307,8 @@ java -jar nl2sql-web-1.0.0.jar
 | **ORM** | MyBatis Plus | 3.5.5 | 数据持久化 |
 | **LLM集成** | LangChain4j | 0.27.1 | LLM编排框架 |
 | **向量模型** | all-MiniLM-L6-v2 | - | 文本向量化 |
-| **本地大模型** | Ollama (qwen2.5/qwen3) | - | SQL生成/AI总结 |
+| **大模型** | 多提供者适配（Ollama/ChatGLM/Qwen等） | - | SQL生成/AI总结 |
+| **向量数据库** | Chroma / Milvus / Qdrant（可扩展） | - | RAG向量检索 |
 | **缓存** | Redis | 6.x | 分布式缓存 |
 | **数据库** | MySQL | 8.0 | 数据存储 |
 | **SQL解析** | JSqlParser | 4.6 | SQL AST解析 |
@@ -460,6 +469,221 @@ llm:
     base-url: http://custom.llm.com:8000
     model: custom-model
 ```
+
+---
+
+### 🗄️ 向量数据库架构
+
+#### 设计理念
+
+借鉴LLM多提供者架构的设计思路，为RAG知识库提供统一的向量存储抽象层，实现：
+- **优先使用向量数据库**: 配置了向量数据库时优先使用，提供更精准的语义检索
+- **自动降级策略**: 未配置或不可用时自动降级为MySQL全文检索，保证系统可用性
+- **多后端支持**: 支持多种常见向量数据库，可根据企业技术栈灵活选择
+
+#### 支持的向量数据库
+
+| 向量数据库 | 部署方式 | 状态 | 适用场景 |
+|-----------|---------|------|----------|
+| **Chroma** | 本地/内网服务器 | ✅ 已实现 | 开发测试、中小规模应用 |
+| **Milvus** | 企业内部服务器/K8s | 🔧 预留 | 大规模生产环境 |
+| **Qdrant** | 本地/云端托管 | 🔧 预留 | 高性能向量检索 |
+| **MySQL全文检索** | 内置（无需额外部署） | ✅ 降级方案 | 无向量数据库时的兜底方案 |
+
+#### 三级降级策略
+
+```
+用户查询: "查询最近7天北京的订单总额"
+    ↓
+[1] Chroma向量检索（优先级最高）
+    ├─ 如果Chroma可用 → 执行向量相似度搜索
+    └─ 如果成功 → 返回Top-3相似问答对
+    ↓ (失败或未配置)
+[2] MySQL向量检索（降级方案）
+    ├─ 如果MySQL向量服务可用 → 执行向量计算
+    └─ 如果成功 → 返回Top-3相似问答对
+    ↓ (失败或未配置)
+[3] MySQL全文检索（最终兜底）
+    ├─ 使用MATCH...AGAINST全文检索
+    └─ 返回相关度最高的问答对
+    ↓
+注入Prompt作为Few-shot示例
+```
+
+#### 配置示例
+
+```yaml
+# application.yml
+
+# Chroma向量数据库配置（优先使用）
+chroma:
+  enabled: true                    # 是否启用Chroma
+  url: http://localhost:8000       # Chroma服务地址
+  collection-name: NL2SQL_rag      # 集合名称
+  timeout: 30                      # 超时时间（秒）
+
+# Milvus向量数据库配置（预留）
+milvus:
+  enabled: false                   # 默认禁用
+  host: localhost                  # Milvus主机地址
+  port: 19530                      # Milvus端口
+  collection-name: nl2sql_rag      # 集合名称
+  dimension: 384                   # 向量维度（与embedding模型匹配）
+
+# Qdrant向量数据库配置（预留）
+qdrant:
+  enabled: false                   # 默认禁用
+  url: http://localhost:6333       # Qdrant服务地址
+  collection-name: nl2sql_knowledge
+  api-key: ${QDRANT_API_KEY:}      # API密钥（可选）
+
+# RAG知识库通用配置
+rag:
+  similarity-threshold: 0.85       # 相似度阈值
+  max-examples: 3                  # 最大检索示例数
+  auto-learning: true              # 是否自动学习成功的SQL
+```
+
+#### 架构组件
+
+```
+┌─────────────────────────────────────────────┐
+│     RagKnowledgeBaseService (统一入口)        │
+│  - saveQAPair()      // 保存问答对          │
+│  - searchSimilar()   // 检索相似问题        │
+│  - recordUsage()     // 记录使用情况        │
+│  - updateQuality()   // 更新质量评分        │
+└──────────────┬──────────────────────────────┘
+               │ 三级降级策略
+     ┌─────────┼──────────┐
+     ▼         ▼          ▼
+┌────────┐ ┌────────┐ ┌────────┐
+│Chroma  │ │MySQL   │ │MySQL   │
+│Vector  │ │Vector  │ │Fulltext│
+│Service │ │Service │ │Search  │
+└────────┘ └────────┘ └────────┘
+     │          │          │
+     ▼          ▼          ▼
+┌────────┐ ┌────────┐ ┌────────┐
+│Chroma  │ │MySQL   │ │MySQL   │
+│DB      │ │VECTOR  │ │MATCH.. │
+│(Port   │ │函数    │ │AGAINST │
+│8000)   │ │        │ │        │
+└────────┘ └────────┘ └────────┘
+```
+
+#### 运行时行为
+
+```java
+@Autowired
+private RagKnowledgeBaseService ragService;
+
+// 自动选择最优检索方式（内部实现三级降级）
+List<KnowledgeItem> examples = 
+    ragService.searchSimilarQuestions("查询北京订单", 3);
+
+// 日志输出示例：
+// [INFO] RAG检索成功(Chroma向量): question=查询北京订单, found=3 items
+// [WARN] Chroma向量搜索失败，降级到MySQL向量: Connection refused
+// [INFO] RAG检索成功(MySQL向量): question=查询北京订单, found=2 items
+// [WARN] MySQL向量搜索失败，降级到全文检索: Function VEC_DISTANCE not found
+// [INFO] RAG检索成功(MySQL): question=查询北京订单, found=1 items
+```
+
+#### 扩展新的向量数据库
+
+只需3步即可接入新的向量数据库：
+
+1. **实现VectorService接口**
+```java
+public interface VectorService {
+    String getName();                          // 向量库名称
+    boolean isAvailable();                     // 健康检查
+    void addKnowledge(String q, String a,      // 添加知识
+                     String sql, String cat);
+    List<VectorResult> searchSimilar(          // 向量检索
+        String question, int maxResults, 
+        double threshold);
+}
+
+public class MilvusVectorService implements VectorService {
+    @Override
+    public String getName() { return "milvus"; }
+    
+    @Override
+    public boolean isAvailable() { 
+        // 检查Milvus连接
+    }
+    
+    @Override
+    public void addKnowledge(String question, String answer, 
+                            String sql, String category) {
+        // 调用Milvus API插入向量
+    }
+    
+    @Override
+    public List<VectorResult> searchSimilar(
+            String question, int maxResults, double threshold) {
+        // 调用Milvus API进行向量检索
+    }
+}
+```
+
+2. **添加到RagKnowledgeBaseService**
+```java
+@Service
+public class RagKnowledgeBaseService {
+    private final ChromaVectorService chromaService;
+    private final MySqlVectorService mysqlService;
+    private final MilvusVectorService milvusService; // 新增
+    
+    public List<KnowledgeItem> searchSimilarQuestions(
+            String question, int maxResults) {
+        // 1. 优先Chroma
+        if (chromaService != null && chromaService.isAvailable()) {
+            // ...
+        }
+        // 2. 其次Milvus（新增）
+        if (milvusService != null && milvusService.isAvailable()) {
+            // ...
+        }
+        // 3. 降级MySQL向量
+        if (mysqlService != null) {
+            // ...
+        }
+        // 4. 最终降级全文检索
+        return searchByMySQL(question, maxResults);
+    }
+}
+```
+
+3. **添加配置类**
+```java
+@Configuration
+@ConditionalOnProperty(name = "milvus.enabled", havingValue = "true")
+public class MilvusConfig {
+    @Bean
+    public MilvusVectorService milvusVectorService() {
+        return new MilvusVectorService(...);
+    }
+}
+```
+
+#### 性能对比
+
+| 检索方式 | 准确率 | 响应时间 | 资源消耗 | 适用规模 |
+|---------|--------|---------|---------|----------|
+| Chroma向量 | ⭐⭐⭐⭐⭐ | 50-100ms | 中等 | <10万条 |
+| Milvus向量 | ⭐⭐⭐⭐⭐ | 20-50ms | 较高 | >100万条 |
+| Qdrant向量 | ⭐⭐⭐⭐⭐ | 30-60ms | 中等 | <50万条 |
+| MySQL向量 | ⭐⭐⭐⭐ | 100-200ms | 较低 | <5万条 |
+| MySQL全文 | ⭐⭐⭐ | 50-150ms | 最低 | <10万条 |
+
+**建议**:
+- 开发环境: 使用Chroma或MySQL全文检索
+- 小规模生产: Chroma + MySQL降级
+- 大规模生产: Milvus/Qdrant + MySQL降级
+- 极简部署: 仅使用MySQL全文检索（无需额外依赖）
 
 ---
 
@@ -1380,12 +1604,67 @@ spring:
       database: 0
       timeout: 3000ms
 
-ollama:
-  base-url: http://localhost:11434
-  code-model: qwen2.5-coder:7b-instruct-q4_0  # SQL生成模型
-  nlp-model: qwen3:8b                         # AI总结模型
-  temperature: 0.0
-  timeout: 30000
+# LLM多提供者配置
+llm:
+  # 活跃的提供者名称
+  active-provider: ollama
+  
+  # 提供者优先级列表（用于自动故障转移）
+  provider-priority:
+    - ollama
+    - chatglm
+    - qwen
+  
+  # Ollama配置
+  ollama:
+    enabled: true
+    base-url: http://localhost:11434
+    code-model: qwen2.5-coder:7b-instruct-q4_0
+    nlp-model: qwen3:8b
+    timeout: 60
+  
+  # ChatGLM配置（企业内部部署）
+  chatglm:
+    enabled: false
+    base-url: http://chatglm.internal.company.com:8000
+    model: chatglm3-6b
+    api-key: ${CHATGLM_API_KEY:}
+    timeout: 60
+  
+  # Qwen配置（阿里云私有化部署）
+  qwen:
+    enabled: false
+    base-url: http://qwen.internal.company.com:8000
+    model: qwen-7b-chat
+    api-key: ${QWEN_API_KEY:}
+    timeout: 60
+
+# 向量数据库配置（多后端支持）
+# 优先级：Chroma > Milvus > Qdrant > MySQL向量 > MySQL全文检索
+chroma:
+  enabled: true                    # 是否启用Chroma
+  url: http://localhost:8000       # Chroma服务地址
+  collection-name: NL2SQL_rag      # 集合名称
+  timeout: 30                      # 超时时间（秒）
+
+milvus:
+  enabled: false                   # 默认禁用
+  host: localhost                  # Milvus主机地址
+  port: 19530                      # Milvus端口
+  collection-name: nl2sql_rag      # 集合名称
+  dimension: 384                   # 向量维度（与embedding模型匹配）
+
+qdrant:
+  enabled: false                   # 默认禁用
+  url: http://localhost:6333       # Qdrant服务地址
+  collection-name: nl2sql_knowledge
+  api-key: ${QDRANT_API_KEY:}      # API密钥（可选）
+
+# RAG知识库通用配置
+rag:
+  similarity-threshold: 0.85       # 相似度阈值
+  max-examples: 3                  # 最大检索示例数
+  auto-learning: true              # 是否自动学习成功的SQL
 
 # 连接池配置
 datasource:
@@ -1428,8 +1707,9 @@ datasource:
 
 ## 🐛 常见问题
 
-### 1. Ollama连接失败
+### 1. LLM服务连接失败
 
+**Ollama连接失败:**
 ```bash
 # 检查Ollama是否启动
 curl http://localhost:11434/api/tags
@@ -1437,6 +1717,12 @@ curl http://localhost:11434/api/tags
 # 重启Ollama
 ollama serve
 ```
+
+**ChatGLM/Qwen连接失败:**
+- 检查企业内部LLM服务是否正常运行
+- 验证API Key是否正确配置
+- 检查网络连接和防火墙设置
+- 查看日志获取详细错误信息
 
 ### 2. Redis连接失败
 
@@ -1455,19 +1741,40 @@ redis-server
 - 验证用户名密码是否正确
 - 执行 `init_complete_database.sql` 初始化表结构
 
-### 4. 向量检索不准确
+### 4. Chroma向量数据库连接失败
+
+```bash
+# 检查Chroma是否启动
+curl http://localhost:8000/api/v1/heartbeat
+
+# Docker启动Chroma
+docker run -p 8000:8000 chromadb/chroma
+
+# 如果未配置Chroma，系统会自动降级到MySQL全文检索
+```
+
+### 5. Milvus/Qdrant连接失败
+
+- 检查向量数据库服务是否正常运行
+- 验证配置文件中的host/port/url是否正确
+- 检查网络连接和防火墙设置
+- 查看日志获取详细错误信息
+- 如果未配置，系统会自动降级到MySQL全文检索
+
+### 6. 向量检索不准确
 
 - 确保表注释和字段注释完整
 - 增加训练数据量
-- 调整相似度阈值 (默认0.25)
+- 调整相似度阈值 (默认0.85)
+- 检查是否使用了合适的embedding模型
 
-### 5. Token认证失败
+### 7. Token认证失败
 
 - 检查请求头是否包含 `Authorization: Bearer {token}`
 - 确认Token未过期 (默认2小时)
 - 重新登录获取新Token
 
-### 6. 白名单限制
+### 8. 白名单限制
 
 - 确认用户ID已在whitelist表中
 - 联系管理员添加白名单
@@ -1533,11 +1840,14 @@ redis-server
 - [x] 多数据源管理（动态添加/删除/切换）
 
 #### RAG知识库
-- [x] MySQL全文检索（MATCH...AGAINST）
+- [x] 多后端向量存储（Chroma优先 + MySQL降级）
+- [x] 三级降级策略（Chroma → MySQL向量 → MySQL全文检索）
 - [x] Few-shot学习（自动注入Top-3相似SQL示例）
 - [x] 自动学习（成功执行的SQL自动存入）
 - [x] 质量评分（动态调整样本权重）
 - [x] 使用统计（记录使用次数和效果）
+- [ ] Milvus向量数据库支持（预留）
+- [ ] Qdrant向量数据库支持（预留）
 
 #### 查询模板
 - [x] 个人模板（用户私有）
@@ -1569,6 +1879,8 @@ redis-server
 - [ ] ECharts图表集成（替换文本化展示）
 - [ ] WebSocket实时推送（流式返回查询结果）
 - [ ] Docker容器化部署（docker-compose一键启动）
+- [ ] Milvus向量数据库支持（大规模生产环境）
+- [ ] Qdrant向量数据库支持（高性能向量检索）
 
 #### 中优先级
 - [ ] 支持更多数据库（PostgreSQL、Oracle、SQL Server）

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -106,6 +107,34 @@ public class MetadataQueryService {
         String pattern = "metadata:*:" + datasourceId + "*";
         redisTemplate.keys(pattern).forEach(redisTemplate::delete);
         log.info("已清除数据源 {} 的元数据缓存", datasourceId);
+    }
+    
+    /**
+     * 获取本地修改的元数据统计
+     */
+    public Map<String, Object> getLocalModifiedCount(Long datasourceId) {
+        Map<String, Object> result = new java.util.HashMap<>();
+        
+        try {
+            // 统计本地修改的表数量
+            String tableSql = "SELECT COUNT(*) FROM table_metadata WHERE datasource_id = ? AND is_local_modified = 1";
+            Integer tableCount = jdbcTemplate.queryForObject(tableSql, Integer.class, datasourceId);
+            result.put("tableCount", tableCount != null ? tableCount : 0);
+            
+            // 统计本地修改的字段数量
+            String columnSql = "SELECT COUNT(*) FROM column_metadata WHERE datasource_id = ? AND is_local_modified = 1";
+            Integer columnCount = jdbcTemplate.queryForObject(columnSql, Integer.class, datasourceId);
+            result.put("columnCount", columnCount != null ? columnCount : 0);
+            
+            log.debug("数据源 {} 本地修改统计: 表={}, 字段={}", datasourceId, result.get("tableCount"), result.get("columnCount"));
+            
+        } catch (Exception e) {
+            log.warn("获取本地修改统计失败（可能字段不存在，需先执行DDL）: {}", e.getMessage());
+            result.put("tableCount", 0);
+            result.put("columnCount", 0);
+        }
+        
+        return result;
     }
     
     /**

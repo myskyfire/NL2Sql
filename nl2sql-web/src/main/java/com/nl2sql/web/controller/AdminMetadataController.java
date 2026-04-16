@@ -7,6 +7,8 @@ import com.nl2sql.metadata.service.MetadataCollectorService;
 import com.nl2sql.metadata.service.MetadataQueryService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -21,6 +23,9 @@ public class AdminMetadataController {
     private final DataSourceConfigService dataSourceConfigService;
     private final MetadataCollectorService metadataCollectorService;
     private final MetadataQueryService metadataQueryService;
+    
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
     
     public AdminMetadataController(DataSourceConfigService dataSourceConfigService,
                                    MetadataCollectorService metadataCollectorService,
@@ -84,8 +89,25 @@ public class AdminMetadataController {
      */
     @PostMapping("/metadata/sync/{datasourceId}")
     public Result<Map<String, Object>> syncMetadata(@PathVariable Long datasourceId,
-                                                     @RequestParam(required = false) Long operatorId) {
+                                                     @RequestParam(required = false) Long operatorId,
+                                                     @RequestParam(required = false, defaultValue = "false") Boolean forceOverride) {
         try {
+            // 检查是否有本地修改的元数据
+            if (!forceOverride) {
+                Map<String, Object> localModifiedInfo = metadataQueryService.getLocalModifiedCount(datasourceId);
+                int tableCount = (int) localModifiedInfo.getOrDefault("tableCount", 0);
+                int columnCount = (int) localModifiedInfo.getOrDefault("columnCount", 0);
+                
+                if (tableCount > 0 || columnCount > 0) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("hasLocalModified", true);
+                    response.put("tableCount", tableCount);
+                    response.put("columnCount", columnCount);
+                    response.put("message", String.format("检测到 %d 个表和 %d 个字段有本地修改，同步将覆盖这些数据。是否继续？", tableCount, columnCount));
+                    return Result.success(response);
+                }
+            }
+            
             MetadataCollectorService.SyncResult result = 
                 metadataCollectorService.syncAllMetadata(datasourceId, operatorId != null ? operatorId : 1L);
             
@@ -94,6 +116,7 @@ public class AdminMetadataController {
             response.put("tableCount", result.getTableCount());
             response.put("columnCount", result.getColumnCount());
             response.put("durationSeconds", result.getDurationSeconds());
+            response.put("hasLocalModified", false);
             
             if ("FAILED".equals(result.getStatus())) {
                 response.put("errorMessage", result.getErrorMessage());

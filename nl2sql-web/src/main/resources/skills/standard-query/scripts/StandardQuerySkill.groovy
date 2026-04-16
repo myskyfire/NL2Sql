@@ -5,6 +5,7 @@ import com.nl2sql.core.executor.SQLRiskAnalyzer
 import com.nl2sql.core.llm.LLMService
 import dev.langchain4j.model.chat.ChatModel
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.slf4j.LoggerFactory
 
 /**
  * 标准查询技能
@@ -16,6 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
  * 4. 执行SQL（带自动修正）
  */
 class StandardQuerySkill {
+    
+    private static final def log = LoggerFactory.getLogger(StandardQuerySkill.class)
     
     /**
      * 执行标准查询
@@ -79,10 +82,10 @@ class StandardQuerySkill {
             boolean needsClarification = false
             
             if (sql == null || sql.trim().isEmpty() || sql.startsWith("错误：") || sql.startsWith("ERROR:")) {
-                println "[StandardQuerySkill] SQL生成失败，将尝试自动修正: ${sql}"
+                log.warn("SQL生成失败，将尝试自动修正: {}", sql)
                 hasSyntaxError = true
             } else if (sql.startsWith("CLARIFY_") || sql.startsWith("CLARIFICATION")) {
-                println "[StandardQuerySkill] SQL需要澄清，直接返回: ${sql}"
+                log.info("SQL需要澄清，直接返回: {}", sql)
                 needsClarification = true
             }
             
@@ -98,42 +101,42 @@ class StandardQuerySkill {
             
             // Step 2.5: LLM自主评估SQL风险（仅当SQL有效时）
             if (!hasSyntaxError) {
-                println "[StandardQuerySkill] Step 2.5: 评估SQL风险"
+                log.info("Step 2.5: 评估SQL风险")
                 RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer)
                 
                 if ("HIGH".equals(riskResult.getRiskLevel())) {
-                    println "[StandardQuerySkill] SQL风险评估为高风险，阻断执行: ${riskResult.getReason()}"
+                    log.warn("SQL风险评估为高风险，阻断执行: {}", riskResult.getReason())
                     return createRiskBlockedResult(riskResult.getReason(), sql)
                 } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
-                    println "[StandardQuerySkill] SQL风险评估为中风险，继续执行但提示用户: ${riskResult.getReason()}"
+                    log.info("SQL风险评估为中风险，继续执行但提示用户: {}", riskResult.getReason())
                 } else {
-                    println "[StandardQuerySkill] SQL风险评估为低风险，直接执行"
+                    log.debug("SQL风险评估为低风险，直接执行")
                 }
             } else {
-                println "[StandardQuerySkill] SQL生成失败，跳过风险评估，直接进入修正流程"
+                log.info("SQL生成失败，跳过风险评估，直接进入修正流程")
             }
             
             // 检查是否需要澄清
             if (sql.startsWith("CLARIFY_") || sql.startsWith("CLARIFICATION")) {
-                println "[StandardQuerySkill] 需要澄清: ${sql}"
+                log.info("需要澄清: {}", sql)
                 return createClarificationResult(sql)
             }
             
             // Step 3: 执行SQL（带自动修正，最多2次）
-            println "[StandardQuerySkill] Step 3: 执行SQL"
+            log.info("Step 3: 执行SQL")
             
             def execResult = executeWithAutoFix(sql, datasourceId, userId, username, 2, nl2sqlTool, sqlExecutionTool)
             
             if (!execResult.success) {
-                println "[StandardQuerySkill] 执行失败: ${execResult.error}"
+                log.error("执行失败: {}", execResult.error)
                 return createExecutionFailedResult(execResult.error)
             }
             
-            println "[StandardQuerySkill] 查询成功: rowCount=${execResult.rowCount}"
+            log.info("查询成功: rowCount={}", execResult.rowCount)
             
             // ✅ 如果用户要求生成图表，直接在返回中包含图表配置
             if (chartType != null && execResult.data != null && !execResult.data.isEmpty()) {
-                println "[StandardQuerySkill] 生成图表配置: type=${chartType}"
+                log.info("生成图表配置: type={}", chartType)
                 Map<String, Object> echartsConfig = generateEChartsConfig(chartType, execResult.data)
                 return createSuccessResultWithChart(
                     execResult.data, 
@@ -149,8 +152,7 @@ class StandardQuerySkill {
             return createSuccessResult(execResult.data, execResult.rowCount, execResult.executionTime, sql, datasourceId)
             
         } catch (Exception e) {
-            println "[StandardQuerySkill] 执行异常: ${e.message}"
-            e.printStackTrace()
+            log.error("执行异常: {}", e.message, e)
             return createErrorResult(e.message)
         }
     }
@@ -165,7 +167,7 @@ class StandardQuerySkill {
         
         // 简单检测：如果ON条件中有IN子查询，记录警告
         if (sql.matches("(?s).*JOIN.*ON.*\\bIN\\s*\\(\\s*SELECT.*")) {
-            println "[StandardQuerySkill] 检测到ON条件中使用IN子查询，建议改为直接JOIN"
+            log.warn("检测到ON条件中使用IN子查询，建议改为直接JOIN")
         }
         
         return sql
@@ -180,28 +182,26 @@ class StandardQuerySkill {
             // ✅ 关键修复：如果 SQL 是澄清消息或错误消息，直接返回低风险
             if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_") || 
                 sql.startsWith("错误：") || sql.startsWith("ERROR:")) {
-                println "[StandardQuerySkill] SQL不是有效查询，跳过风险评估"
+                log.info("SQL不是有效查询，跳过风险评估")
                 return new RiskAssessmentResult("LOW", "非有效SQL，无需风险评估")
             }
             
-            ChatModel model = llmService.getChatModel()
-            
             // Step 1: LLM先自行评估
-            println "[StandardQuerySkill] Step 1: LLM初步风险评估"
+            log.info("Step 1: LLM初步风险评估")
             String llmPrompt = buildRiskAssessmentPrompt(sql, question)
-            String llmResponse = model.chat(llmPrompt)
+            String llmResponse = llmService.generateAnswer(llmPrompt)
             
-            println "[StandardQuerySkill] LLM初步评估响应: ${llmResponse}"
+            log.debug("LLM初步评估响应: {}", llmResponse)
             
             // 解析LLM的评估结果
             RiskAssessmentResult result = parseLLMRiskAssessment(llmResponse)
             
-            println "[StandardQuerySkill] LLM初步评估结果: riskLevel=${result.getRiskLevel()}, reason=${result.getReason()}"
+            log.info("LLM初步评估结果: riskLevel={}, reason={}", result.getRiskLevel(), result.getReason())
             
             // Step 2: 如果LLM无法确定或认为需要EXPLAIN，则调用风险分析工具
             if ("UNCERTAIN".equals(result.getRiskLevel())) {
                 if (riskAnalyzer == null) {
-                    println "[StandardQuerySkill] ⚠️ SQLRiskAnalyzer 未注入，跳过EXPLAIN分析"
+                    log.warn("⚠️ SQLRiskAnalyzer 未注入，跳过EXPLAIN分析")
                     result.setRiskLevel("LOW")
                     result.setReason("SQLRiskAnalyzer未配置，默认低风险")
                     return result
@@ -209,34 +209,33 @@ class StandardQuerySkill {
                 
                 // ⚠️ 关键检查：如果SQL是澄清消息，不要调用EXPLAIN
                 if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_")) {
-                    println "[StandardQuerySkill] SQL是澄清消息，跳过EXPLAIN分析"
+                    log.info("SQL是澄清消息，跳过EXPLAIN分析")
                     result.setRiskLevel("LOW")
                     return result
                 }
                 
-                println "[StandardQuerySkill] ✅ LLM返回UNCERTAIN，开始调用EXPLAIN分析..."
+                log.info("✅ LLM返回UNCERTAIN，开始调用EXPLAIN分析...")
                 SQLRiskAnalyzer.RiskAnalysisResult explainResult = riskAnalyzer.analyzeRisk(sql, datasourceId)
                 
-                println "[StandardQuerySkill] EXPLAIN分析完成: riskLevel=${explainResult.getRiskLevel()}, risks=${explainResult.getRisks()?.size() ?: 0}"
+                log.info("EXPLAIN分析完成: riskLevel={}, risks={}", explainResult.getRiskLevel(), explainResult.getRisks()?.size() ?: 0)
                 
                 // 将EXPLAIN结果再次给LLM判断
-                println "[StandardQuerySkill] Step 2: LLM结合EXPLAIN结果进行最终评估"
+                log.info("Step 2: LLM结合EXPLAIN结果进行最终评估")
                 String refinedPrompt = buildRefinedRiskPrompt(sql, question, explainResult)
-                String refinedResponse = model.chat(refinedPrompt)
+                String refinedResponse = llmService.generateAnswer(refinedPrompt)
                 
-                println "[StandardQuerySkill] LLM最终评估响应: ${refinedResponse}"
+                log.debug("LLM最终评估响应: {}", refinedResponse)
                 result = parseLLMRiskAssessment(refinedResponse)
                 
-                println "[StandardQuerySkill] ✅ 最终风险评估结果: riskLevel=${result.getRiskLevel()}"
+                log.info("✅ 最终风险评估结果: riskLevel={}", result.getRiskLevel())
             } else {
-                println "[StandardQuerySkill] LLM已给出确定性评估(${result.getRiskLevel()})，跳过EXPLAIN分析"
+                log.info("LLM已给出确定性评估({})，跳过EXPLAIN分析", result.getRiskLevel())
             }
             
             return result
             
         } catch (Exception e) {
-            println "[StandardQuerySkill] ❌ 风险评估失败，默认低风险: ${e.message}"
-            e.printStackTrace()
+            log.error("❌ 风险评估失败，默认低风险: {}", e.message, e)
             return new RiskAssessmentResult("LOW", "风险评估失败，默认继续执行")
         }
     }
@@ -367,7 +366,7 @@ ${sql}
                 return result
             }
         } catch (Exception e) {
-            println "[StandardQuerySkill] 解析LLM风险评估结果失败: ${e.message}"
+            log.warn("解析LLM风险评估结果失败: {}", e.message)
         }
         
         // 解析失败，默认低风险
@@ -391,14 +390,14 @@ ${sql}
                 
                 // 如果还有重试次数，尝试自动修正
                 if (attempt < maxRetries) {
-                    println "[StandardQuerySkill] 执行失败，尝试自动修正 (第${attempt + 1}次)"
+                    log.info("执行失败，尝试自动修正 (第{}次)", attempt + 1)
                     currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
-                    println "[StandardQuerySkill] 修正后的SQL: ${currentSql}"
+                    log.info("修正后的SQL: {}", currentSql)
                 }
                 
             } catch (Exception e) {
                 if (attempt < maxRetries) {
-                    println "[StandardQuerySkill] 执行异常，尝试自动修正 (第${attempt + 1}次): ${e.message}"
+                    log.error("执行异常，尝试自动修正 (第{}次): {}", attempt + 1, e.message)
                     currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
                 } else {
                     throw e
