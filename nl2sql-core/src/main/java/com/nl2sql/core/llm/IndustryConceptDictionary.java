@@ -75,19 +75,31 @@ public class IndustryConceptDictionary {
         }
         
         try {
-            // 从数据库读取 business_category
-            String businessCategory = jdbcTemplate.queryForObject(
-                "SELECT business_category FROM datasource_config WHERE id = ?",
+            // 1. 从 datasource_industry_mapping 表查询行业代码
+            String industryCode = jdbcTemplate.queryForObject(
+                "SELECT industry_code FROM datasource_industry_mapping WHERE datasource_id = ? ORDER BY priority LIMIT 1",
                 String.class, datasourceId
             );
             
-            if (businessCategory != null && !businessCategory.isEmpty()) {
-                // 根据业务类别匹配行业概念
-                IndustryConcepts matched = matchIndustryByCategory(businessCategory);
-                if (matched != null) {
-                    log.debug("[IndustryConceptDictionary] 数据源{}匹配到行业: {}", 
-                        datasourceId, matched.getIndustryName());
-                    return matched;
+            if (industryCode == null) {
+                // 2. fallback到 business_category 字段匹配
+                String businessCategory = jdbcTemplate.queryForObject(
+                    "SELECT business_category FROM datasource_config WHERE id = ?",
+                    String.class, datasourceId
+                );
+                
+                if (businessCategory != null && !businessCategory.isEmpty()) {
+                    industryCode = matchIndustryCodeByCategory(businessCategory);
+                }
+            }
+            
+            // 3. 从数据库加载行业概念
+            if (industryCode != null) {
+                IndustryConcepts concepts = loadConceptsFromDatabase(industryCode);
+                if (concepts != null) {
+                    log.debug("[IndustryConceptDictionary] 数据源{}加载行业: {}", 
+                        datasourceId, concepts.getIndustryName());
+                    return concepts;
                 }
             }
         } catch (Exception e) {
@@ -99,47 +111,133 @@ public class IndustryConceptDictionary {
     }
     
     /**
-     * 根据业务类别字符串匹配行业概念
+     * 从数据库加载行业概念
+     */
+    private IndustryConcepts loadConceptsFromDatabase(String industryCode) {
+        try {
+            // 查询行业基本信息
+            Map<String, Object> industryInfo = jdbcTemplate.queryForMap(
+                "SELECT industry_code, industry_name FROM industry_template WHERE industry_code = ? AND is_active = 1",
+                industryCode
+            );
+            
+            if (industryInfo == null) {
+                return null;
+            }
+            
+            IndustryConcepts concepts = new IndustryConcepts();
+            concepts.setIndustryCode((String) industryInfo.get("industry_code"));
+            concepts.setIndustryName((String) industryInfo.get("industry_name"));
+            
+            // 查询所有已审核的概念
+            List<Map<String, Object>> conceptRows = jdbcTemplate.queryForList(
+                "SELECT concept_type, concept_key, concept_aliases, description " +
+                "FROM industry_concept " +
+                "WHERE industry_code = ? AND status = 'approved' " +
+                "ORDER BY usage_count DESC, confidence DESC",
+                industryCode
+            );
+            
+            for (Map<String, Object> row : conceptRows) {
+                String type = (String) row.get("concept_type");
+                String key = (String) row.get("concept_key");
+                String aliasesJson = (String) row.get("concept_aliases");
+                String description = (String) row.get("description");
+                
+                // 解析JSON别名数组
+                List<String> aliases = parseAliasesJson(aliasesJson);
+                String displayValue = aliases.isEmpty() ? key : String.join("/", aliases);
+                
+                switch (type) {
+                    case "entity":
+                        concepts.getBusinessEntities().put(key, displayValue);
+                        break;
+                    case "metric":
+                        concepts.getMetrics().put(key, displayValue);
+                        break;
+                    case "dimension":
+                        concepts.getDimensions().put(key, displayValue);
+                        break;
+                    case "table_role":
+                        concepts.getTableRoles().put(key, description != null ? description : displayValue);
+                        break;
+                }
+            }
+            
+            log.info("[IndustryConceptDictionary] 从数据库加载行业{}: {}个实体, {}个指标, {}个维度",
+                industryCode,
+                concepts.getBusinessEntities().size(),
+                concepts.getMetrics().size(),
+                concepts.getDimensions().size()
+            );
+            
+            return concepts;
+            
+        } catch (Exception e) {
+            log.error("[IndustryConceptDictionary] 从数据库加载行业概念失败: {}", industryCode, e);
+            return null;
+        }
+    }
+    
+    /**
+     * 解析JSON格式的别名数组
+     */
+    private List<String> parseAliasesJson(String json) {
+        if (json == null || json.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.readValue(json, List.class);
+        } catch (Exception e) {
+            log.warn("[IndustryConceptDictionary] 解析别名JSON失败: {}", json);
+            return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 根据业务类别字符串匹配行业代码
      * 
      * @param businessCategory 业务类别（如："订单,交易,trade,order"）
-     * @return 匹配的行业概念，无匹配则返回null
+     * @return 行业代码，无匹配则返回null
      */
-    private IndustryConcepts matchIndustryByCategory(String businessCategory) {
+    private String matchIndustryCodeByCategory(String businessCategory) {
         String category = businessCategory.toLowerCase();
         
         // 电商/零售
         if (category.contains("order") || category.contains("交易") || 
             category.contains("订单") || category.contains("sales") || 
             category.contains("销售") || category.contains("trade")) {
-            return industryMap.get("ecommerce");
+            return "ecommerce";
         }
         
         // 金融
         if (category.contains("finance") || category.contains("财务") || 
             category.contains("accounting") || category.contains("会计") ||
             category.contains("bank") || category.contains("银行")) {
-            return industryMap.get("finance");
+            return "finance";
         }
         
         // 医疗
         if (category.contains("medical") || category.contains("医疗") || 
             category.contains("hospital") || category.contains("医院") ||
             category.contains("health") || category.contains("健康")) {
-            return industryMap.get("medical");
+            return "medical";
         }
         
         // 教育
         if (category.contains("education") || category.contains("教育") || 
             category.contains("school") || category.contains("学校") ||
             category.contains("student") || category.contains("学生")) {
-            return industryMap.get("education");
+            return "education";
         }
         
         // 制造
         if (category.contains("manufacturing") || category.contains("制造") || 
             category.contains("production") || category.contains("生产") ||
             category.contains("inventory") || category.contains("库存")) {
-            return industryMap.get("manufacturing");
+            return "manufacturing";
         }
         
         return null; // 无匹配
