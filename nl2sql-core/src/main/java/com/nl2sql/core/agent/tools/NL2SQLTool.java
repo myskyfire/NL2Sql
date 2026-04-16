@@ -332,10 +332,13 @@ public class NL2SQLTool {
                 "   - 聚合函数必须加别名：SUM(xxx) AS '总和', COUNT(*) AS '数量', AVG(xxx) AS '平均值'\n" +
                 "   - 分组字段也必须加别名：GROUP BY 的字段也要 AS '中文名'\n" +
                 "5. **重要：识别统计类问题并使用聚合函数**\n" +
-                "   - 当用户问'统计每个X的Y'、'按X分组的Y'、'各X的Y总和/平均值/数量'时，必须使用 GROUP BY\n" +
+                "   - ⚠️ **关键判断规则**：只有当用户明确要求'统计'、'汇总'、'合计'、'平均'、'分组'时，才使用 GROUP BY\n" +
+                "   - ❌ 错误场景：用户问'查最近7天的订单'、'显示订单列表'、'查看所有订单' → 这是查询详情，不要加 GROUP BY\n" +
+                "   - ✅ 正确场景：用户问'统计每天的订单数'、'按地区汇总销售额'、'各城市的平均金额' → 这是统计汇总，需要 GROUP BY\n" +
+                "   - **判断依据**：如果用户想看'每条记录'，就不要 GROUP BY；如果想看'汇总数据'，才用 GROUP BY\n" +
                 "   - 常用聚合函数：SUM()求和、COUNT()计数、AVG()平均、MAX()最大、MIN()最小\n" +
-                "   - 例如：'统计每个地区的销售额' -> SELECT region, SUM(amount) FROM orders GROUP BY region\n" +
-                "   - 例如：'每个城市的订单数' -> SELECT city, COUNT(*) FROM orders GROUP BY city\n" +
+                "   - 例如（统计）：'统计每个地区的销售额' -> SELECT region, SUM(amount) FROM orders GROUP BY region\n" +
+                "   - 例如（详情）：'查最近7天的订单' -> SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY\n" +
                 "6. **SELECT字段规则**：\n" +
                 "   - GROUP BY查询：SELECT中只能包含GROUP BY字段和聚合函数，不能直接选择非分组字段\n" +
                 "   - 错误示例：SELECT user_id, province, SUM(amount) ... GROUP BY province （user_id不在GROUP BY中）\n" +
