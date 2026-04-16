@@ -214,8 +214,8 @@ public class SQLFeedbackService {
             // 查找该会话中最近一次生成的SQL，且没有对应的反馈记录
             String checkSql = "SELECT q.question, q.generated_sql, q.executed_sql, q.execution_success " +
                              "FROM nl2sql_query_log q " +
-                             "LEFT JOIN rag_feedback f ON q.session_id COLLATE utf8mb4_unicode_ci = f.session_id COLLATE utf8mb4_unicode_ci " +
-                             "AND q.generated_sql COLLATE utf8mb4_unicode_ci = f.generated_sql COLLATE utf8mb4_unicode_ci " +
+                             "LEFT JOIN rag_feedback f ON q.session_id = f.session_id " +
+                             "AND q.generated_sql = f.generated_sql " +
                              "WHERE q.session_id = ? " +
                              "AND f.id IS NULL " +
                              "ORDER BY q.created_at DESC " +
