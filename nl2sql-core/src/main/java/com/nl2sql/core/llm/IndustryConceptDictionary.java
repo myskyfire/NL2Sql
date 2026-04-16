@@ -183,48 +183,42 @@ public class IndustryConceptDictionary {
     }
     
     /**
-     * 加载概念关系（同义词扩展）
+     * 加载概念同义词（简单扩展别名）
      */
     private void loadConceptRelations(IndustryConcepts concepts, String industryCode) {
         try {
             List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                "SELECT source_concept_key, target_concept_key, relation_type " +
-                "FROM concept_relation " +
-                "WHERE industry_code = ?",
+                "SELECT source_concept_key, target_concept_key FROM concept_relation WHERE industry_code = ?",
                 industryCode
             );
             
             for (Map<String, Object> rel : relations) {
                 String source = (String) rel.get("source_concept_key");
                 String target = (String) rel.get("target_concept_key");
-                String type = (String) rel.get("relation_type");
                 
-                // 同义词关系：将target添加到source的别名中
-                if ("synonym".equals(type)) {
-                    // 查找source在哪个map中
-                    if (concepts.getMetrics().containsKey(source)) {
-                        String existing = concepts.getMetrics().get(source);
-                        if (!existing.contains(target)) {
-                            concepts.getMetrics().put(source, existing + "/" + target);
-                        }
-                    } else if (concepts.getBusinessEntities().containsKey(source)) {
-                        String existing = concepts.getBusinessEntities().get(source);
-                        if (!existing.contains(target)) {
-                            concepts.getBusinessEntities().put(source, existing + "/" + target);
-                        }
-                    } else if (concepts.getDimensions().containsKey(source)) {
-                        String existing = concepts.getDimensions().get(source);
-                        if (!existing.contains(target)) {
-                            concepts.getDimensions().put(source, existing + "/" + target);
-                        }
+                // 将同义词添加到别名中
+                if (concepts.getMetrics().containsKey(source)) {
+                    String existing = concepts.getMetrics().get(source);
+                    if (!existing.contains(target)) {
+                        concepts.getMetrics().put(source, existing + "/" + target);
+                    }
+                } else if (concepts.getBusinessEntities().containsKey(source)) {
+                    String existing = concepts.getBusinessEntities().get(source);
+                    if (!existing.contains(target)) {
+                        concepts.getBusinessEntities().put(source, existing + "/" + target);
+                    }
+                } else if (concepts.getDimensions().containsKey(source)) {
+                    String existing = concepts.getDimensions().get(source);
+                    if (!existing.contains(target)) {
+                        concepts.getDimensions().put(source, existing + "/" + target);
                     }
                 }
             }
             
-            log.debug("[IndustryConceptDictionary] 加载{}条概念关系", relations.size());
+            log.debug("[IndustryConceptDictionary] 加载{}条同义词关系", relations.size());
             
         } catch (Exception e) {
-            log.warn("[IndustryConceptDictionary] 加载概念关系失败: {}", e.getMessage());
+            log.warn("[IndustryConceptDictionary] 加载同义词失败: {}", e.getMessage());
         }
     }
     

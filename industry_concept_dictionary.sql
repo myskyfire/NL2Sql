@@ -48,38 +48,18 @@ CREATE TABLE IF NOT EXISTS datasource_industry_mapping (
     INDEX idx_industry (industry_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据源行业关联表';
 
--- 4. 概念关系表（支持同义、上下位、关联等关系）
+-- 4. 概念关系表（仅支持同义词扩展）
 CREATE TABLE IF NOT EXISTS concept_relation (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     industry_code VARCHAR(50) NOT NULL COMMENT '行业代码',
     source_concept_key VARCHAR(100) NOT NULL COMMENT '源概念',
-    target_concept_key VARCHAR(100) NOT NULL COMMENT '目标概念',
-    relation_type VARCHAR(20) NOT NULL COMMENT '关系类型：synonym(同义)/hyponym(下位)/hypernym(上位)/related(关联)',
-    confidence DECIMAL(3,2) DEFAULT 1.00 COMMENT '置信度',
+    target_concept_key VARCHAR(100) NOT NULL COMMENT '目标概念（同义词）',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     INDEX idx_source (source_concept_key),
-    INDEX idx_target (target_concept_key),
-    INDEX idx_type (relation_type),
-    UNIQUE KEY uk_relation (industry_code, source_concept_key, target_concept_key, relation_type)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='概念关系表';
+    UNIQUE KEY uk_relation (industry_code, source_concept_key, target_concept_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='概念同义词表';
 
--- 5. 概念学习记录表（RAG自动学习）
-CREATE TABLE IF NOT EXISTS concept_learning_log (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-    industry_code VARCHAR(50) COMMENT '推测的行业',
-    concept_type VARCHAR(20) COMMENT '概念类型',
-    concept_key VARCHAR(100) COMMENT '概念键',
-    extracted_aliases TEXT COMMENT '提取的别名',
-    source_sql TEXT COMMENT '来源SQL',
-    source_question VARCHAR(500) COMMENT '来源问题',
-    confidence DECIMAL(3,2) COMMENT '置信度',
-    status VARCHAR(20) DEFAULT 'pending' COMMENT '状态：pending/approved/rejected',
-    reviewed_by VARCHAR(50) COMMENT '审核人',
-    reviewed_at DATETIME COMMENT '审核时间',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    INDEX idx_status (status),
-    INDEX idx_industry (industry_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='概念学习记录表';
+
 
 -- ========================================
 -- 初始化数据
