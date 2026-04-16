@@ -554,6 +554,11 @@
         
         // 处理查询成功
         async function handleQuerySuccess(data) {
+            console.log('[handleQuerySuccess] 完整 data:', data);
+            console.log('[handleQuerySuccess] data.data:', data.data);
+            console.log('[handleQuerySuccess] data.data 类型:', Array.isArray(data.data) ? 'Array' : typeof data.data);
+            console.log('[handleQuerySuccess] data.data 长度:', Array.isArray(data.data) ? data.data.length : 'N/A');
+            
             let html = '';
             
             // 情况1：AI总结结果（有 summary 但没有 data）
@@ -574,11 +579,16 @@
             
             // ✅ 显示数据表格（await异步渲染）
             if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                console.log('[handleQuerySuccess] 开始渲染表格，记录数:', data.data.length);
                 html += await renderDataTable(data.data);
                 html += `<div style="margin-top:8px;font-size:13px;color:#666;">✅ 共 ${data.rowCount || data.data.length} 条记录，耗时 ${(data.executionTime || 0).toFixed(2)}秒</div>`;
+                console.log('[handleQuerySuccess] 表格渲染完成');
             } else if (data.data && Array.isArray(data.data) && data.data.length === 0) {
                 // 查询成功但没有数据
+                console.log('[handleQuerySuccess] 查询成功但无数据');
                 html += '<div style="margin-top:12px;padding:16px;background:#f5f7fa;border-radius:6px;text-align:center;color:#999;">📭 未查到数据</div>';
+            } else {
+                console.warn('[handleQuerySuccess] data.data 不存在或不是数组:', data.data);
             }
             
             // ✅ 新增：SQL反馈评分组件
@@ -1215,21 +1225,28 @@
             let columnTranslations = {};
             if (englishColumns.length > 0) {
                 try {
-                    // 调用后端LLM翻译
+                    // 调用后端LLM翻译（带超时保护）
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
+                    
                     const response = await fetch('/api/translate/column-names', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify(englishColumns)
+                        body: JSON.stringify(englishColumns),
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
                     const result = await response.json();
                     if (result.code === 200) {
                         columnTranslations = result.data;
                     }
                 } catch (error) {
                     console.warn('翻译失败，使用默认格式化:', error);
+                    // 翻译失败不影响表格显示，继续使用默认格式化
                 }
             }
             
