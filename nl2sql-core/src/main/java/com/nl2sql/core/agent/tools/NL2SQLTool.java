@@ -44,6 +44,9 @@ public class NL2SQLTool {
     @Autowired(required = false)
     private RagKnowledgeBaseService ragService;
     
+    @Autowired
+    private com.nl2sql.core.llm.IndustryConceptDictionary industryConceptDictionary;
+    
     /**
      * 根据用户问题和数据源ID生成SQL
      * 
@@ -86,7 +89,7 @@ public class NL2SQLTool {
                 String schemaInfo = buildTableSchemaInfo(new ArrayList<>(allTables), datasourceId);
                             
                 // 调用 LLM 判断并选择需要的表
-                String checkPrompt = buildTableCheckPrompt(expandedQuery, schemaInfo, relationshipInfo);
+                String checkPrompt = buildTableCheckPrompt(expandedQuery, schemaInfo, relationshipInfo, datasourceId);
                 String llmResponse = modelRouter.smartGenerateSQL(checkPrompt, expandedQuery);
                             
                 log.info("[NL2SQLTool] ========== LLM原始响应 ==========");
@@ -493,10 +496,10 @@ public class NL2SQLTool {
         return sb.toString();
     }
     
-    private String buildTableCheckPrompt(String query, String schemaInfo, String relationshipInfo) {
+    private String buildTableCheckPrompt(String query, String schemaInfo, String relationshipInfo, Long datasourceId) {
         String relationshipHint = relationshipInfo.isEmpty() ? "" : 
             "\n\n表之间的关联关系（重要）：\n" + relationshipInfo + 
-            "\n注意：如果需要关联两张表，必须包含中间的所有表。例如：order_items -> products -> product_categories，需要同时选中这三张表。";
+            "\n注意：如果需要关联两张表，必须包含中间的所有表。例如：A.ref_id -> B.id -> C.ref_id，需要同时选中 A、B、C 三张表。";
         
         // ✅ 关键修复：检测用户是否指定了表名偏好
         String tablePreferenceHint = "";
@@ -518,6 +521,11 @@ public class NL2SQLTool {
             }
         }
         
+        // ✅ 注入行业概念（动态增强提示词）
+        String metricDescription = industryConceptDictionary.generateMetricDescription(datasourceId);
+        String dimensionDescription = industryConceptDictionary.generateDimensionDescription(datasourceId);
+        String tableRoleDescription = industryConceptDictionary.generateTableRoleDescription(datasourceId);
+        
         return String.format(
             "你是一个数据库专家。根据用户问题和当前可用的表结构，请选出需要用到的表。\n\n" +
             "用户问题：%s\n" +
@@ -528,11 +536,12 @@ public class NL2SQLTool {
             "1. 仔细分析用户问题，只选择真正需要用到的表\n" +
             "2. **如果需要通过中间表关联，必须包含所有中间表**（如 A.ref_id -> B.id -> C.ref_id，需要选中 A、B、C 三张表）\n" +
             "3. **关键指标识别规则**：\n" +
-            "   - 涉及数值型指标（如金额、数量、次数等）时，必须选择包含这些字段的业务主表\n" +
-            "   - 不能仅根据维度字段（如地区、分类、时间）选择表，必须确保所选表包含用户询问的指标字段\n" +
-            "   - 例如：'统计每个地区的销售额' → 必须选择有金额字段的主表，同时选择有地区字段的维度表\n" +
-            "   - ⚠️ 重要：仔细区分不同维度的概念（如'地区'vs'分类'），根据实际表结构判断\n" +
-            "4. **表选择验证规则（重要）**：\n" +
+            "   - 涉及%s时，必须选择包含这些字段的业务主表\n" +
+            "   - 不能仅根据维度字段选择表，必须确保所选表包含用户询问的指标字段\n" +
+            "   - 例如：'统计每个%s的数值指标' → 必须选择有数值字段的主表，同时选择有%s字段的维度表\n" +
+            "   - ⚠️ 重要：仔细区分不同维度的概念，根据实际表结构判断\n" +
+            "4. **表角色理解**：%s\n" +
+            "5. **表选择验证规则（重要）**：\n" +
             "   - 在返回selected_tables之前，必须验证：基于已选表能否生成满足用户问题的SQL？\n" +
             "   - 检查清单：\n" +
             "     a) SELECT中的每个字段是否都能在已选表中找到？\n" +
@@ -540,11 +549,13 @@ public class NL2SQLTool {
             "     c) 如果需要JOIN，关联字段是否在已选表中？\n" +
             "   - 如果任何一个检查失败，必须返回missing_tables，而不是selected_tables\n" +
             "   - 示例：如果查询需要某个表的字段但该表未选中，则必须补充该表\n" +
-            "5. 如果某些表完全用不到，不要包含在结果中\n" +
-            "6. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
-            "7. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
-            "8. 只返回JSON，不要其他内容",
-            query, tablePreferenceHint, schemaInfo, relationshipHint
+            "6. 如果某些表完全用不到，不要包含在结果中\n" +
+            "7. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
+            "8. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
+            "9. 只返回JSON，不要其他内容",
+            query, tablePreferenceHint, schemaInfo, relationshipHint,
+            metricDescription, dimensionDescription.split("，")[0], dimensionDescription.split("，")[0],
+            tableRoleDescription
         );
     }
     
