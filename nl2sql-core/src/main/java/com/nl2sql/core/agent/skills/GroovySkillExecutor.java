@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Groovy Skill 执行器
@@ -330,9 +331,9 @@ public class GroovySkillExecutor {
                 // 因为 JAR 包内的资源无法通过文件系统路径访问
                 String scriptContent;
                 try (var inputStream = resource.getInputStream();
-                     var reader = new java.io.BufferedReader(
-                         new java.io.InputStreamReader(inputStream, java.nio.charset.StandardCharsets.UTF_8))) {
-                    scriptContent = reader.lines().collect(java.util.stream.Collectors.joining("\n"));
+                     var reader = new BufferedReader(
+                         new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                    scriptContent = reader.lines().collect(Collectors.joining("\n"));
                 }
                 
                 log.debug("[GroovySkillExecutor] 加载 Groovy 脚本: {}", path);

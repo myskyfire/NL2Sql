@@ -13,6 +13,10 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -244,7 +248,7 @@ public class AgentConfig {
                     String summary = aiSummaryTool.summarize(lastQuery, generatedSQL, dataJson);
                     
                     // 返回结构化结果
-                    Map<String, Object> result = new java.util.HashMap<>();
+                    Map<String, Object> result = new HashMap<>();
                     result.put("status", "success");
                     result.put("summary", summary);
                     result.put("datasourceId", dsId);  // ⚠️ 重要：返回 datasourceId 供前端后续使用
@@ -308,7 +312,7 @@ public class AgentConfig {
                     log.info("[generate_chart] 未指定图表类型，分析数据特征");
                     List<String> recommendedTypes = analyzeAndRecommendChartTypes(queryData);
                     
-                    Map<String, Object> result = new java.util.HashMap<>();
+                    Map<String, Object> result = new HashMap<>();
                     result.put("status", "chart_recommendation");
                     result.put("recommendedCharts", recommendedTypes);
                     result.put("datasourceId", dsId);
@@ -358,7 +362,7 @@ public class AgentConfig {
      * 分析数据特征并推荐适合的图表类型
      */
     private List<String> analyzeAndRecommendChartTypes(List<Map<String, Object>> data) {
-        List<String> recommendations = new java.util.ArrayList<>();
+        List<String> recommendations = new ArrayList<>();
         
         if (data == null || data.isEmpty()) {
             return recommendations;
@@ -420,23 +424,23 @@ public class AgentConfig {
      */
     private Map<String, Object> generateEChartsConfig(String chartType, List<Map<String, Object>> data) {
         if (data == null || data.isEmpty()) {
-            return new java.util.HashMap<>();
+            return new HashMap<>();
         }
         
-        Map<String, Object> config = new java.util.HashMap<>();
+        Map<String, Object> config = new HashMap<>();
         config.put("type", chartType);
         
         // 提取 categories 和 values
-        List<String> categories = new java.util.ArrayList<>();
-        List<Object> values = new java.util.ArrayList<>();
+        List<String> categories = new ArrayList<>();
+        List<Object> values = new ArrayList<>();
         
         // 假设第一列是分类，第二列是数值
         String categoryKey = null;
         String valueKey = null;
         
         if (!data.isEmpty()) {
-            java.util.Set<String> keys = data.get(0).keySet();
-            java.util.Iterator<String> iterator = keys.iterator();
+            Set<String> keys = data.get(0).keySet();
+            Iterator<String> iterator = keys.iterator();
             if (iterator.hasNext()) categoryKey = iterator.next();
             if (iterator.hasNext()) valueKey = iterator.next();
         }

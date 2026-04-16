@@ -143,9 +143,9 @@ public class AuthService {
                 userInfo.setUserId(((Number) userIdObj).longValue());
             } else if (userIdObj instanceof String) {
                 userInfo.setUserId(Long.parseLong((String) userIdObj));
-            } else if (userIdObj instanceof java.util.List) {
+            } else if (userIdObj instanceof List) {
                 // 处理ArrayList情况，取第一个元素
-                java.util.List<?> list = (java.util.List<?>) userIdObj;
+                List<?> list = (List<?>) userIdObj;
                 if (!list.isEmpty() && list.get(0) instanceof Number) {
                     userInfo.setUserId(((Number) list.get(0)).longValue());
                     log.warn("[Token验证] userId是List，取第一个元素: {}", userInfo.getUserId());

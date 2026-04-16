@@ -108,7 +108,7 @@ public class SQLFeedbackService {
                     try {
                         feedbackLearningService.processLowRatingFeedback(
                             feedbackId, 
-                            request.getRating(), 
+                            request.getRating().intValue(),  // Integer -> int
                             request.getQuestion(), 
                             request.getGeneratedSql(), 
                             request.getFeedbackText()

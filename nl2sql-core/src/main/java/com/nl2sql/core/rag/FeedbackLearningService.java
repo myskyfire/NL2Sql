@@ -5,8 +5,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 反馈学习服务
@@ -31,9 +35,9 @@ public class FeedbackLearningService {
      * @param generatedSql 生成的SQL
      * @param feedbackText 用户反馈的原因
      */
-    public void processLowRatingFeedback(Long feedbackId, int rating, String question, 
+    public void processLowRatingFeedback(Long feedbackId, int rating, String question,
                                         String generatedSql, String feedbackText) {
-        log.info("[反馈学习] 开始处理低分反馈: feedbackId={}, rating={}, question={}", 
+        log.info("[反馈学习] 开始处理低分反馈: feedbackId={}, rating={}, question={}",
             feedbackId, rating, question);
         
         try {
@@ -67,7 +71,7 @@ public class FeedbackLearningService {
         }
         
         String lowerText = feedbackText.toLowerCase();
-        java.util.Set<String> categories = new java.util.HashSet<>();
+        Set<String> categories = new HashSet<>();
         
         // GROUP BY相关错误
         if (lowerText.contains("group by") || lowerText.contains("分组") || 
@@ -212,9 +216,9 @@ public class FeedbackLearningService {
         if (sql == null || sql.isEmpty()) return "";
             
         // 简单提取FROM后面的第一个表名
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-            "\\bFROM\\s+(\\w+)", java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher matcher = pattern.matcher(sql);
+        Pattern pattern = Pattern.compile(
+            "\\bFROM\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(sql);
             
         if (matcher.find()) {
             return matcher.group(1);
@@ -230,8 +234,8 @@ public class FeedbackLearningService {
         if (question == null || question.isEmpty()) return "";
         
         // 简单提取中文字符
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("[\\u4e00-\\u9fa5]{2,}");
-        java.util.regex.Matcher matcher = pattern.matcher(question);
+        Pattern pattern = Pattern.compile("[\\u4e00-\\u9fa5]{2,}");
+        Matcher matcher = pattern.matcher(question);
         
         StringBuilder keywords = new StringBuilder();
         while (matcher.find()) {
