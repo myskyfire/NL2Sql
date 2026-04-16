@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 public class QueryCacheService {
     
     private static final String CACHE_PREFIX = "NL2SQL:query:";
-    private static final int DEFAULT_TTL_MINUTES = 30; // 默认缓存30分钟
+    private static final int  DEFAULT_TTL_MINUTES = 30; // 默认缓存30分钟
     
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
