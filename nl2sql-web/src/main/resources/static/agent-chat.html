@@ -597,7 +597,8 @@
             // ✅ 新增：SQL反馈评分组件
             if (data.generatedSQL || data.sql) {
                 const sqlForFeedback = data.generatedSQL || data.sql;
-                const questionForFeedback = lastUserMessage ? lastUserMessage.textContent.trim() : '';
+                const lastUserMsg = document.querySelector('.message.user:last-child .message-bubble');
+                const questionForFeedback = lastUserMsg ? lastUserMsg.textContent.trim() : '';
                 html += renderFeedbackButtons(questionForFeedback, sqlForFeedback);
             }
             
