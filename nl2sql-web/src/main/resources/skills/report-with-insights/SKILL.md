@@ -21,10 +21,10 @@ requiredParams: [question, datasourceId]
 ## 适用场景
 
 ✅ **应该使用此 Skill**：
-- 趋势分析："分析近3个月销售趋势并给出建议"
-- 对比分析："对比各产品线的业绩表现"
-- 综合报告："生成上月经营分析报告"
-- 深度洞察："分析用户增长趋势和留存率"
+- 趋势分析："分析近3个月某指标趋势并给出建议"
+- 对比分析："对比各维度的数据表现"
+- 综合报告："生成上月数据分析报告"
+- 深度洞察："分析增长趋势和关键指标"
 - 用户明确要求"分析"、"总结"、"报告"、"趋势"等关键词
 
 ❌ **不应该使用此 Skill**：
@@ -70,7 +70,7 @@ Step 3: 推荐合适的图表类型 (ChartRecommendationTool)
   "rowCount": 50,
   "executionTime": 250.8,
   "sql": "SELECT ...",
-  "aiSummary": "上月销售额环比增长15%，其中华东地区贡献最大...",
+  "aiSummary": "上月某指标环比增长15%，其中A维度贡献最大...",
   "chartRecommendations": [
     {
       "type": "line",
@@ -78,7 +78,7 @@ Step 3: 推荐合适的图表类型 (ChartRecommendationTool)
     },
     {
       "type": "bar",
-      "reason": "分类对比，适合展示各地区差异"
+      "reason": "分类对比，适合展示各维度差异"
     }
   ]
 }
@@ -95,16 +95,16 @@ Step 3: 推荐合适的图表类型 (ChartRecommendationTool)
 ## 示例
 
 ### 示例 1：趋势分析
-**用户**：分析上月销售趋势并给出建议  
-**Skill 调用**：`generate_report_with_insights("分析上月销售趋势并给出建议", 1, 123, "user")`
+**用户**：分析上月某指标趋势并给出建议  
+**Skill 调用**：`generate_report_with_insights("分析上月某指标趋势并给出建议", 1, 123, "user")`
 
 ### 示例 2：对比分析
-**用户**：对比各产品线的业绩表现  
-**Skill 调用**：`generate_report_with_insights("对比各产品线的业绩表现", 1, 123, "user")`
+**用户**：对比各维度的数据表现  
+**Skill 调用**：`generate_report_with_insights("对比各维度的数据表现", 1, 123, "user")`
 
 ### 示例 3：综合报告
-**用户**：生成上月经营分析报告  
-**Skill 调用**：`generate_report_with_insights("生成上月经营分析报告", 1, 123, "user")`
+**用户**：生成上月数据分析报告  
+**Skill 调用**：`generate_report_with_insights("生成上月数据分析报告", 1, 123, "user")`
 
 ## 与 StandardQuerySkill 的区别
 

@@ -323,8 +323,8 @@ public class ReActAgent {
         sb.append("     4. 执行 SQL 并返回结果\n");
         sb.append("   - ❌ **绝对禁止**：不要手动调用 analyze_sql_risk、execute_direct_sql 等底层工具\n");
         sb.append("   - ❌ **绝对禁止**：不要自己生成 SQL，必须让 execute_standard_query 自动生成\n");
-        sb.append("   - 示例：用户消息为 `[数据源ID: 1] 查询所有订单`\n");
-        sb.append("     → ✅ 正确：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"查询所有订单\", \"datasourceId\": 1}}\n");
+        sb.append("   - 示例：用户消息为 `[数据源ID: 1] 查询某类数据`\n");
+        sb.append("     → ✅ 正确：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"查询某类数据\", \"datasourceId\": 1}}\n");
         sb.append("     → ❌ 错误：{\"name\": \"clarify_datasource\", \"arguments\": {...}}\n");
         sb.append("     → ❌ 错误：{\"name\": \"analyze_sql_risk\", \"arguments\": {\"sql\": \"SELECT ...\"}}\n\n");
         
@@ -341,8 +341,8 @@ public class ReActAgent {
         sb.append("- ⚠️ **强制规则**：clarify_datasource 返回 recommendedDatasourceId 后，必须立即调用 execute_standard_query，不得有任何中间对话！\n\n");
         
         sb.append("## 输出示例\n");
-        sb.append("✅ 好的（总结意图）：{\"name\": \"summarize_result\", \"arguments\": {\"context\": {\"lastQuery\": \"查询销售额\", \"generatedSQL\": \"SELECT ...\"}}}\n");
-        sb.append("✅ 好的（标准查询）：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"统计销售额\", \"datasourceId\": 1}}\n");
+        sb.append("✅ 好的（总结意图）：{\"name\": \"summarize_result\", \"arguments\": {\"context\": {\"lastQuery\": \"查询某类数据\", \"generatedSQL\": \"SELECT ...\"}}}\n");
+        sb.append("✅ 好的（标准查询）：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"统计某指标\", \"datasourceId\": 1}}\n");
         sb.append("❌ 不好的：Thought: 我需要...\\nAction: ...\n");
         
         return sb.toString();

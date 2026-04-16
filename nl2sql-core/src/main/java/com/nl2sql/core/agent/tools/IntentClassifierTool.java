@@ -52,7 +52,7 @@ public class IntentClassifierTool {
         prompt.append("你是一个意图分类专家。请分析用户问题，判断其意图类型。\n\n");
         
         prompt.append("## 可选意图类型\n");
-        prompt.append("1. QUERY - 数据查询（查订单、查销售额等）\n");
+        prompt.append("1. QUERY - 数据查询（查某类数据、查指标等）\n");
         prompt.append("2. ANALYSIS - 数据分析（趋势、对比、占比等）\n");
         prompt.append("3. CHART - 图表生成（柱状图、折线图等）\n");
         prompt.append("4. REPORT - 报告生成（生成分析报告）\n");

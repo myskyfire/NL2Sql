@@ -139,8 +139,8 @@ public class DatasourceClarificationTool {
                 "只返回JSON格式，不要有其他文字：\n" +
                 "{\"matched_datasource_id\": 数据源ID或null, \"confidence\": \"high/medium/low\", \"need_table_info\": true/false, \"reason\": \"匹配原因\"}\n\n" +
                 "## 示例\n" +
-                "用户问：'统计订单数量' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"订单查询应使用订单数据库\"}\n" +
-                "用户问：'分析销售数据' -> {\"matched_datasource_id\": null, \"confidence\": \"low\", \"need_table_info\": true, \"reason\": \"销售相关数据可能在多个数据源中\"}",
+                "用户问：'统计某类数据数量' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"该数据源包含相关表，适合查询此类数据\"}\n" +
+                "用户问：'分析某领域数据' -> {\"matched_datasource_id\": null, \"confidence\": \"low\", \"need_table_info\": true, \"reason\": \"相关数据可能在多个数据源中\"}",
                 userQuery,
                 datasourceInfo.toString()
             );
@@ -250,7 +250,7 @@ public class DatasourceClarificationTool {
                 "只返回JSON格式：\n" +
                 "{\"matched_datasource_id\": 数据源ID或null, \"confidence\": \"high/medium/low\", \"reason\": \"详细说明匹配原因，包括涉及的表\"}\n\n" +
                 "## 示例\n" +
-                "用户问：'统计订单数量' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"reason\": \"数据源1包含orders表（订单表），适合查询订单数据\"}",
+                "用户问：'统计某类数据' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"reason\": \"数据源1包含相关表，适合查询该类数据\"}",
                 userQuery,
                 detailedInfo.toString()
             );
