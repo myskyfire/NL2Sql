@@ -52,6 +52,9 @@ AI自动分析数据<br>提供业务建议
 - **🧠 RAG检索增强**: 双层向量检索（表+字段）+ 历史SQL示例注入，准确率>85%
 - **🎯 多模型智能路由**: SIMPLE/MEDIUM/COMPLEX三级复杂度评估，动态选择最优LLM
 - **💬 同义词词典**: 自动识别业务术语（订单/定单、用户/客户、DAU/GMV等）
+- **🏭 行业概念库**: 数据库驱动的行业术语管理，支持电商/金融/医疗等5大行业
+- **⚡ 用户反馈学习**: 高评分查询自动提取新术语，一键添加到行业词典
+- **🔌 SPI扩展架构**: 预留术语提取/语义验证/自动学习等扩展点，支持自定义实现
 - **⏰ 时间表达式解析**: 智能理解“昨天”、“最近7天”、“上个月”等自然语言
 - **🔄 SQL自动纠错**: 6种错误类型识别（表不存在、字段不存在、语法错误等），最多3次自动重试
 - **📊 分页查询**: 支持大数据量分页返回，默认每页50条
@@ -107,6 +110,18 @@ AI自动分析数据<br>提供业务建议
 - **🎓 自动学习**: 成功执行的SQL自动存入知识库
 - **⭐ 质量评分**: 动态调整样本权重，清理低质量数据
 - **📊 使用统计**: 记录每个样本的使用次数和效果
+
+#### 🏭 行业概念词典
+- **📦 5大行业模板**: 电商/金融/医疗/教育/制造，预置核心业务术语
+- **💾 数据库驱动**: 行业概念存储在数据库，支持后台管理CRUD
+- **🔄 同义词扩展**: 支持概念间同义关系（如：GMV = 销售额 = 成交金额）
+- **⚡ 热更新机制**: 添加新概念后立即生效，无需重启服务
+- **👥 用户反馈学习**: 高评分查询自动提示添加新术语，一键入库
+- **🔌 SPI扩展点**: 
+  - `extractTerms()`: 自定义NLP术语提取逻辑
+  - `validateSemanticConsistency()`: 语义一致性验证
+  - `learnFromSuccess()`: 自定义学习策略
+  - `suggestSynonyms()`: LLM推荐同义词
 
 #### 📝 查询模板管理
 - **👤 个人模板**: 用户私有，仅自己可见
@@ -180,6 +195,37 @@ WHERE EXISTS (
 ✅ orders.user_id → users.id (MANY_TO_ONE)
 ✅ orders.id ← order_items.order_id (ONE_TO_MANY)
 💡 复杂度评分: 2分 (中等，建议优化EXISTS为JOIN)
+```
+
+### 5️⃣ 行业概念词典与反馈学习
+
+```bash
+# 场景：用户查询"统计各地区GMV"
+# 系统识别GMV不在词典中，但SQL执行成功且用户评分5星
+
+# 前端提示："检测到新术语'GMV'，是否添加到行业词典？"
+# 用户点击"是"
+
+POST /api/admin/industry-concepts/learn-from-feedback
+{
+  "term": "GMV",
+  "question": "统计各地区GMV",
+  "datasourceId": 1
+}
+
+# 后端自动匹配：GMV → revenue (电商行业)
+# 插入 concept_relation 表
+
+Response:
+{
+  "success": true,
+  "message": "已添加 'GMV' 作为 'revenue' 的同义词",
+  "industryCode": "ecommerce",
+  "conceptKey": "revenue",
+  "synonym": "gmv"
+}
+
+# 下次查询"GMV"时，系统能正确理解为销售额
 ```
 
 ---
@@ -1849,6 +1895,19 @@ docker run -p 8000:8000 chromadb/chroma
 - [ ] Milvus向量数据库支持（预留）
 - [ ] Qdrant向量数据库支持（预留）
 
+#### 行业概念词典
+- [x] 5大行业模板（电商/金融/医疗/教育/制造）
+- [x] 数据库驱动架构（支持后台管理CRUD）
+- [x] 同义词扩展（concept_relation表）
+- [x] 热更新机制（添加后立即生效）
+- [x] 用户反馈学习API（POST /learn-from-feedback）
+- [x] SPI扩展接口（IndustryConceptExtension）
+  - [x] extractTerms() - 术语提取扩展点
+  - [x] validateSemanticConsistency() - 语义验证扩展点
+  - [x] learnFromSuccess() - 学习策略扩展点
+  - [x] suggestSynonyms() - 同义词推荐扩展点
+- [ ] 前端集成（评分后提示添加新术语）
+
 #### 查询模板
 - [x] 个人模板（用户私有）
 - [x] 公共模板（全员共享）
@@ -1881,12 +1940,14 @@ docker run -p 8000:8000 chromadb/chroma
 - [ ] Docker容器化部署（docker-compose一键启动）
 - [ ] Milvus向量数据库支持（大规模生产环境）
 - [ ] Qdrant向量数据库支持（高性能向量检索）
+- [ ] 前端集成反馈学习（评分后提示添加新术语）
 
 #### 中优先级
 - [ ] 支持更多数据库（PostgreSQL、Oracle、SQL Server）
 - [ ] API文档自动生成（Swagger/OpenAPI集成）
 - [ ] 测试覆盖率提升至80%（单元测试+集成测试）
 - [ ] 数据源健康检查自动切换（主从切换）
+- [ ] 行业概念管理后台UI（可视化配置界面）
 
 #### 低优先级
 - [ ] 多租户支持（隔离不同团队的数据）
