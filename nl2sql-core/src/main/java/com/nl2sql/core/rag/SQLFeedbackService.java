@@ -50,7 +50,7 @@ public class SQLFeedbackService {
                         ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
             
             jdbcTemplate.update(sql,
-                request.getKnowledgeId(),
+                request.getKnowledgeId() != null ? request.getKnowledgeId() : 0L, // knowledge_id默认为0
                 null, // userId 从SecurityContext获取，暂时留空
                 request.getSessionId(),
                 request.getRating(),
