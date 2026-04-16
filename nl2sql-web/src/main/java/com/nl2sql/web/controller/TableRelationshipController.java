@@ -100,6 +100,15 @@ public class TableRelationshipController {
                 return Result.error("该关联关系已存在");
             }
             
+            // ✅ 自动生成标准格式的 description
+            String autoDescription = generateStandardDescription(
+                request.getSourceTable(),
+                request.getSourceColumn(),
+                request.getTargetTable(),
+                request.getTargetColumn(),
+                request.getDatasourceId()
+            );
+            
             jdbcTemplate.update(
                 "INSERT INTO table_relationships (datasource_id, source_table, source_column, target_table, target_column, relationship_type, confidence, description, is_active) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
@@ -110,12 +119,12 @@ public class TableRelationshipController {
                 request.getTargetColumn(),
                 request.getRelationshipType() != null ? request.getRelationshipType() : "MANY_TO_ONE",
                 1, // 手动创建的置信度为1
-                request.getDescription() != null ? request.getDescription() : ""
+                autoDescription // 使用自动生成的描述
             );
             
-            log.info("创建关联关系成功: {}.{} -> {}.{}", 
+            log.info("创建关联关系成功: {}.{} -> {}.{}, description={}", 
                 request.getSourceTable(), request.getSourceColumn(),
-                request.getTargetTable(), request.getTargetColumn());
+                request.getTargetTable(), request.getTargetColumn(), autoDescription);
             
             return Result.success();
         } catch (Exception e) {
@@ -403,5 +412,39 @@ public class TableRelationshipController {
     @Data
     public static class BatchSaveRequest {
         private List<RelationshipRequest> relationships;
+    }
+    
+    /**
+     * 自动生成标准格式的 description
+     * 格式：{源表注释}通过{源字段}关联{目标表注释}
+     */
+    private String generateStandardDescription(String sourceTable, String sourceColumn, 
+                                               String targetTable, String targetColumn, 
+                                               Long datasourceId) {
+        try {
+            // 查询源表注释
+            String sourceComment = jdbcTemplate.queryForObject(
+                "SELECT table_comment FROM table_metadata WHERE datasource_id = ? AND table_name = ?",
+                String.class, datasourceId, sourceTable
+            );
+            
+            // 查询目标表注释
+            String targetComment = jdbcTemplate.queryForObject(
+                "SELECT table_comment FROM table_metadata WHERE datasource_id = ? AND table_name = ?",
+                String.class, datasourceId, targetTable
+            );
+            
+            // 使用表注释，如果没有则使用表名
+            String sourceName = (sourceComment != null && !sourceComment.isEmpty()) ? sourceComment : sourceTable;
+            String targetName = (targetComment != null && !targetComment.isEmpty()) ? targetComment : targetTable;
+            
+            // 标准格式：{源表名}通过{源字段}关联{目标表名}
+            return String.format("%s通过%s关联%s", sourceName, sourceColumn, targetName);
+            
+        } catch (Exception e) {
+            log.warn("生成 description 失败，使用默认格式: {}", e.getMessage());
+            // 降级方案：直接使用表名
+            return String.format("%s通过%s关联%s", sourceTable, sourceColumn, targetTable);
+        }
     }
 }
