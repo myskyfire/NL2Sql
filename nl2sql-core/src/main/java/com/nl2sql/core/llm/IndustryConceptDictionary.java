@@ -2,6 +2,7 @@ package com.nl2sql.core.llm;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -23,6 +24,9 @@ public class IndustryConceptDictionary {
      * Value: 该行业的概念定义
      */
     private final Map<String, IndustryConcepts> industryMap = new ConcurrentHashMap<>();
+    
+    @Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     
     public IndustryConceptDictionary() {
         initializeDefaultIndustries();
@@ -66,9 +70,79 @@ public class IndustryConceptDictionary {
      * @return 行业概念，如果未配置则返回通用概念
      */
     public IndustryConcepts getConceptsByDatasource(Long datasourceId) {
-        // TODO: 从数据库读取数据源的行业配置
-        // 暂时返回通用概念
+        if (datasourceId == null || jdbcTemplate == null) {
+            return getGenericConcepts();
+        }
+        
+        try {
+            // 从数据库读取 business_category
+            String businessCategory = jdbcTemplate.queryForObject(
+                "SELECT business_category FROM datasource_config WHERE id = ?",
+                String.class, datasourceId
+            );
+            
+            if (businessCategory != null && !businessCategory.isEmpty()) {
+                // 根据业务类别匹配行业概念
+                IndustryConcepts matched = matchIndustryByCategory(businessCategory);
+                if (matched != null) {
+                    log.debug("[IndustryConceptDictionary] 数据源{}匹配到行业: {}", 
+                        datasourceId, matched.getIndustryName());
+                    return matched;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[IndustryConceptDictionary] 读取数据源行业配置失败: {}", e.getMessage());
+        }
+        
+        // fallback到通用概念
         return getGenericConcepts();
+    }
+    
+    /**
+     * 根据业务类别字符串匹配行业概念
+     * 
+     * @param businessCategory 业务类别（如："订单,交易,trade,order"）
+     * @return 匹配的行业概念，无匹配则返回null
+     */
+    private IndustryConcepts matchIndustryByCategory(String businessCategory) {
+        String category = businessCategory.toLowerCase();
+        
+        // 电商/零售
+        if (category.contains("order") || category.contains("交易") || 
+            category.contains("订单") || category.contains("sales") || 
+            category.contains("销售") || category.contains("trade")) {
+            return industryMap.get("ecommerce");
+        }
+        
+        // 金融
+        if (category.contains("finance") || category.contains("财务") || 
+            category.contains("accounting") || category.contains("会计") ||
+            category.contains("bank") || category.contains("银行")) {
+            return industryMap.get("finance");
+        }
+        
+        // 医疗
+        if (category.contains("medical") || category.contains("医疗") || 
+            category.contains("hospital") || category.contains("医院") ||
+            category.contains("health") || category.contains("健康")) {
+            return industryMap.get("medical");
+        }
+        
+        // 教育
+        if (category.contains("education") || category.contains("教育") || 
+            category.contains("school") || category.contains("学校") ||
+            category.contains("student") || category.contains("学生")) {
+            return industryMap.get("education");
+        }
+        
+        // 制造
+        if (category.contains("manufacturing") || category.contains("制造") || 
+            category.contains("production") || category.contains("生产") ||
+            category.contains("inventory") || category.contains("库存")) {
+            return industryMap.get("manufacturing");
+        }
+        
+        return null; // 无匹配
     }
     
     /**
