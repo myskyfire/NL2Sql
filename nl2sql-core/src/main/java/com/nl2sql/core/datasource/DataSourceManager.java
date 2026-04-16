@@ -83,11 +83,14 @@ public class DataSourceManager {
             hikariConfig.setUsername(config.getUsername());
             hikariConfig.setPassword(password);
             hikariConfig.setDriverClassName(getDriverClassName(config.getDbType()));
-            hikariConfig.setMaximumPoolSize(5);
-            hikariConfig.setMinimumIdle(1);
-            hikariConfig.setConnectionTimeout(30000);
-            hikariConfig.setIdleTimeout(600000);
-            hikariConfig.setMaxLifetime(1800000);
+            
+            // ✅ 连接池配置（根据并发需求调整）
+            hikariConfig.setMaximumPoolSize(10);        // 最大连接数：支持更高并发
+            hikariConfig.setMinimumIdle(2);             // 最小空闲连接：提高响应速度
+            hikariConfig.setConnectionTimeout(30000);   // 连接超时30秒
+            hikariConfig.setIdleTimeout(600000);        // 空闲10分钟自动回收
+            hikariConfig.setMaxLifetime(1800000);       // 连接最大生命周期30分钟
+            hikariConfig.setLeakDetectionThreshold(60000); // ⭐ 连接泄漏检测60秒
             hikariConfig.setPoolName("DynamicDS-" + config.getName());
             
             // MySQL特殊配置：确保UTF-8编码

@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
 /**
- * 表关联关系管理Controller
+ * 表关联关系管理Controller（轻量级，只做参数验证和转发）
  */
 @Slf4j
 @RestController
@@ -118,8 +118,8 @@ public class TableRelationshipController {
                 request.getTargetTable(),
                 request.getTargetColumn(),
                 request.getRelationshipType() != null ? request.getRelationshipType() : "MANY_TO_ONE",
-                1, // 手动创建的置信度为1
-                autoDescription // 使用自动生成的描述
+                1,
+                autoDescription
             );
             
             log.info("创建关联关系成功: {}.{} -> {}.{}, description={}", 
@@ -188,36 +188,7 @@ public class TableRelationshipController {
                 return Result.error("未找到任何表");
             }
             
-            // 构建表结构信息
-            StringBuilder schemaInfo = new StringBuilder();
-            for (String tableName : tables) {
-                schemaInfo.append(String.format("\n表名: %s\n", tableName));
-                
-                List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                    "SELECT column_name, data_type, column_comment, is_primary_key " +
-                    "FROM column_metadata WHERE datasource_id = ? AND table_name = ? " +
-                    "ORDER BY ordinal_position",
-                    datasourceId, tableName
-                );
-                
-                for (Map<String, Object> col : columns) {
-                    schemaInfo.append(String.format("  - %s (%s)", 
-                        col.get("column_name"), col.get("data_type")));
-                    
-                    if ("1".equals(String.valueOf(col.get("is_primary_key")))) {
-                        schemaInfo.append(" [主键]");
-                    }
-                    
-                    if (col.get("column_comment") != null && !col.get("column_comment").toString().isEmpty()) {
-                        schemaInfo.append(String.format(" - %s", col.get("column_comment")));
-                    }
-                    schemaInfo.append("\n");
-                }
-            }
-            
             // TODO: 调用LLM推断关联关系
-            // 暂时返回空列表，后续实现LLM推断逻辑
-            
             return Result.success(new ArrayList<>());
         } catch (Exception e) {
             log.error("自动推断关联关系失败", e);
@@ -226,87 +197,19 @@ public class TableRelationshipController {
     }
     
     /**
-     * 从SQL中提取关联关系
+     * 从SQL中提取关联关系（委托给Service）
      */
     @PostMapping("/extract-from-sql")
     public Result<List<Map<String, Object>>> extractRelationshipsFromSQL(@RequestBody ExtractSQLRequest request) {
         try {
-            String sql = request.getSql();
-            Long datasourceId = request.getDatasourceId();
-            
-            if (sql == null || sql.trim().isEmpty()) {
-                return Result.error("SQL不能为空");
-            }
-            
-            log.info("开始从SQL提取关联关系: {}", sql.substring(0, Math.min(100, sql.length())));
-            
-            // 使用正则提取JOIN条件
-            List<Map<String, Object>> relationships = new ArrayList<>();
-            
-            // 匹配 JOIN ... ON 模式
-            java.util.regex.Pattern joinPattern = java.util.regex.Pattern.compile(
-                "\\bJOIN\\s+(\\w+)\\s+\\w*\\s+ON\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)",
-                java.util.regex.Pattern.CASE_INSENSITIVE
+            List<Map<String, Object>> relationships = relationshipService.extractRelationshipsFromSQL(
+                request.getSql(), 
+                request.getDatasourceId()
             );
-            java.util.regex.Matcher matcher = joinPattern.matcher(sql);
-            
-            while (matcher.find()) {
-                String targetTable = matcher.group(1);
-                String sourceTable = matcher.group(2);
-                String sourceColumn = matcher.group(3);
-                String targetTableAlias = matcher.group(4);
-                String targetColumn = matcher.group(5);
-                
-                // 需要解析别名到真实表名的映射
-                Map<String, String> aliasMap = extractTableAliases(sql);
-                String realTargetTable = aliasMap.getOrDefault(targetTableAlias, targetTableAlias);
-                String realSourceTable = aliasMap.getOrDefault(sourceTable, sourceTable);
-                
-                Map<String, Object> rel = new HashMap<>();
-                rel.put("sourceTable", realSourceTable);
-                rel.put("sourceColumn", sourceColumn);
-                rel.put("targetTable", realTargetTable);
-                rel.put("targetColumn", targetColumn);
-                rel.put("relationshipType", "MANY_TO_ONE");
-                rel.put("description", String.format("%s.%s -> %s.%s", 
-                    realSourceTable, sourceColumn, realTargetTable, targetColumn));
-                
-                relationships.add(rel);
-            }
-            
-            // 匹配 WHERE ... IN (SELECT ...) 模式（子查询关联）
-            java.util.regex.Pattern subqueryPattern = java.util.regex.Pattern.compile(
-                "\\b(\\w+)\\.(\\w+)\\s+IN\\s*\\(\\s*SELECT\\s+(\\w+)\\s+FROM\\s+(\\w+)",
-                java.util.regex.Pattern.CASE_INSENSITIVE
-            );
-            matcher = subqueryPattern.matcher(sql);
-            
-            while (matcher.find()) {
-                String sourceTable = matcher.group(1);
-                String sourceColumn = matcher.group(2);
-                String targetColumn = matcher.group(3);
-                String targetTable = matcher.group(4);
-                
-                Map<String, String> aliasMap = extractTableAliases(sql);
-                String realSourceTable = aliasMap.getOrDefault(sourceTable, sourceTable);
-                String realTargetTable = aliasMap.getOrDefault(targetTable, targetTable);
-                
-                Map<String, Object> rel = new HashMap<>();
-                rel.put("sourceTable", realSourceTable);
-                rel.put("sourceColumn", sourceColumn);
-                rel.put("targetTable", realTargetTable);
-                rel.put("targetColumn", targetColumn);
-                rel.put("relationshipType", "MANY_TO_ONE");
-                rel.put("description", String.format("%s.%s IN (SELECT %s FROM %s)", 
-                    realSourceTable, sourceColumn, targetColumn, realTargetTable));
-                rel.put("warning", "子查询关联，建议改为直接JOIN");
-                
-                relationships.add(rel);
-            }
-            
-            log.info("从SQL中提取到 {} 条关联关系", relationships.size());
             return Result.success(relationships);
-            
+        } catch (IllegalArgumentException e) {
+            log.warn("SQL提取参数错误: {}", e.getMessage());
+            return Result.error(e.getMessage());
         } catch (Exception e) {
             log.error("从SQL提取关联关系失败", e);
             return Result.error("提取失败: " + e.getMessage());
@@ -314,50 +217,51 @@ public class TableRelationshipController {
     }
     
     /**
-     * 批量保存关联关系
+     * 智能提取关联关系（带优化建议）
+     */
+    @PostMapping("/extract-with-suggestions")
+    public Result<Map<String, Object>> extractRelationshipsWithSuggestions(@RequestBody ExtractSQLRequest request) {
+        try {
+            Map<String, Object> result = relationshipService.extractRelationshipsWithSuggestions(
+                request.getSql(), 
+                request.getDatasourceId()
+            );
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("智能提取关联关系失败", e);
+            return Result.error("提取失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 批量保存关联关系（委托给Service）
      */
     @PostMapping("/batch-save")
     public Result<Void> batchSaveRelationships(@RequestBody BatchSaveRequest request) {
         try {
-            int successCount = 0;
-            int skipCount = 0;
-            
-            for (RelationshipRequest rel : request.getRelationships()) {
-                // 检查是否已存在
-                Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM table_relationships WHERE datasource_id = ? AND source_table = ? AND source_column = ? AND target_table = ? AND target_column = ?",
-                    Integer.class,
-                    rel.getDatasourceId(),
-                    rel.getSourceTable(),
-                    rel.getSourceColumn(),
-                    rel.getTargetTable(),
-                    rel.getTargetColumn()
-                );
-                
-                if (count != null && count > 0) {
-                    skipCount++;
-                    continue;
-                }
-                
-                jdbcTemplate.update(
-                    "INSERT INTO table_relationships (datasource_id, source_table, source_column, target_table, target_column, relationship_type, confidence, description, is_active) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-                    rel.getDatasourceId(),
-                    rel.getSourceTable(),
-                    rel.getSourceColumn(),
-                    rel.getTargetTable(),
-                    rel.getTargetColumn(),
-                    rel.getRelationshipType() != null ? rel.getRelationshipType() : "MANY_TO_ONE",
-                    1,
-                    rel.getDescription() != null ? rel.getDescription() : ""
-                );
-                
-                successCount++;
+            if (request.getRelationships() == null || request.getRelationships().isEmpty()) {
+                return Result.error("关联关系列表不能为空");
             }
             
-            log.info("批量保存关联关系: 成功={}, 跳过={}", successCount, skipCount);
-            return Result.success();
+            // 转换为Map格式供Service处理
+            List<Map<String, Object>> relList = new ArrayList<>();
+            for (RelationshipRequest rel : request.getRelationships()) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("sourceTable", rel.getSourceTable());
+                map.put("sourceColumn", rel.getSourceColumn());
+                map.put("targetTable", rel.getTargetTable());
+                map.put("targetColumn", rel.getTargetColumn());
+                map.put("relationshipType", rel.getRelationshipType());
+                relList.add(map);
+            }
             
+            int successCount = relationshipService.batchSaveRelationships(
+                relList, 
+                request.getRelationships().get(0).getDatasourceId()
+            );
+            
+            log.info("批量保存成功: {} 条", successCount);
+            return Result.success();
         } catch (Exception e) {
             log.error("批量保存关联关系失败", e);
             return Result.error("保存失败: " + e.getMessage());
@@ -365,30 +269,29 @@ public class TableRelationshipController {
     }
     
     /**
-     * 提取SQL中的表别名映射
+     * 自动生成标准格式的description
      */
-    private Map<String, String> extractTableAliases(String sql) {
-        Map<String, String> aliasMap = new HashMap<>();
-        
-        // 匹配 FROM table alias 或 JOIN table alias
-        java.util.regex.Pattern aliasPattern = java.util.regex.Pattern.compile(
-            "\\b(?:FROM|JOIN)\\s+(\\w+)(?:\\s+(?:AS\\s+)?(\\w+))?",
-            java.util.regex.Pattern.CASE_INSENSITIVE
-        );
-        java.util.regex.Matcher matcher = aliasPattern.matcher(sql);
-        
-        while (matcher.find()) {
-            String tableName = matcher.group(1);
-            String alias = matcher.group(2);
+    private String generateStandardDescription(String sourceTable, String sourceColumn, 
+                                               String targetTable, String targetColumn, 
+                                               Long datasourceId) {
+        try {
+            String sourceComment = jdbcTemplate.queryForObject(
+                "SELECT table_comment FROM table_metadata WHERE datasource_id = ? AND table_name = ?",
+                String.class, datasourceId, sourceTable
+            );
+            String targetComment = jdbcTemplate.queryForObject(
+                "SELECT table_comment FROM table_metadata WHERE datasource_id = ? AND table_name = ?",
+                String.class, datasourceId, targetTable
+            );
             
-            if (alias != null && !alias.equalsIgnoreCase("ON") && !alias.equalsIgnoreCase("WHERE") 
-                && !alias.equalsIgnoreCase("LEFT") && !alias.equalsIgnoreCase("RIGHT")
-                && !alias.equalsIgnoreCase("INNER") && !alias.equalsIgnoreCase("OUTER")) {
-                aliasMap.put(alias, tableName);
-            }
+            String sourceName = (sourceComment != null && !sourceComment.isEmpty()) ? sourceComment : sourceTable;
+            String targetName = (targetComment != null && !targetComment.isEmpty()) ? targetComment : targetTable;
+            
+            return String.format("%s通过%s关联%s", sourceName, sourceColumn, targetName);
+        } catch (Exception e) {
+            log.warn("生成description失败，使用默认格式: {}", e.getMessage());
+            return String.format("%s通过%s关联%s", sourceTable, sourceColumn, targetTable);
         }
-        
-        return aliasMap;
     }
     
     @Data
@@ -398,7 +301,7 @@ public class TableRelationshipController {
         private String sourceColumn;
         private String targetTable;
         private String targetColumn;
-        private String relationshipType; // MANY_TO_ONE, ONE_TO_MANY, ONE_TO_ONE
+        private String relationshipType;
         private String description;
         private Integer isActive;
     }
@@ -412,39 +315,5 @@ public class TableRelationshipController {
     @Data
     public static class BatchSaveRequest {
         private List<RelationshipRequest> relationships;
-    }
-    
-    /**
-     * 自动生成标准格式的 description
-     * 格式：{源表注释}通过{源字段}关联{目标表注释}
-     */
-    private String generateStandardDescription(String sourceTable, String sourceColumn, 
-                                               String targetTable, String targetColumn, 
-                                               Long datasourceId) {
-        try {
-            // 查询源表注释
-            String sourceComment = jdbcTemplate.queryForObject(
-                "SELECT table_comment FROM table_metadata WHERE datasource_id = ? AND table_name = ?",
-                String.class, datasourceId, sourceTable
-            );
-            
-            // 查询目标表注释
-            String targetComment = jdbcTemplate.queryForObject(
-                "SELECT table_comment FROM table_metadata WHERE datasource_id = ? AND table_name = ?",
-                String.class, datasourceId, targetTable
-            );
-            
-            // 使用表注释，如果没有则使用表名
-            String sourceName = (sourceComment != null && !sourceComment.isEmpty()) ? sourceComment : sourceTable;
-            String targetName = (targetComment != null && !targetComment.isEmpty()) ? targetComment : targetTable;
-            
-            // 标准格式：{源表名}通过{源字段}关联{目标表名}
-            return String.format("%s通过%s关联%s", sourceName, sourceColumn, targetName);
-            
-        } catch (Exception e) {
-            log.warn("生成 description 失败，使用默认格式: {}", e.getMessage());
-            // 降级方案：直接使用表名
-            return String.format("%s通过%s关联%s", sourceTable, sourceColumn, targetTable);
-        }
     }
 }
