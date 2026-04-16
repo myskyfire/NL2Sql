@@ -48,7 +48,22 @@ CREATE TABLE IF NOT EXISTS datasource_industry_mapping (
     INDEX idx_industry (industry_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据源行业关联表';
 
--- 4. 概念学习记录表（RAG自动学习）
+-- 4. 概念关系表（支持同义、上下位、关联等关系）
+CREATE TABLE IF NOT EXISTS concept_relation (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    industry_code VARCHAR(50) NOT NULL COMMENT '行业代码',
+    source_concept_key VARCHAR(100) NOT NULL COMMENT '源概念',
+    target_concept_key VARCHAR(100) NOT NULL COMMENT '目标概念',
+    relation_type VARCHAR(20) NOT NULL COMMENT '关系类型：synonym(同义)/hyponym(下位)/hypernym(上位)/related(关联)',
+    confidence DECIMAL(3,2) DEFAULT 1.00 COMMENT '置信度',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_source (source_concept_key),
+    INDEX idx_target (target_concept_key),
+    INDEX idx_type (relation_type),
+    UNIQUE KEY uk_relation (industry_code, source_concept_key, target_concept_key, relation_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='概念关系表';
+
+-- 5. 概念学习记录表（RAG自动学习）
 CREATE TABLE IF NOT EXISTS concept_learning_log (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     industry_code VARCHAR(50) COMMENT '推测的行业',
@@ -102,6 +117,12 @@ INSERT INTO industry_concept (industry_code, concept_type, concept_key, concept_
 ('medical', 'entity', 'visit', '["就诊记录","门诊","住院","诊疗"]', '患者的就诊行为', 'manual'),
 ('medical', 'metric', 'cost', '["医疗费用","药费","检查费","诊疗费"]', '就诊产生的费用', 'manual'),
 ('medical', 'dimension', 'department', '["科室","部门","专科","诊室"]', '医院科室', 'manual');
+
+-- 插入电商行业概念关系示例
+INSERT INTO concept_relation (industry_code, source_concept_key, target_concept_key, relation_type) VALUES
+('ecommerce', 'revenue', 'gmv', 'synonym'),  -- GMV是销售额的同义词
+('ecommerce', 'revenue', 'sales_amount', 'synonym'),  -- 销售金额也是同义词
+('ecommerce', 'order', 'transaction', 'related');  -- 订单与交易相关
 
 -- ========================================
 -- 验证数据

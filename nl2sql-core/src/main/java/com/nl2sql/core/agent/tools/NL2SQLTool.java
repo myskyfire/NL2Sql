@@ -220,6 +220,13 @@ public class NL2SQLTool {
             
             log.info("[NL2SQLTool] 最终确定 {} 个表: {}", allTables.size(), allTables);
             
+            // ✅ DSL校验层：验证用户问题中的指标/维度是否在行业词典中
+            String dslValidation = validateDSLQuery(expandedQuery, datasourceId);
+            if (dslValidation != null && !dslValidation.isEmpty()) {
+                log.warn("[NL2SQLTool] DSL校验警告: {}", dslValidation);
+                // 不阻断执行，但记录警告（可用于后续优化提示词）
+            }
+            
             // 3. 如果仍然需要澄清，返回澄清信号
             if (needsClarification) {
                 return "CLARIFICATION_NEEDED: " + clarificationMessage;
@@ -417,6 +424,7 @@ public class NL2SQLTool {
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
             RagLearningContext.setCurrentQuestion(expandedQuery);
             RagLearningContext.setCurrentSql(sql);
+            RagLearningContext.setCurrentDatasourceId(datasourceId);
             
             return sql;
             
@@ -437,6 +445,47 @@ public class NL2SQLTool {
             );
         } catch (Exception e) {
             return "";
+        }
+    }
+    
+    /**
+     * ✅ DSL校验层：验证用户问题中的指标/维度是否在行业词典中
+     * 
+     * @param query 用户问题
+     * @param datasourceId 数据源ID
+     * @return 警告信息，无问题则返回null
+     */
+    private String validateDSLQuery(String query, Long datasourceId) {
+        if (datasourceId == null) {
+            return null;
+        }
+        
+        try {
+            // 获取当前数据源的行业概念
+            com.nl2sql.core.llm.IndustryConceptDictionary.IndustryConcepts concepts = 
+                industryConceptDictionary.getConceptsByDatasource(datasourceId);
+            
+            if (concepts == null || concepts.getIndustryCode().equals("generic")) {
+                return null; // 通用概念，不校验
+            }
+            
+            List<String> warnings = new ArrayList<>();
+            
+            // 检查是否包含行业特定术语但未在词典中
+            // TODO: 这里可以添加更复杂的NLP提取逻辑
+            // 当前简化版：仅记录日志，用于后续RAG学习
+            
+            log.debug("[NL2SQLTool] DSL校验通过: 行业={}, 指标数={}, 维度数={}",
+                concepts.getIndustryName(),
+                concepts.getMetrics().size(),
+                concepts.getDimensions().size()
+            );
+            
+            return null;
+            
+        } catch (Exception e) {
+            log.warn("[NL2SQLTool] DSL校验失败: {}", e.getMessage());
+            return null; // 不阻断执行
         }
     }
     

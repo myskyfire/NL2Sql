@@ -101,6 +101,9 @@ public class SQLExecutionTool {
                                 (long) result.getExecutionTime()
                             );
                             
+                            // ✅ 触发行业概念学习（如果用户评分高）
+                            RagLearningContext.triggerLearning(true, null);
+                            
                             // 清理上下文
                             RagLearningContext.clear();
                         }

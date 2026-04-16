@@ -164,6 +164,9 @@ public class IndustryConceptDictionary {
                 }
             }
             
+            // ✅ 加载概念关系（用于同义词扩展）
+            loadConceptRelations(concepts, industryCode);
+            
             log.info("[IndustryConceptDictionary] 从数据库加载行业{}: {}个实体, {}个指标, {}个维度",
                 industryCode,
                 concepts.getBusinessEntities().size(),
@@ -176,6 +179,52 @@ public class IndustryConceptDictionary {
         } catch (Exception e) {
             log.error("[IndustryConceptDictionary] 从数据库加载行业概念失败: {}", industryCode, e);
             return null;
+        }
+    }
+    
+    /**
+     * 加载概念关系（同义词扩展）
+     */
+    private void loadConceptRelations(IndustryConcepts concepts, String industryCode) {
+        try {
+            List<Map<String, Object>> relations = jdbcTemplate.queryForList(
+                "SELECT source_concept_key, target_concept_key, relation_type " +
+                "FROM concept_relation " +
+                "WHERE industry_code = ?",
+                industryCode
+            );
+            
+            for (Map<String, Object> rel : relations) {
+                String source = (String) rel.get("source_concept_key");
+                String target = (String) rel.get("target_concept_key");
+                String type = (String) rel.get("relation_type");
+                
+                // 同义词关系：将target添加到source的别名中
+                if ("synonym".equals(type)) {
+                    // 查找source在哪个map中
+                    if (concepts.getMetrics().containsKey(source)) {
+                        String existing = concepts.getMetrics().get(source);
+                        if (!existing.contains(target)) {
+                            concepts.getMetrics().put(source, existing + "/" + target);
+                        }
+                    } else if (concepts.getBusinessEntities().containsKey(source)) {
+                        String existing = concepts.getBusinessEntities().get(source);
+                        if (!existing.contains(target)) {
+                            concepts.getBusinessEntities().put(source, existing + "/" + target);
+                        }
+                    } else if (concepts.getDimensions().containsKey(source)) {
+                        String existing = concepts.getDimensions().get(source);
+                        if (!existing.contains(target)) {
+                            concepts.getDimensions().put(source, existing + "/" + target);
+                        }
+                    }
+                }
+            }
+            
+            log.debug("[IndustryConceptDictionary] 加载{}条概念关系", relations.size());
+            
+        } catch (Exception e) {
+            log.warn("[IndustryConceptDictionary] 加载概念关系失败: {}", e.getMessage());
         }
     }
     
