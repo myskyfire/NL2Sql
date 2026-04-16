@@ -1,4 +1,4 @@
-# NL2SQL Enterprise
+# DataMind AI
 
 <div align="center">
 
@@ -9,9 +9,9 @@
 [![Redis](https://img.shields.io/badge/Redis-6.x-red.svg?style=flat-square&logo=redis)](https://redis.io/)
 [![Status](https://img.shields.io/badge/status-production%20ready-brightgreen.svg?style=flat-square)]()
 
-**🚀 企业级自然语言转SQL智能查询系统 | Enterprise NL2SQL Platform**
+**🚀 企业级自然语言数据分析平台 | Enterprise Natural Language Data Platform**
 
-*用自然语言查询数据库，让数据分析触手可及*
+*让数据像对话一样简单*
 
 [快速开始](#-快速开始) • [在线演示](#-功能演示) • [技术架构](#-技术架构) • [API文档](#-api接口) • [贡献指南](#-贡献)
 
@@ -21,15 +21,15 @@
 
 ## 📖 项目简介
 
-NL2SQL是一款基于 **Spring Boot + LangChain4j** 构建的企业级自然语言转SQL智能查询系统。**支持多种企业内部部署的LLM**（Ollama、ChatGLM、Qwen等），用户只需用自然语言描述数据需求（如“查询最近7天的订单总额”），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
+DataMind AI（数智洞察）是一款基于 **Spring Boot + LangChain4j** 构建的企业级自然语言数据分析平台。**支持多种企业内部部署的LLM**（Ollama、ChatGLM、Qwen等），用户只需用自然语言描述数据需求（如"查询最近7天的订单总额"），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
 
 ### ✨ 核心价值
 
 <table>
 <tr>
 <td width="25%" align="center">
-<b>🎯 零SQL门槛</b><br>
-业务人员无需掌握SQL<br>即可自助查询
+<b>🎯 零门槛交互</b><br>
+业务人员无需掌握SQL<br>自然语言即可查询
 </td>
 <td width="25%" align="center">
 <b>⚡ 秒级响应</b><br>

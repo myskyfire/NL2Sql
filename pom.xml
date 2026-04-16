@@ -16,8 +16,8 @@
     <artifactId>nl2sql</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-    <name>NL2SQL Enterprise Agent</name>
-    <description>Enterprise Natural Language to SQL Agent</description>
+    <name>DataMind AI</name>
+    <description>Enterprise Natural Language Data Platform</description>
 
     <modules>
         <module>nl2sql-common</module>
