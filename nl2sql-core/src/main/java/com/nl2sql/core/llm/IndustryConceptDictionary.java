@@ -28,6 +28,9 @@ public class IndustryConceptDictionary {
     @Autowired(required = false)
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.llm.extension.IndustryConceptExtension conceptExtension;
+    
     public IndustryConceptDictionary() {
         initializeDefaultIndustries();
     }
@@ -559,5 +562,62 @@ public class IndustryConceptDictionary {
         private String name;
         private int entityCount;
         private int metricCount;
+    }
+    
+    // ==================== 扩展点调用方法 ====================
+    
+    /**
+     * 从用户问题中提取术语（调用扩展点）
+     */
+    public List<Map<String, Object>> extractTerms(String question, Long datasourceId) {
+        if (conceptExtension != null) {
+            try {
+                return conceptExtension.extractTerms(question, datasourceId);
+            } catch (Exception e) {
+                log.warn("[IndustryConceptDictionary] 术语提取扩展失败: {}", e.getMessage());
+            }
+        }
+        return List.of();
+    }
+    
+    /**
+     * 验证语义一致性（调用扩展点）
+     */
+    public boolean validateSemanticConsistency(String question, String sql, Long datasourceId) {
+        if (conceptExtension != null) {
+            try {
+                return conceptExtension.validateSemanticConsistency(question, sql, datasourceId);
+            } catch (Exception e) {
+                log.warn("[IndustryConceptDictionary] 语义验证扩展失败: {}", e.getMessage());
+            }
+        }
+        return true; // 默认通过
+    }
+    
+    /**
+     * 学习成功查询（调用扩展点）
+     */
+    public void learnFromSuccess(String question, String sql, Double rating, Long datasourceId) {
+        if (conceptExtension != null) {
+            try {
+                conceptExtension.learnFromSuccess(question, sql, rating, datasourceId);
+            } catch (Exception e) {
+                log.warn("[IndustryConceptDictionary] 学习扩展失败: {}", e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 推荐同义词（调用扩展点）
+     */
+    public List<String> suggestSynonyms(String conceptKey, String industryCode) {
+        if (conceptExtension != null) {
+            try {
+                return conceptExtension.suggestSynonyms(conceptKey, industryCode);
+            } catch (Exception e) {
+                log.warn("[IndustryConceptDictionary] 同义词推荐扩展失败: {}", e.getMessage());
+            }
+        }
+        return List.of();
     }
 }
