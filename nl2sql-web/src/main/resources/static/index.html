@@ -256,6 +256,10 @@
                 <span class="menu-icon">🤖</span>
                 <span>AI Agent 对话</span>
             </div>
+            <div class="menu-item" onclick="window.open('/relationship-management.html', '_blank')">
+                <span class="menu-icon">🔗</span>
+                <span>表关联管理</span>
+            </div>
             <div class="menu-item" onclick="showPage('query')">
                 <span class="menu-icon">💬</span>
                 <span>NL2SQL查询</span>
@@ -308,6 +312,12 @@
                         <div class="welcome-icon">🤖</div>
                         <h3>AI Agent 对话（推荐）</h3>
                         <p>真正的智能体交互，支持多轮对话、自动追问、图表推荐和数据分析</p>
+                    </div>
+                    
+                    <div class="welcome-card" onclick="window.open('/relationship-management.html', '_blank')">
+                        <div class="welcome-icon">🔗</div>
+                        <h3>表关联关系管理</h3>
+                        <p>配置和管理数据库表之间的关联关系，提升SQL生成准确性</p>
                     </div>
                     
                     <div class="welcome-card" onclick="showPage('query')">
@@ -494,7 +504,7 @@
             
             // 激活对应菜单
             const menuItems = document.querySelectorAll('.menu-item');
-            const pageIndex = ['home', 'query', 'table-permission', 'execution-logs', 'datasource', 'metadata', 'user-management', 'manual-sql', 'template'].indexOf(pageName);
+            const pageIndex = ['home', 'agent-chat', 'relationship-management', 'query', 'table-permission', 'execution-logs', 'datasource', 'manual-sql', 'template', 'metadata', 'user-management'].indexOf(pageName);
             if (pageIndex >= 0 && menuItems[pageIndex]) {
                 menuItems[pageIndex].classList.add('active');
             }
