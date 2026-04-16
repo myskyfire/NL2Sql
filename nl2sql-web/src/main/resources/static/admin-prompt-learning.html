@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt学习管理 - NL2SQL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+        
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .btn-warning {
+            background: #ff9800;
+            color: white;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        textarea.form-control {
+            min-height: 200px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-active {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .badge-inactive {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎯 Prompt学习管理</h1>
+            <p>管理Prompt版本、A/B测试和优化建议</p>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('versions')">Prompt版本</div>
+            <div class="tab" onclick="switchTab('abtests')">A/B测试</div>
+            <div class="tab" onclick="switchTab('optimization')">优化建议</div>
+        </div>
+        
+        <!-- Tab: Versions -->
+        <div id="versions-tab" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">📝 Prompt版本列表</div>
+                    <button class="btn btn-primary" onclick="showCreateVersionModal()">创建新版本</button>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>版本名称</th>
+                            <th>Prompt类型</th>
+                            <th>状态</th>
+                            <th>使用次数</th>
+                            <th>平均评分</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="versionsTableBody">
+                        <tr>
+                            <td colspan="8" style="text-align:center;color:#999;">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Tab: A/B Tests -->
+        <div id="abtests-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">🧪 A/B测试列表</div>
+                    <button class="btn btn-primary" onclick="showCreateABTestModal()">创建测试</button>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>测试名称</th>
+                            <th>Prompt类型</th>
+                            <th>状态</th>
+                            <th>流量分配</th>
+                            <th>样本数</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="abTestsTableBody">
+                        <tr>
+                            <td colspan="8" style="text-align:center;color:#999;">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Tab: Optimization -->
+        <div id="optimization-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">💡 优化建议</div>
+                    <select class="form-control" id="promptTypeFilter" style="width:200px;" onchange="loadOptimizationSuggestions()">
+                        <option value="nl2sql">NL2SQL Prompt</option>
+                        <option value="table_selection">表选择 Prompt</option>
+                    </select>
+                </div>
+                
+                <div id="optimizationList">
+                    <p style="text-align:center;color:#999;padding:40px;">点击"加载建议"查看优化建议</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Create Version Modal -->
+    <div class="modal" id="createVersionModal">
+        <div class="modal-content">
+            <h2 style="margin-bottom:20px;">创建Prompt版本</h2>
+            
+            <form onsubmit="handleCreateVersion(event)">
+                <div class="form-group">
+                    <label>版本名称</label>
+                    <input type="text" class="form-control" id="versionName" required placeholder="例如：v2.0-optimized">
+                </div>
+                
+                <div class="form-group">
+                    <label>Prompt类型</label>
+                    <select class="form-control" id="promptType" required>
+                        <option value="nl2sql">NL2SQL生成</option>
+                        <option value="table_selection">表选择</option>
+                        <option value="sql_correction">SQL修正</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Prompt内容</label>
+                    <textarea class="form-control" id="promptContent" required></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>描述</label>
+                    <input type="text" class="form-control" id="versionDesc" placeholder="版本改进说明">
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="isDefault"> 设为默认版本
+                    </label>
+                </div>
+                
+                <button type="submit" class="btn btn-success">创建版本</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Create AB Test Modal -->
+    <div class="modal" id="createABTestModal">
+        <div class="modal-content">
+            <h2 style="margin-bottom:20px;">创建A/B测试</h2>
+            
+            <form onsubmit="handleCreateABTest(event)">
+                <div class="form-group">
+                    <label>测试名称</label>
+                    <input type="text" class="form-control" id="testName" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Prompt类型</label>
+                    <select class="form-control" id="abTestPromptType" required>
+                        <option value="nl2sql">NL2SQL生成</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>版本A ID</label>
+                    <input type="number" class="form-control" id="versionAId" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>版本B ID</label>
+                    <input type="number" class="form-control" id="versionBId" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>流量分配（A:B，例如 50:50）</label>
+                    <input type="text" class="form-control" id="trafficSplit" value="50:50" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>最小样本数</label>
+                    <input type="number" class="form-control" id="minSamples" value="100" required>
+                </div>
+                
+                <button type="submit" class="btn btn-success">创建测试</button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // Tab切换
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            if (tabName === 'versions') loadVersions();
+            if (tabName === 'abtests') loadABTests();
+        }
+        
+        // 加载版本列表
+        async function loadVersions() {
+            const tbody = document.getElementById('versionsTableBody');
+            
+            try {
+                const response = await fetch('/api/admin/prompt-learning/versions');
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    tbody.innerHTML = result.data.map(v => `
+                        <tr>
+                            <td>${v.id}</td>
+                            <td>${v.versionName}</td>
+                            <td>${v.promptType}</td>
+                            <td><span class="badge ${v.isActive ? 'badge-active' : 'badge-inactive'}">${v.isActive ? '激活' : '未激活'}</span></td>
+                            <td>${v.usageCount || 0}</td>
+                            <td>${v.avgRating ? v.avgRating.toFixed(2) : '-'}</td>
+                            <td>${new Date(v.createdAt).toLocaleString()}</td>
+                            <td>
+                                ${!v.isActive ? `<button class="btn btn-success" onclick="activateVersion(${v.id})">激活</button>` : ''}
+                                <button class="btn btn-primary" onclick="viewVersionStats(${v.id})">统计</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                }
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:red;">加载失败</td></tr>';
+            }
+        }
+        
+        // 加载A/B测试列表
+        async function loadABTests() {
+            const tbody = document.getElementById('abTestsTableBody');
+            
+            try {
+                const response = await fetch('/api/admin/prompt-learning/ab-tests');
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    tbody.innerHTML = result.data.map(t => `
+                        <tr>
+                            <td>${t.id}</td>
+                            <td>${t.testName}</td>
+                            <td>${t.promptType}</td>
+                            <td><span class="badge ${t.status === 'RUNNING' ? 'badge-active' : 'badge-inactive'}">${t.status}</span></td>
+                            <td>${t.trafficSplit}</td>
+                            <td>${t.currentSamples || 0}/${t.minSamples}</td>
+                            <td>${new Date(t.createdAt).toLocaleString()}</td>
+                            <td>
+                                ${t.status === 'RUNNING' ? `<button class="btn btn-warning" onclick="stopABTest(${t.id})">停止</button>` : ''}
+                                <button class="btn btn-primary" onclick="viewABTestStats(${t.id})">统计</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                }
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:red;">加载失败</td></tr>';
+            }
+        }
+        
+        // 加载优化建议
+        async function loadOptimizationSuggestions() {
+            const promptType = document.getElementById('promptTypeFilter').value;
+            const container = document.getElementById('optimizationList');
+            
+            try {
+                const response = await fetch(`/api/admin/prompt-learning/optimization-suggestions?promptType=${promptType}&limit=20`);
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    container.innerHTML = result.data.map(s => `
+                        <div style="padding:15px;margin-bottom:15px;background:#f8f9fa;border-radius:8px;border-left:4px solid #667eea;">
+                            <h4 style="margin-bottom:10px;">${s.category}</h4>
+                            <p style="color:#666;margin-bottom:10px;">${s.suggestion}</p>
+                            <div style="font-size:12px;color:#999;">
+                                基于 ${s.feedbackCount} 条低分反馈 | 影响用户数: ${s.affectedUsers}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p style="text-align:center;color:#999;">暂无优化建议</p>';
+                }
+            } catch (error) {
+                container.innerHTML = '<p style="text-align:center;color:red;">加载失败</p>';
+            }
+        }
+        
+        // 创建版本
+        async function handleCreateVersion(event) {
+            event.preventDefault();
+            
+            const data = {
+                versionName: document.getElementById('versionName').value,
+                promptType: document.getElementById('promptType').value,
+                promptContent: document.getElementById('promptContent').value,
+                description: document.getElementById('versionDesc').value,
+                isDefault: document.getElementById('isDefault').checked
+            };
+            
+            try {
+                const response = await fetch('/api/admin/prompt-learning/versions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('✅ 版本创建成功！');
+                    closeModal('createVersionModal');
+                    loadVersions();
+                } else {
+                    alert('❌ 创建失败: ' + result.message);
+                }
+            } catch (error) {
+                alert('❌ 网络错误: ' + error.message);
+            }
+        }
+        
+        // 创建A/B测试
+        async function handleCreateABTest(event) {
+            event.preventDefault();
+            
+            const data = {
+                testName: document.getElementById('testName').value,
+                promptType: document.getElementById('abTestPromptType').value,
+                versionAId: parseInt(document.getElementById('versionAId').value),
+                versionBId: parseInt(document.getElementById('versionBId').value),
+                trafficSplit: document.getElementById('trafficSplit').value,
+                minSamples: parseInt(document.getElementById('minSamples').value)
+            };
+            
+            try {
+                const response = await fetch('/api/admin/prompt-learning/ab-tests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('✅ A/B测试创建成功！');
+                    closeModal('createABTestModal');
+                    loadABTests();
+                } else {
+                    alert('❌ 创建失败: ' + result.message);
+                }
+            } catch (error) {
+                alert('❌ 网络错误: ' + error.message);
+            }
+        }
+        
+        // 激活版本
+        async function activateVersion(id) {
+            if (!confirm('确定要激活此版本吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/admin/prompt-learning/versions/${id}/activate`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('✅ 版本已激活！');
+                    loadVersions();
+                } else {
+                    alert('❌ 激活失败: ' + result.message);
+                }
+            } catch (error) {
+                alert('❌ 网络错误: ' + error.message);
+            }
+        }
+        
+        // 停止A/B测试
+        async function stopABTest(id) {
+            if (!confirm('确定要停止此测试吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/admin/prompt-learning/ab-tests/${id}/stop`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('✅ 测试已停止！');
+                    loadABTests();
+                } else {
+                    alert('❌ 停止失败: ' + result.message);
+                }
+            } catch (error) {
+                alert('❌ 网络错误: ' + error.message);
+            }
+        }
+        
+        // 模态框控制
+        function showCreateVersionModal() {
+            document.getElementById('createVersionModal').classList.add('active');
+        }
+        
+        function showCreateABTestModal() {
+            document.getElementById('createABTestModal').classList.add('active');
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+        
+        // 初始化
+        window.onload = function() {
+            loadVersions();
+        };
+    </script>
+</body>
+</html>

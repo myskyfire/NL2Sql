@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG知识库管理 - NL2SQL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        textarea.form-control {
+            min-height: 120px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .badge-warning {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .alert {
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #4caf50;
+        }
+        
+        .alert-error {
+            background: #ffebee;
+            color: #c62828;
+            border-left: 4px solid #f44336;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .search-box input {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🧠 RAG知识库管理</h1>
+            <p>管理和优化NL2SQL的知识库，提升SQL生成质量</p>
+        </div>
+        
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">总知识条目</div>
+                <div class="stat-value" id="totalCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">平均质量评分</div>
+                <div class="stat-value" id="avgQuality">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">本月新增</div>
+                <div class="stat-value" id="monthlyAdded">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">用户反馈总数</div>
+                <div class="stat-value" id="feedbackCount">-</div>
+            </div>
+        </div>
+        
+        <!-- Import QA Pair -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">📥 导入QA对</div>
+                <button class="btn btn-primary" onclick="showImportModal()">批量导入</button>
+            </div>
+            
+            <div id="importAlert"></div>
+            
+            <form id="importForm" onsubmit="handleImport(event)">
+                <div class="form-group">
+                    <label>问题（自然语言）</label>
+                    <input type="text" class="form-control" id="question" placeholder="例如：查询最近7天的订单" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>SQL语句</label>
+                    <textarea class="form-control" id="sql" placeholder="SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY" required></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>分类（可选）</label>
+                    <input type="text" class="form-control" id="category" placeholder="例如：order_query, statistics">
+                </div>
+                
+                <div class="form-group">
+                    <label>质量评分（0-1，默认0.9）</label>
+                    <input type="number" class="form-control" id="qualityScore" step="0.1" min="0" max="1" value="0.9">
+                </div>
+                
+                <button type="submit" class="btn btn-success">导入QA对</button>
+            </form>
+        </div>
+        
+        <!-- Knowledge List -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">📚 知识库列表</div>
+            </div>
+            
+            <div class="search-box">
+                <input type="text" class="form-control" id="searchInput" placeholder="搜索问题或SQL...">
+                <button class="btn btn-primary" onclick="loadKnowledgeList()">搜索</button>
+            </div>
+            
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>问题</th>
+                            <th>SQL预览</th>
+                            <th>分类</th>
+                            <th>质量评分</th>
+                            <th>使用次数</th>
+                            <th>创建时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="knowledgeTableBody">
+                        <tr>
+                            <td colspan="7" style="text-align:center;color:#999;">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Batch Import Modal -->
+    <div class="modal" id="batchImportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>批量导入QA对</h2>
+                <button class="modal-close" onclick="closeImportModal()">&times;</button>
+            </div>
+            
+            <div class="form-group">
+                <label>JSON格式数据</label>
+                <textarea class="form-control" id="batchData" rows="15" placeholder='[
+  {
+    "question": "查询问题1",
+    "sql": "SELECT ...",
+    "category": "category1",
+    "qualityScore": 0.9
+  },
+  {
+    "question": "查询问题2",
+    "sql": "SELECT ...",
+    "category": "category2",
+    "qualityScore": 0.85
+  }
+]'></textarea>
+            </div>
+            
+            <button class="btn btn-success" onclick="handleBatchImport()">开始导入</button>
+        </div>
+    </div>
+    
+    <script>
+        // 加载统计数据
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/rag/stats');
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    // TODO: 根据实际返回结构更新
+                    document.getElementById('totalCount').textContent = '-';
+                    document.getElementById('avgQuality').textContent = '-';
+                }
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+        }
+        
+        // 单个导入
+        async function handleImport(event) {
+            event.preventDefault();
+            
+            const data = {
+                question: document.getElementById('question').value,
+                sql: document.getElementById('sql').value,
+                category: document.getElementById('category').value || 'manual_imported',
+                qualityScore: parseFloat(document.getElementById('qualityScore').value) || 0.9
+            };
+            
+            try {
+                const response = await fetch('/api/admin/rag/qa/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    showAlert('importAlert', 'success', `✅ 导入成功！ID: ${result.data}`);
+                    document.getElementById('importForm').reset();
+                    loadKnowledgeList();
+                } else {
+                    showAlert('importAlert', 'error', `❌ 导入失败: ${result.message}`);
+                }
+            } catch (error) {
+                showAlert('importAlert', 'error', `❌ 网络错误: ${error.message}`);
+            }
+        }
+        
+        // 批量导入
+        async function handleBatchImport() {
+            const batchDataStr = document.getElementById('batchData').value.trim();
+            
+            if (!batchDataStr) {
+                alert('请输入JSON数据');
+                return;
+            }
+            
+            try {
+                const batchData = JSON.parse(batchDataStr);
+                
+                const response = await fetch('/api/admin/rag/qa/batch-import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(batchData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert(`✅ 批量导入完成！\n成功: ${result.data.successCount}\n失败: ${result.data.failedCount}`);
+                    closeImportModal();
+                    loadKnowledgeList();
+                } else {
+                    alert(`❌ 导入失败: ${result.message}`);
+                }
+            } catch (error) {
+                alert(`❌ 解析JSON失败: ${error.message}`);
+            }
+        }
+        
+        // 加载知识库列表
+        async function loadKnowledgeList() {
+            const tbody = document.getElementById('knowledgeTableBody');
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">加载中...</td></tr>';
+            
+            try {
+                // TODO: 实现列表查询API
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">列表功能待实现</td></tr>';
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">加载失败</td></tr>';
+            }
+        }
+        
+        // 显示提示
+        function showAlert(containerId, type, message) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+        
+        // 模态框控制
+        function showImportModal() {
+            document.getElementById('batchImportModal').classList.add('active');
+        }
+        
+        function closeImportModal() {
+            document.getElementById('batchImportModal').classList.remove('active');
+        }
+        
+        // 初始化
+        window.onload = function() {
+            loadStats();
+            loadKnowledgeList();
+        };
+    </script>
+</body>
+</html>

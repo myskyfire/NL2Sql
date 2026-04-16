@@ -296,6 +296,14 @@
                 <span class="menu-icon">👥</span>
                 <span>用户管理</span>
             </div>
+            <div class="menu-item admin-only hidden" onclick="window.open('/admin-rag-management.html', '_blank')">
+                <span class="menu-icon">🧠</span>
+                <span>RAG知识库</span>
+            </div>
+            <div class="menu-item admin-only hidden" onclick="window.open('/admin-prompt-learning.html', '_blank')">
+                <span class="menu-icon">🎯</span>
+                <span>Prompt学习</span>
+            </div>
         </div>
         
         <!-- 内容区域 -->
@@ -370,6 +378,18 @@
                         <div class="welcome-icon">📝</div>
                         <h3>查询模板</h3>
                         <p>管理和复用常用查询模板，提升查询效率</p>
+                    </div>
+                    
+                    <div class="welcome-card admin-only hidden" onclick="window.open('/admin-rag-management.html', '_blank')">
+                        <div class="welcome-icon">🧠</div>
+                        <h3>RAG知识库管理</h3>
+                        <p>导入和管理QA对，优化SQL生成质量，支持批量导入和智能检索</p>
+                    </div>
+                    
+                    <div class="welcome-card admin-only hidden" onclick="window.open('/admin-prompt-learning.html', '_blank')">
+                        <div class="welcome-icon">🎯</div>
+                        <h3>Prompt学习管理</h3>
+                        <p>管理Prompt版本、A/B测试和优化建议，持续提升AI能力</p>
                     </div>
                 </div>
             </div>
