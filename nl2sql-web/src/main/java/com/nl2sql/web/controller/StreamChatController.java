@@ -3,6 +3,7 @@ package com.nl2sql.web.controller;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.tools.SQLExecutionTool;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,9 @@ public class StreamChatController {
     
     @Autowired
     private ConversationHistoryService conversationHistoryService;
+    
+    @Autowired
+    private SQLExecutionTool sqlExecutionTool;
     
     /**
      * 流式对话接口（SSE）
@@ -81,14 +85,34 @@ public class StreamChatController {
                     "message", "正在执行SQL..."
                 ));
                 
-                Map<String, Object> executionResult = executeSQL(sql, datasourceId);
+                // 调用SQLExecutionTool执行SQL
+                SQLExecutionTool.ExecutionResult executionResult = sqlExecutionTool.executeSQL(
+                    sql, 
+                    datasourceId,
+                    1L, // TODO: 从SecurityContext获取
+                    "user"
+                );
                 
                 // 7. 发送执行结果
-                sendEvent(emitter, "result", executionResult);
-                
-                // 8. 保存AI回复
-                String summary = (String) executionResult.getOrDefault("summary", "");
-                conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
+                if (executionResult.success) {
+                    sendEvent(emitter, "result", Map.of(
+                        "success", true,
+                        "rowCount", executionResult.rowCount,
+                        "data", executionResult.data,
+                        "executionTime", executionResult.executionTime,
+                        "summary", generateSummary(executionResult)
+                    ));
+                    
+                    // 8. 保存AI回复
+                    String summary = generateSummary(executionResult);
+                    conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
+                } else {
+                    sendEvent(emitter, "error", Map.of(
+                        "success", false,
+                        "error", executionResult.error
+                    ));
+                    log.warn("[流式对话] SQL执行失败: {}", executionResult.error);
+                }
                 
                 // 9. 发送完成事件
                 sendEvent(emitter, "complete", Map.of(
@@ -181,15 +205,22 @@ public class StreamChatController {
         }
     }
     
-    private Map<String, Object> executeSQL(String sql, Long datasourceId) {
-        // TODO: 调用SQLExecutor执行SQL
-        // 这里简化返回
-        return Map.of(
-            "success", true,
-            "rowCount", 0,
-            "data", List.of(),
-            "summary", "查询执行成功"
-        );
+    /**
+     * 生成查询结果摘要
+     */
+    private String generateSummary(SQLExecutionTool.ExecutionResult result) {
+        if (!result.success) {
+            return "查询执行失败: " + result.error;
+        }
+        
+        StringBuilder summary = new StringBuilder();
+        summary.append("查询成功，返回 ").append(result.rowCount).append(" 条记录");
+        
+        if (result.executionTime != null) {
+            summary.append("，耗时 ").append(String.format("%.2f", result.executionTime)).append(" ms");
+        }
+        
+        return summary.toString();
     }
     
     // ==================== 数据模型 ====================
