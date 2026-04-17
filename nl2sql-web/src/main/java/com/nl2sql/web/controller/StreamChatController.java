@@ -1,5 +1,6 @@
 package com.nl2sql.web.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
@@ -34,6 +35,8 @@ public class StreamChatController {
     @Autowired
     private SQLExecutionTool sqlExecutionTool;
     
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    
     /**
      * 流式对话接口（SSE）
      * 
@@ -66,52 +69,49 @@ public class StreamChatController {
                     "message", "开始生成SQL..."
                 ));
                 
-                // 4. 调用Agent生成SQL（模拟流式输出）
-                String sql = reActAgent.execute(
+                // 4. 调用Agent执行查询（StandardQuerySkill已包含SQL生成+执行）
+                String agentResponse = reActAgent.execute(
                     question,
                     datasourceId,
                     1L, // TODO: 从SecurityContext获取
                     "user"
                 );
                 
-                // 5. 发送SQL生成完成事件
+                // 5. 解析Agent响应
+                Map<String, Object> responseMap = parseAgentResponse(agentResponse);
+                Boolean success = (Boolean) responseMap.getOrDefault("success", false);
+                String sql = (String) responseMap.get("sql");
+                
+                // 6. 发送SQL生成完成事件
                 sendEvent(emitter, "sql_generated", Map.of(
-                    "sql", sql,
+                    "sql", sql != null ? sql : "",
                     "message", "SQL生成完成"
                 ));
                 
-                // 6. 执行SQL
-                sendEvent(emitter, "executing", Map.of(
-                    "message", "正在执行SQL..."
-                ));
-                
-                // 调用SQLExecutionTool执行SQL
-                SQLExecutionTool.ExecutionResult executionResult = sqlExecutionTool.executeSQL(
-                    sql, 
-                    datasourceId,
-                    1L, // TODO: 从SecurityContext获取
-                    "user"
-                );
-                
                 // 7. 发送执行结果
-                if (executionResult.success) {
+                if (success != null && success) {
+                    List<Map<String, Object>> data = (List<Map<String, Object>>) responseMap.get("data");
+                    Integer rowCount = (Integer) responseMap.getOrDefault("rowCount", 0);
+                    Double executionTime = (Double) responseMap.getOrDefault("executionTime", 0.0);
+                    
                     sendEvent(emitter, "result", Map.of(
                         "success", true,
-                        "rowCount", executionResult.rowCount,
-                        "data", executionResult.data,
-                        "executionTime", executionResult.executionTime,
-                        "summary", generateSummary(executionResult)
+                        "rowCount", rowCount,
+                        "data", data != null ? data : List.of(),
+                        "executionTime", executionTime,
+                        "summary", generateSummary(rowCount, executionTime)
                     ));
                     
                     // 8. 保存AI回复
-                    String summary = generateSummary(executionResult);
+                    String summary = generateSummary(rowCount, executionTime);
                     conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
                 } else {
+                    String error = (String) responseMap.getOrDefault("error", "未知错误");
                     sendEvent(emitter, "error", Map.of(
                         "success", false,
-                        "error", executionResult.error
+                        "error", error
                     ));
-                    log.warn("[流式对话] SQL执行失败: {}", executionResult.error);
+                    log.warn("[流式对话] 查询失败: {}", error);
                 }
                 
                 // 9. 发送完成事件
@@ -206,18 +206,34 @@ public class StreamChatController {
     }
     
     /**
-     * 生成查询结果摘要
+     * 解析Agent响应
      */
-    private String generateSummary(SQLExecutionTool.ExecutionResult result) {
-        if (!result.success) {
-            return "查询执行失败: " + result.error;
+    private Map<String, Object> parseAgentResponse(String response) {
+        try {
+            // 尝试解析JSON
+            if (response != null && response.trim().startsWith("{")) {
+                return objectMapper.readValue(response, Map.class);
+            }
+        } catch (Exception e) {
+            log.warn("解析Agent响应失败，作为文本处理", e);
         }
         
+        // 非JSON响应，包装成标准格式
+        return Map.of(
+            "success", false,
+            "error", response != null ? response : "无响应"
+        );
+    }
+    
+    /**
+     * 生成查询结果摘要
+     */
+    private String generateSummary(int rowCount, double executionTime) {
         StringBuilder summary = new StringBuilder();
-        summary.append("查询成功，返回 ").append(result.rowCount).append(" 条记录");
+        summary.append("查询成功，返回 ").append(rowCount).append(" 条记录");
         
-        if (result.executionTime != null) {
-            summary.append("，耗时 ").append(String.format("%.2f", result.executionTime)).append(" ms");
+        if (executionTime > 0) {
+            summary.append("，耗时 ").append(String.format("%.2f", executionTime)).append(" ms");
         }
         
         return summary.toString();
