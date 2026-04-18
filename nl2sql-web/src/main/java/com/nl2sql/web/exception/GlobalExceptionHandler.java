@@ -9,7 +9,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
 
+import javax.servlet.http.HttpServletResponse;
 import javax.validation.ConstraintViolation;
 import javax.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
@@ -65,7 +67,14 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(RuntimeException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public Result<Void> handleRuntimeException(RuntimeException e) {
+    public Result<Void> handleRuntimeException(RuntimeException e, HttpServletResponse response) {
+        // ✅ 跳过SSE请求，避免Content-Type冲突
+        String contentType = response.getContentType();
+        if (contentType != null && contentType.contains("text/event-stream")) {
+            log.error("SSE流式对话异常: {}", e.getMessage(), e);
+            return null; // 不返回响应，让SSE连接自然关闭
+        }
+        
         log.error("业务异常: {}", e.getMessage(), e);
         return Result.error(e.getMessage());
     }

@@ -20,7 +20,7 @@ public class StreamProgressEvent extends ApplicationEvent {
     private Double executionTime; // 执行耗时
     
     public StreamProgressEvent(Object source, String sessionId, String step, String message) {
-        super(source);
+        super(source != null ? source : "stream-chat");
         this.sessionId = sessionId;
         this.step = step;
         this.message = message;
