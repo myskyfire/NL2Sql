@@ -79,7 +79,19 @@ public class StreamChatController {
                 
                 // 5. 解析Agent响应
                 Map<String, Object> responseMap = parseAgentResponse(agentResponse);
+                
+                // ✅ 关键修复：将 success 字段转换为 status 字段（前端需要）
                 Boolean success = (Boolean) responseMap.getOrDefault("success", false);
+                if (!responseMap.containsKey("status")) {
+                    if (success != null && success) {
+                        responseMap.put("status", "success");
+                    } else if (responseMap.containsKey("needsClarification") && (Boolean) responseMap.get("needsClarification")) {
+                        responseMap.put("status", "clarification_needed");
+                    } else {
+                        responseMap.put("status", "error");
+                    }
+                }
+                
                 String sql = (String) responseMap.get("sql");
                 
                 // 6. 发送SQL生成完成事件
@@ -89,26 +101,35 @@ public class StreamChatController {
                 ));
                 
                 // 7. 发送执行结果
-                if (success != null && success) {
+                String status = (String) responseMap.get("status");
+                if ("success".equals(status)) {
                     List<Map<String, Object>> data = (List<Map<String, Object>>) responseMap.get("data");
                     Integer rowCount = (Integer) responseMap.getOrDefault("rowCount", 0);
                     Double executionTime = (Double) responseMap.getOrDefault("executionTime", 0.0);
                     
+                    // ✅ 关键修复：发送 result 事件（前端需要）
                     sendEvent(emitter, "result", Map.of(
-                        "success", true,
+                        "status", "success",
                         "rowCount", rowCount,
                         "data", data != null ? data : List.of(),
                         "executionTime", executionTime,
-                        "summary", generateSummary(rowCount, executionTime)
+                        "sql", sql != null ? sql : "",
+                        "followUpSuggestions", responseMap.getOrDefault("followUpSuggestions", List.of())
                     ));
                     
                     // 8. 保存AI回复
                     String summary = generateSummary(rowCount, executionTime);
                     conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
+                } else if ("clarification_needed".equals(status)) {
+                    String message = (String) responseMap.getOrDefault("message", "需要澄清");
+                    sendEvent(emitter, "result", Map.of(
+                        "status", "clarification_needed",
+                        "message", message
+                    ));
                 } else {
                     String error = (String) responseMap.getOrDefault("error", "未知错误");
-                    sendEvent(emitter, "error", Map.of(
-                        "success", false,
+                    sendEvent(emitter, "result", Map.of(
+                        "status", "error",
                         "error", error
                     ));
                     log.warn("[流式对话] 查询失败: {}", error);
