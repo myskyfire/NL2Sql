@@ -1,5 +1,7 @@
 package com.nl2sql.conversation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +24,12 @@ public class ConversationHistoryService {
     
     @Autowired
     private StringRedisTemplate redisTemplate;
+    
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    
+    static {
+        objectMapper.registerModule(new JavaTimeModule());
+    }
     
     private static final String CONVERSATION_PREFIX = "conversation:";
     private static final long TTL_HOURS = 24; // 会话保留24小时
@@ -171,8 +179,7 @@ public class ConversationHistoryService {
     
     private String serialize(ChatMessage message) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                .writeValueAsString(message);
+            return objectMapper.writeValueAsString(message);
         } catch (Exception e) {
             throw new RuntimeException("序列化失败", e);
         }
@@ -180,8 +187,7 @@ public class ConversationHistoryService {
     
     private ChatMessage deserialize(String json) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                .readValue(json, ChatMessage.class);
+            return objectMapper.readValue(json, ChatMessage.class);
         } catch (Exception e) {
             log.warn("反序列化失败: {}", e.getMessage());
             return null;
