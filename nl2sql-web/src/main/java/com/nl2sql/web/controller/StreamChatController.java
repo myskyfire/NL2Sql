@@ -70,9 +70,9 @@ public class StreamChatController {
                 String history = conversationHistoryService.formatHistoryForPrompt(sessionId, 5);
                 
                 // 3. 发送开始事件
-                sendEvent(emitter, "start", Map.of(
-                    "sessionId", sessionId,
-                    "message", "开始生成SQL..."
+                sendEvent(emitter, "progress", Map.of(
+                    "step", "generating_sql",
+                    "message", "🔄 正在生成SQL..."
                 ));
                 
                 // 4. 调用Agent执行查询（StandardQuerySkill已包含SQL生成+执行）
@@ -101,19 +101,26 @@ public class StreamChatController {
                 String sql = (String) responseMap.get("sql");
                 
                 // 6. 发送SQL生成完成事件
-                sendEvent(emitter, "sql_generated", Map.of(
-                    "sql", sql != null ? sql : "",
-                    "message", "SQL生成完成"
+                sendEvent(emitter, "progress", Map.of(
+                    "step", "sql_generated",
+                    "message", "✅ SQL生成并修正完成",
+                    "sql", sql != null ? sql : ""
                 ));
                 
-                // 7. 发送执行结果
+                // 7. 发送执行中事件
+                sendEvent(emitter, "progress", Map.of(
+                    "step", "executing",
+                    "message", "⚙️ 执行查询，请稍后..."
+                ));
+                
+                // 8. 发送执行结果
                 String status = (String) responseMap.get("status");
                 if ("success".equals(status)) {
                     List<Map<String, Object>> data = (List<Map<String, Object>>) responseMap.get("data");
                     Integer rowCount = (Integer) responseMap.getOrDefault("rowCount", 0);
                     Double executionTime = (Double) responseMap.getOrDefault("executionTime", 0.0);
                     
-                    // ✅ 关键修复：发送 result 事件（前端需要）
+                    // 发送查询结果
                     sendEvent(emitter, "result", Map.of(
                         "status", "success",
                         "rowCount", rowCount,
@@ -123,7 +130,7 @@ public class StreamChatController {
                         "followUpSuggestions", responseMap.getOrDefault("followUpSuggestions", List.of())
                     ));
                     
-                    // 8. 保存AI回复
+                    // 9. 保存AI回复
                     String summary = generateSummary(rowCount, executionTime);
                     conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
                 } else if ("clarification_needed".equals(status)) {
@@ -141,9 +148,9 @@ public class StreamChatController {
                     log.warn("[流式对话] 查询失败: {}", error);
                 }
                 
-                // 9. 发送完成事件
+                // 10. 发送完成事件
                 sendEvent(emitter, "complete", Map.of(
-                    "message", "查询完成"
+                    "message", "✨ 查询完成"
                 ));
                 
                 // 10. 关闭连接

@@ -381,21 +381,28 @@
             console.log('收到事件:', eventType, data);
             
             switch(eventType) {
-                case 'start':
-                    addMessage('🔄 ' + (data.message || '开始生成SQL...'), 'system');
-                    break;
-                    
-                case 'sql_generated':
-                    if (data.sql) {
-                        addMessage(`<div class="sql-display"><strong>📝 生成的 SQL:</strong><br>${escapeHtml(data.sql)}</div>`, 'agent');
+                case 'progress':
+                    // ✅ 显示中间进度状态
+                    if (data.step === 'generating_sql') {
+                        addMessage(data.message || '🔄 正在生成SQL...', 'system');
+                    } else if (data.step === 'sql_generated') {
+                        addMessage(data.message || '✅ SQL生成完成', 'system');
+                        if (data.sql) {
+                            addMessage(`<div class="sql-display"><strong>📝 SQL如下:</strong><br>${escapeHtml(data.sql)}</div>`, 'agent');
+                        }
+                    } else if (data.step === 'executing') {
+                        addMessage(data.message || '⚙️ 执行查询，请稍后...', 'system');
                     }
                     break;
                     
                 case 'result':
                     if (data.status === 'success') {
+                        const rowCount = data.rowCount || 0;
+                        addMessage(`✅ 查询到 ${rowCount} 条结果，结果如下:`, 'system');
+                        
                         if (data.data && data.data.length > 0) {
                             addMessage(renderTable(data.data), 'agent');
-                            addMessage(`✅ 共 ${data.rowCount || 0} 条记录，耗时 ${(data.executionTime || 0).toFixed(2)} ms`, 'system');
+                            addMessage(`⏱️ 耗时 ${(data.executionTime || 0).toFixed(2)} ms`, 'system');
                         } else {
                             addMessage('📭 未查到数据', 'system');
                         }
@@ -407,7 +414,7 @@
                     break;
                     
                 case 'complete':
-                    addMessage('✨ ' + (data.message || '查询完成'), 'system');
+                    addMessage(data.message || '✨ 查询完成', 'system');
                     break;
                     
                 default:
