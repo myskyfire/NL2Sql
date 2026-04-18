@@ -109,8 +109,7 @@ public class StreamProgressEventListener {
             .name("complete")
             .data(Map.of("message", event.getMessage())));
         
-        // 完成后关闭连接
-        emitter.complete();
-        removeEmitter(event.getSessionId());
+        // ✅ 不再手动complete，由Controller的onCompletion回调处理
+        log.info("发送完成事件: sessionId={}", event.getSessionId());
     }
 }

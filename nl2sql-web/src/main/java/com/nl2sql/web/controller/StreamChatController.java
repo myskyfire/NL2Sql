@@ -61,11 +61,27 @@ public class StreamChatController {
         String question = request.getQuestion();
         Long datasourceId = request.getDatasourceId();
         
-        // 创建SSE连接，超时60秒
-        SseEmitter emitter = new SseEmitter(60_000L);
+        // 创建SSE连接，超时5分钟
+        SseEmitter emitter = new SseEmitter(5 * 60 * 1000L);
         
         // ✅ 注册SSE连接到事件监听器
         StreamProgressEventListener.registerEmitter(sessionId, emitter);
+        
+        // ✅ 设置完成/超时/错误回调
+        emitter.onCompletion(() -> {
+            StreamProgressEventListener.removeEmitter(sessionId);
+            log.info("SSE连接完成: sessionId={}", sessionId);
+        });
+        
+        emitter.onTimeout(() -> {
+            StreamProgressEventListener.removeEmitter(sessionId);
+            log.warn("SSE连接超时: sessionId={}", sessionId);
+        });
+        
+        emitter.onError((ex) -> {
+            StreamProgressEventListener.removeEmitter(sessionId);
+            log.error("SSE连接错误: sessionId={}", sessionId, ex);
+        });
         
         // 异步处理
         CompletableFuture.runAsync(() -> {
