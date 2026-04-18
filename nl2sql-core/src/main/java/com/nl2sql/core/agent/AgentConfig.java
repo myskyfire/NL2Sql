@@ -5,6 +5,9 @@ import com.nl2sql.core.agent.skills.SkillContext;
 import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
 import com.nl2sql.core.agent.tools.*;
 import com.nl2sql.core.llm.LLMService;
+import com.nl2sql.core.metadata.MetadataService;
+import com.nl2sql.core.monitor.PerformanceMonitor;
+import com.nl2sql.core.agent.prompt.DynamicPromptBuilder;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import lombok.extern.slf4j.Slf4j;
@@ -81,10 +84,13 @@ public class AgentConfig {
     private AISummaryTool aiSummaryTool;
     
     @Autowired(required = false)
-    private com.nl2sql.core.monitor.PerformanceMonitor performanceMonitor;
+    private PerformanceMonitor performanceMonitor;
     
     @Autowired(required = false)
-    private com.nl2sql.core.metadata.MetadataService metadataService;
+    private MetadataService metadataService;
+    
+    @Autowired(required = false)
+    private DynamicPromptBuilder promptBuilder;
     
     /**
      * 创建 NL2SQL ReAct Agent
@@ -114,6 +120,12 @@ public class AgentConfig {
         if (performanceMonitor != null) {
             agent.setPerformanceMonitor(performanceMonitor);
             log.info("✅ 已注入性能监控器");
+        }
+        
+        // ✅ 新增：注入动态提示词构建器（减少 Token 60-70%）
+        if (promptBuilder != null) {
+            agent.setPromptBuilder(promptBuilder);
+            log.info("✅ 已注入动态提示词构建器（模块化 Prompt）");
         }
         
         // 初始化 GroovySkillExecutor
@@ -162,9 +174,9 @@ public class AgentConfig {
                             }
                         }
                         
+                        // ✅ 统一规范：Groovy Skill 使用平铺参数 {question, datasourceId}
                         String question = (String) args.get("question");
                         
-                        // ⚠️ 关键修复：处理 datasourceId 为 null 的情况
                         Object datasourceIdObj = args.get("datasourceId");
                         Long datasourceId = null;
                         if (datasourceIdObj != null) {
@@ -185,6 +197,15 @@ public class AgentConfig {
                         context.setParameter("datasourceId", datasourceId);
                         context.setParameter("userId", userId);
                         context.setParameter("username", username);
+                        
+                        // ✅ 从 NL2SQLTool 获取当前会话ID（用于流式事件推送）
+                        if (nl2sqlTool != null) {
+                            String currentSessionId = nl2sqlTool.getCurrentSessionId();
+                            if (currentSessionId != null) {
+                                context.setParameter("sessionId", currentSessionId);
+                                log.debug("[{}] 已设置 sessionId: {}", skill.getToolName(), currentSessionId);
+                            }
+                        }
                         
                         Object result = groovySkillExecutor.executeSkill(skill.getSkillPath(), context);
                         

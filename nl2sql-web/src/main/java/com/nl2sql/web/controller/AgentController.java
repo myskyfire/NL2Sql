@@ -4,7 +4,10 @@ import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.common.util.LogContextUtil;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.tools.NL2SQLTool;
+import com.nl2sql.core.rag.SQLFeedbackService;
 import com.nl2sql.web.service.AgentResponseProcessor;
+import com.nl2sql.web.service.IntentClassifier;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,10 +42,16 @@ public class AgentController {
     private AgentResponseProcessor responseProcessor;
     
     @Autowired(required = false)
-    private com.nl2sql.core.rag.SQLFeedbackService feedbackService;
+    private SQLFeedbackService feedbackService;
     
     @Autowired(required = false)
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    
+    @Autowired(required = false)
+    private NL2SQLTool nl2sqlTool;
+    
+    @Autowired(required = false)
+    private IntentClassifier intentClassifier;
     
     /**
      * Agent 对话接口 - 测试版本（无需认证）
@@ -137,43 +146,65 @@ public class AgentController {
             
             log.info("[Agent对话] 最终用户消息: {}", fullMessage);
             
-            // 3. 调用 ReAct Agent，让 LLM 自主决策
-            log.info("[Agent对话] 调用 ReActAgent.execute()...");
-            String agentResponse = reActAgent.execute(
-                fullMessage,
-                request.getDatasourceId(),
-                userInfo.getUserId().longValue(),
-                userInfo.getUsername()
-            );
-            
-            long executionTime = System.currentTimeMillis() - startTime;
-            
-            log.info("[Agent对话] 执行耗时: {} ms", executionTime);
-            log.info("[Agent对话] ========== 处理完成 ==========");
-            
-            // 4. 使用 AgentResponseProcessor 处理响应
-            Map<String, Object> response = responseProcessor.processResponse(
-                agentResponse,
-                buildRequestMap(request),
-                buildUserInfoMap(userInfo)
-            );
-            
-            // 5. 添加元数据
-            response.put("sessionId", request.getSessionId() != null ? 
-                request.getSessionId() : "default_" + userInfo.getUserId());
-            response.put("executionTime", executionTime);
-            
-            // 返回 datasourceId（如果不存在）
-            if (request.getDatasourceId() != null && !response.containsKey("datasourceId")) {
-                response.put("datasourceId", request.getDatasourceId());
+            // ✅ 新增：意图识别（用于优化 Prompt 构建）
+            String intent = "QUERY"; // 默认意图
+            if (intentClassifier != null) {
+                intent = intentClassifier.classify(fullMessage);
+                log.debug("[Agent对话] 意图识别结果: {}", intent);
             }
             
-            // 6. 记录查询日志到 nl2sql_query_log 表（用于默认评分功能）
-            logQueryToDatabase(request, response, userInfo);
+            // 3. ✅ 设置当前会话ID（用于流式事件推送）
+            String currentSessionId = request.getSessionId() != null ? 
+                request.getSessionId() : "default_" + userInfo.getUserId();
+            if (nl2sqlTool != null) {
+                nl2sqlTool.setCurrentSessionId(currentSessionId);
+                log.debug("[Agent对话] 已设置会话ID: {}", currentSessionId);
+            }
             
-            log.info("[Agent对话] 最终响应: {}", response);
-            
-            return Result.success(response);
+            try {
+                // 4. 调用 ReAct Agent，让 LLM 自主决策
+                log.info("[Agent对话] 调用 ReActAgent.execute()...");
+                String agentResponse = reActAgent.execute(
+                    fullMessage,
+                    request.getDatasourceId(),
+                    userInfo.getUserId().longValue(),
+                    userInfo.getUsername()
+                );
+                
+                long executionTime = System.currentTimeMillis() - startTime;
+                
+                log.info("[Agent对话] 执行耗时: {} ms", executionTime);
+                log.info("[Agent对话] ========== 处理完成 ==========");
+                
+                // 5. 使用 AgentResponseProcessor 处理响应
+                Map<String, Object> response = responseProcessor.processResponse(
+                    agentResponse,
+                    buildRequestMap(request),
+                    buildUserInfoMap(userInfo)
+                );
+                
+                // 6. 添加元数据
+                response.put("sessionId", currentSessionId);
+                response.put("executionTime", executionTime);
+                
+                // 返回 datasourceId（如果不存在）
+                if (request.getDatasourceId() != null && !response.containsKey("datasourceId")) {
+                    response.put("datasourceId", request.getDatasourceId());
+                }
+                
+                // 7. 记录查询日志到 nl2sql_query_log 表（用于默认评分功能）
+                logQueryToDatabase(request, response, userInfo);
+                
+                log.info("[Agent对话] 最终响应: {}", response);
+                
+                return Result.success(response);
+                
+            } finally {
+                // 清除会话ID
+                if (nl2sqlTool != null) {
+                    nl2sqlTool.clearCurrentSessionId();
+                }
+            }
             
         } catch (Exception e) {
             long executionTime = System.currentTimeMillis() - startTime;

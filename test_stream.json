@@ -1,0 +1,5 @@
+{
+  "question": "查询最近5个订单",
+  "datasourceId": 1,
+  "sessionId": "test_stream_001"
+}

@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.core.llm.ModelRouterService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,7 @@ import java.util.*;
 public class IntentClassifierTool {
     
     @Autowired
-    private com.nl2sql.core.llm.ModelRouterService modelRouter;
+    private ModelRouterService modelRouter;
     
     /**
      * 分类用户意图

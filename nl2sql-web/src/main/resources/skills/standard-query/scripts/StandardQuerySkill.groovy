@@ -3,9 +3,11 @@ import com.nl2sql.core.agent.tools.NL2SQLTool
 import com.nl2sql.core.agent.tools.SQLExecutionTool
 import com.nl2sql.core.executor.SQLRiskAnalyzer
 import com.nl2sql.core.llm.LLMService
+import com.nl2sql.common.event.StreamProgressEvent
 import dev.langchain4j.model.chat.ChatModel
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 
 /**
  * 标准查询技能
@@ -31,12 +33,14 @@ class StandardQuerySkill {
         Long datasourceId = context.getParameter("datasourceId")
         Long userId = context.getParameter("userId")
         String username = context.getParameter("username")
+        String sessionId = context.getParameter("sessionId")
         
         println "[StandardQuerySkill] 开始执行标准查询: question=${question}, datasourceId=${datasourceId}"
         
         // ✅ 关键检查：如果缺少 datasourceId，返回澄清请求
         if (datasourceId == null) {
             println "[StandardQuerySkill] 缺少 datasourceId，返回澄清请求"
+            publishEvent(context, sessionId, "clarification_needed", "⚠️ 请先选择数据源")
             return createClarificationResult("请先选择数据源")
         }
         
@@ -52,21 +56,25 @@ class StandardQuerySkill {
                 println "[StandardQuerySkill] SQLRiskAnalyzer 未配置，跳过风险评估"
             }
             
-            // ✅ 检测用户是否要求生成图表（如"并生成柱状图"）
+            // ✅ 检测用户是否要求生成图表（如“并生成柱状图”）
             String chartType = extractChartTypeFromQuestion(question)
             if (chartType != null) {
                 println "[StandardQuerySkill] 检测到图表生成意图: ${chartType}"
+                publishEvent(context, sessionId, "chart_intent_detected", "📊 检测到图表需求: ${getChartTypeName(chartType)}")
                 // 从问题中移除图表相关描述，保留纯查询部分
                 question = removeChartDescription(question)
                 println "[StandardQuerySkill] 清理后的问题: ${question}"
             }
-            
+                        
             // Step 1: 检索表结构
             println "[StandardQuerySkill] Step 1: 检索表结构"
+            publishEvent(context, sessionId, "retrieving_schema", "🔍 检索表结构...")
             String schema = nl2sqlTool.retrieveSchema(question, datasourceId)
-            
+            publishEvent(context, sessionId, "schema_retrieved", "✅ 表结构检索完成")
+                        
             // Step 2: 生成SQL
             println "[StandardQuerySkill] Step 2: 生成SQL"
+            publishEvent(context, sessionId, "generating_sql", "🤖 AI生成SQL...")
             
             // ✅ 关键修复：从用户问题中提取表名偏好
             String tableHint = extractTablePreference(question)
@@ -84,9 +92,13 @@ class StandardQuerySkill {
             if (sql == null || sql.trim().isEmpty() || sql.startsWith("错误：") || sql.startsWith("ERROR:")) {
                 log.warn("SQL生成失败，将尝试自动修正: {}", sql)
                 hasSyntaxError = true
+                publishEvent(context, sessionId, "sql_generation_failed", "⚠️ SQL生成失败，尝试修正...")
             } else if (sql.startsWith("CLARIFY_") || sql.startsWith("CLARIFICATION")) {
                 log.info("SQL需要澄清，直接返回: {}", sql)
                 needsClarification = true
+                publishEvent(context, sessionId, "clarification_needed", "⚠️ " + sql)
+            } else {
+                publishEvent(context, sessionId, "sql_generated", "✅ SQL生成完成")
             }
             
             // 如果需要澄清，直接返回
@@ -102,15 +114,19 @@ class StandardQuerySkill {
             // Step 2.5: LLM自主评估SQL风险（仅当SQL有效时）
             if (!hasSyntaxError) {
                 log.info("Step 2.5: 评估SQL风险")
+                publishEvent(context, sessionId, "assessing_risk", "🔍 评估SQL风险...")
                 RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer)
                 
                 if ("HIGH".equals(riskResult.getRiskLevel())) {
                     log.warn("SQL风险评估为高风险，阻断执行: {}", riskResult.getReason())
+                    publishEvent(context, sessionId, "risk_blocked", "⚠️ 高风险SQL已阻断: " + riskResult.getReason())
                     return createRiskBlockedResult(riskResult.getReason(), sql)
                 } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
                     log.info("SQL风险评估为中风险，继续执行但提示用户: {}", riskResult.getReason())
+                    publishEvent(context, sessionId, "risk_medium", "⚠️ 中风险SQL，继续执行")
                 } else {
                     log.debug("SQL风险评估为低风险，直接执行")
+                    publishEvent(context, sessionId, "risk_low", "✅ 风险评估通过")
                 }
             } else {
                 log.info("SQL生成失败，跳过风险评估，直接进入修正流程")
@@ -124,20 +140,25 @@ class StandardQuerySkill {
             
             // Step 3: 执行SQL（带自动修正，最多2次）
             log.info("Step 3: 执行SQL")
+            publishEvent(context, sessionId, "executing_sql", "⚙️ 执行SQL查询...")
             
-            def execResult = executeWithAutoFix(sql, datasourceId, userId, username, 2, nl2sqlTool, sqlExecutionTool)
+            def execResult = executeWithAutoFix(sql, datasourceId, userId, username, 2, nl2sqlTool, sqlExecutionTool, context, sessionId)
             
             if (!execResult.success) {
                 log.error("执行失败: {}", execResult.error)
+                publishEvent(context, sessionId, "execution_failed", "❌ 执行失败: " + execResult.error)
                 return createExecutionFailedResult(execResult.error)
             }
             
             log.info("查询成功: rowCount={}", execResult.rowCount)
+            publishEvent(context, sessionId, "query_completed", "✅ 查询完成，共 " + execResult.rowCount + " 条结果")
             
             // ✅ 如果用户要求生成图表，直接在返回中包含图表配置
             if (chartType != null && execResult.data != null && !execResult.data.isEmpty()) {
                 log.info("生成图表配置: type={}", chartType)
+                publishEvent(context, sessionId, "generating_chart", "📊 生成" + getChartTypeName(chartType) + "...")
                 Map<String, Object> echartsConfig = generateEChartsConfig(chartType, execResult.data)
+                publishEvent(context, sessionId, "chart_generated", "✅ 图表生成完成")
                 return createSuccessResultWithChart(
                     execResult.data, 
                     execResult.rowCount, 
@@ -153,6 +174,7 @@ class StandardQuerySkill {
             
         } catch (Exception e) {
             log.error("执行异常: {}", e.message, e)
+            publishEvent(context, sessionId, "error_occurred", "❌ 执行异常: " + e.message)
             return createErrorResult(e.message)
         }
     }
@@ -377,11 +399,16 @@ ${sql}
      * 执行SQL并支持自动修正
      */
     private def executeWithAutoFix(String sql, Long datasourceId, Long userId, String username, 
-                                    int maxRetries, NL2SQLTool nl2sqlTool, SQLExecutionTool sqlExecutionTool) {
+                                    int maxRetries, NL2SQLTool nl2sqlTool, SQLExecutionTool sqlExecutionTool,
+                                    SkillContext context, String sessionId) {
         String currentSql = sql
         
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
+                if (attempt > 0) {
+                    publishEvent(context, sessionId, "retrying_sql", "🔄 第${attempt}次重试...")
+                }
+                
                 def result = sqlExecutionTool.executeSQL(currentSql, datasourceId, userId, username)
                 
                 if (result.success) {
@@ -391,6 +418,7 @@ ${sql}
                 // 如果还有重试次数，尝试自动修正
                 if (attempt < maxRetries) {
                     log.info("执行失败，尝试自动修正 (第{}次)", attempt + 1)
+                    publishEvent(context, sessionId, "correcting_sql", "🔧 自动修正SQL...")
                     currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
                     log.info("修正后的SQL: {}", currentSql)
                 }
@@ -398,6 +426,7 @@ ${sql}
             } catch (Exception e) {
                 if (attempt < maxRetries) {
                     log.error("执行异常，尝试自动修正 (第{}次): {}", attempt + 1, e.message)
+                    publishEvent(context, sessionId, "correcting_error", "🔧 修正执行错误...")
                     currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
                 } else {
                     throw e
@@ -664,6 +693,26 @@ ${sql}
             error: "⚠️ SQL风险评估为高风险，已阻断执行\n原因: ${reason}",
             sql: sql
         ]
+    }
+    
+    /**
+     * 发布流式进度事件
+     */
+    private void publishEvent(SkillContext context, String sessionId, String step, String message) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            return
+        }
+        
+        try {
+            def eventPublisher = context.getBean(ApplicationEventPublisher.class)
+            if (eventPublisher != null) {
+                def event = new StreamProgressEvent(this, sessionId, step, message, null)
+                eventPublisher.publishEvent(event)
+                println "[StreamProgress] 发布事件: step=${step}, message=${message}"
+            }
+        } catch (Exception e) {
+            println "[StreamProgress] 发布事件失败: ${e.message}"
+        }
     }
     
     // ==================== 内部类 ====================

@@ -73,8 +73,13 @@ public class GroovySkillExecutor {
                 
                 if (scriptPath != null && !scriptPath.trim().isEmpty()) {
                     SkillInfo info = new SkillInfo();
-                    info.setName(dir.replace("-", "_")); // standard-query -> standard_query
-                    info.setToolName("execute_" + dir.replace("-", "_")); // execute_standard_query
+                    // ✅ 优先使用 SKILL.md 中的 name 字段，否则使用目录名转换
+                    String skillName = parseNameField(skillPath);
+                    if (skillName == null || skillName.trim().isEmpty()) {
+                        skillName = dir.replace("-", "_"); // standard-query -> standard_query
+                    }
+                    info.setName(skillName);
+                    info.setToolName("execute_" + skillName); // execute_standard_query
                     info.setSkillPath(skillPath);
                     info.setDescription(parseDescription(skillPath));
                     info.setRequiredParams(parseRequiredParams(skillPath));  // ✅ 解析必需参数
@@ -166,12 +171,59 @@ public class GroovySkillExecutor {
     }
     
     /**
+     * 从 SKILL.md 中解析 name 字段
+     */
+    private String parseNameField(String skillPath) {
+        try {
+            String skillMdPath = skillPath.endsWith("/") ? skillPath + "SKILL.md" : skillPath + "/SKILL.md";
+            // ⚠️ 关键修复：使用当前类的 ClassLoader 以支持 Spring Boot JAR 包资源加载
+            var resource = new ClassPathResource(skillMdPath, getClass().getClassLoader());
+            
+            if (!resource.exists()) {
+                return null;
+            }
+            
+            try (var reader = new BufferedReader(
+                    new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+                
+                String line;
+                boolean inFrontmatter = false;
+                int lineCount = 0;
+                
+                while ((line = reader.readLine()) != null) {
+                    lineCount++;
+                    
+                    if (line.trim().equals("---")) {
+                        if (lineCount == 1) {
+                            inFrontmatter = true;
+                            continue;
+                        } else if (inFrontmatter) {
+                            break;
+                        }
+                    }
+                    
+                    if (inFrontmatter && line.startsWith("name:")) {
+                        return line.substring("name:".length()).trim();
+                    }
+                }
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            log.error("[GroovySkillExecutor] 解析 name 字段失败: {}", skillPath, e);
+            return null;
+        }
+    }
+    
+    /**
      * 从 SKILL.md 中解析 script 字段
      */
     private String parseScriptField(String skillPath) {
         try {
             String skillMdPath = skillPath.endsWith("/") ? skillPath + "SKILL.md" : skillPath + "/SKILL.md";
-            var resource = new ClassPathResource(skillMdPath);
+            // ⚠️ 关键修复：使用当前类的 ClassLoader 以支持 Spring Boot JAR 包资源加载
+            var resource = new ClassPathResource(skillMdPath, getClass().getClassLoader());
             
             if (!resource.exists()) {
                 log.warn("[GroovySkillExecutor] 未找到 SKILL.md: {}", skillMdPath);
@@ -218,7 +270,8 @@ public class GroovySkillExecutor {
     private String parseDescription(String skillPath) {
         try {
             String skillMdPath = skillPath.endsWith("/") ? skillPath + "SKILL.md" : skillPath + "/SKILL.md";
-            var resource = new ClassPathResource(skillMdPath);
+            // ⚠️ 关键修复：使用当前类的 ClassLoader 以支持 Spring Boot JAR 包资源加载
+            var resource = new ClassPathResource(skillMdPath, getClass().getClassLoader());
             
             if (!resource.exists()) {
                 return "";
@@ -266,7 +319,8 @@ public class GroovySkillExecutor {
         
         try {
             String skillMdPath = skillPath.endsWith("/") ? skillPath + "SKILL.md" : skillPath + "/SKILL.md";
-            var resource = new ClassPathResource(skillMdPath);
+            // ⚠️ 关键修复：使用当前类的 ClassLoader 以支持 Spring Boot JAR 包资源加载
+            var resource = new ClassPathResource(skillMdPath, getClass().getClassLoader());
             
             if (!resource.exists()) {
                 return params;
@@ -322,7 +376,8 @@ public class GroovySkillExecutor {
     private Class<?> loadOrCacheClass(String classpath) throws Exception {
         return classCache.computeIfAbsent(classpath, path -> {
             try {
-                var resource = new org.springframework.core.io.ClassPathResource(path);
+                // ⚠️ 关键修复：使用当前类的 ClassLoader 以支持 Spring Boot JAR 包资源加载
+                var resource = new org.springframework.core.io.ClassPathResource(path, getClass().getClassLoader());
                 if (!resource.exists()) {
                     throw new IllegalArgumentException("找不到脚本文件: " + path);
                 }

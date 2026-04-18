@@ -1,5 +1,6 @@
 package com.nl2sql.web.event;
 
+import com.nl2sql.common.event.StreamProgressEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;

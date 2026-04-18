@@ -1,5 +1,6 @@
 package com.nl2sql.core.llm;
 
+import com.nl2sql.core.llm.extension.IndustryConceptExtension;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +30,7 @@ public class IndustryConceptDictionary {
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     
     @Autowired(required = false)
-    private com.nl2sql.core.llm.extension.IndustryConceptExtension conceptExtension;
+    private IndustryConceptExtension conceptExtension;
     
     public IndustryConceptDictionary() {
         initializeDefaultIndustries();

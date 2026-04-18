@@ -5,8 +5,9 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.tools.NL2SQLTool;
 import com.nl2sql.core.agent.tools.SQLExecutionTool;
-import com.nl2sql.web.event.StreamProgressEvent;
+import com.nl2sql.common.event.StreamProgressEvent;
 import com.nl2sql.web.event.StreamProgressEventListener;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,9 @@ public class StreamChatController {
     
     @Autowired
     private ApplicationEventPublisher eventPublisher;
+    
+    @Autowired(required = false)
+    private NL2SQLTool nl2sqlTool;
     
     private final ObjectMapper objectMapper;
     
@@ -94,70 +98,84 @@ public class StreamChatController {
                 // 2. 获取对话历史
                 String history = conversationHistoryService.formatHistoryForPrompt(sessionId, 5);
                 
-                // 3. 发布SQL生成中事件
-                eventPublisher.publishEvent(StreamProgressEvent.creating(sessionId));
+                // 3. ✅ 设置当前会话ID（用于流式事件推送）
+                if (nl2sqlTool != null) {
+                    nl2sqlTool.setCurrentSessionId(sessionId);
+                    log.debug("[流式对话] 已设置会话ID: {}", sessionId);
+                }
                 
-                // 4. 调用Agent执行查询（StandardQuerySkill已包含SQL生成+执行）
-                String agentResponse = reActAgent.execute(
-                    question,
-                    datasourceId,
-                    1L, // TODO: 从SecurityContext获取
-                    "user"
-                );
+                try {
+                    // 4. 发布SQL生成中事件
+                    eventPublisher.publishEvent(StreamProgressEvent.creating(sessionId));
+                    
+                    // 5. 调用Agent执行查询（StandardQuerySkill已包含SQL生成+执行）
+                    String agentResponse = reActAgent.execute(
+                        question,
+                        datasourceId,
+                        1L, // TODO: 从SecurityContext获取
+                        "user"
+                    );
+                    
+                    // 6. 解析Agent响应
+                    Map<String, Object> responseMap = parseAgentResponse(agentResponse);
                 
-                // 5. 解析Agent响应
-                Map<String, Object> responseMap = parseAgentResponse(agentResponse);
-                
-                // ✅ 关键修复：将 success 字段转换为 status 字段（前端需要）
-                Boolean success = (Boolean) responseMap.getOrDefault("success", false);
-                if (!responseMap.containsKey("status")) {
-                    if (success != null && success) {
-                        responseMap.put("status", "success");
-                    } else if (responseMap.containsKey("needsClarification") && (Boolean) responseMap.get("needsClarification")) {
-                        responseMap.put("status", "clarification_needed");
+                    // 7. ✅ 关键修复：将 success 字段转换为 status 字段（前端需要）
+                    Boolean success = (Boolean) responseMap.getOrDefault("success", false);
+                    if (!responseMap.containsKey("status")) {
+                        if (success != null && success) {
+                            responseMap.put("status", "success");
+                        } else if (responseMap.containsKey("needsClarification") && (Boolean) responseMap.get("needsClarification")) {
+                            responseMap.put("status", "clarification_needed");
+                        } else {
+                            responseMap.put("status", "error");
+                        }
+                    }
+                    
+                    String sql = (String) responseMap.get("sql");
+                    
+                    // 8. 发布SQL生成完成事件
+                    eventPublisher.publishEvent(StreamProgressEvent.sqlGenerated(sessionId, sql));
+                    
+                    // 9. 发布执行中事件
+                    eventPublisher.publishEvent(StreamProgressEvent.executing(sessionId));
+                    
+                    // 10. 发布执行结果
+                    String status = (String) responseMap.get("status");
+                    if ("success".equals(status)) {
+                        List<Map<String, Object>> data = (List<Map<String, Object>>) responseMap.get("data");
+                        Integer rowCount = (Integer) responseMap.getOrDefault("rowCount", 0);
+                        Double executionTime = (Double) responseMap.getOrDefault("executionTime", 0.0);
+                        
+                        // 发布查询结果事件
+                        eventPublisher.publishEvent(StreamProgressEvent.queryResult(
+                            sessionId, 
+                            data != null ? data : List.of(), 
+                            rowCount != null ? rowCount : 0,
+                            executionTime != null ? executionTime : 0.0
+                        ));
+                        
+                        // 11. 保存AI回复
+                        String summary = generateSummary(rowCount != null ? rowCount : 0, executionTime != null ? executionTime : 0.0);
+                        conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
+                    } else if ("clarification_needed".equals(status)) {
+                        String message = (String) responseMap.getOrDefault("message", "需要澄清");
+                        // TODO: 发布澄清事件
                     } else {
-                        responseMap.put("status", "error");
+                        String error = (String) responseMap.getOrDefault("error", "未知错误");
+                        log.warn("[流式对话] 查询失败: {}", error);
+                    }
+                    
+                    // 12. 发布完成事件
+                    eventPublisher.publishEvent(StreamProgressEvent.completed(sessionId));
+                    
+                    log.info("流式对话完成: sessionId={}", sessionId);
+                    
+                } finally {
+                    // 清除会话ID
+                    if (nl2sqlTool != null) {
+                        nl2sqlTool.clearCurrentSessionId();
                     }
                 }
-                
-                String sql = (String) responseMap.get("sql");
-                
-                // 6. 发布SQL生成完成事件
-                eventPublisher.publishEvent(StreamProgressEvent.sqlGenerated(sessionId, sql));
-                
-                // 7. 发布执行中事件
-                eventPublisher.publishEvent(StreamProgressEvent.executing(sessionId));
-                
-                // 8. 发布执行结果
-                String status = (String) responseMap.get("status");
-                if ("success".equals(status)) {
-                    List<Map<String, Object>> data = (List<Map<String, Object>>) responseMap.get("data");
-                    Integer rowCount = (Integer) responseMap.getOrDefault("rowCount", 0);
-                    Double executionTime = (Double) responseMap.getOrDefault("executionTime", 0.0);
-                    
-                    // 发布查询结果事件
-                    eventPublisher.publishEvent(StreamProgressEvent.queryResult(
-                        sessionId, 
-                        data != null ? data : List.of(), 
-                        rowCount != null ? rowCount : 0,
-                        executionTime != null ? executionTime : 0.0
-                    ));
-                    
-                    // 9. 保存AI回复
-                    String summary = generateSummary(rowCount != null ? rowCount : 0, executionTime != null ? executionTime : 0.0);
-                    conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
-                } else if ("clarification_needed".equals(status)) {
-                    String message = (String) responseMap.getOrDefault("message", "需要澄清");
-                    // TODO: 发布澄清事件
-                } else {
-                    String error = (String) responseMap.getOrDefault("error", "未知错误");
-                    log.warn("[流式对话] 查询失败: {}", error);
-                }
-                
-                // 10. 发布完成事件
-                eventPublisher.publishEvent(StreamProgressEvent.completed(sessionId));
-                
-                log.info("流式对话完成: sessionId={}", sessionId);
                 
             } catch (Exception e) {
                 log.error("流式对话失败: sessionId={}", sessionId, e);

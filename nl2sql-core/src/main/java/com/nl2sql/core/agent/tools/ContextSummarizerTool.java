@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.core.llm.ModelRouterService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +16,7 @@ import java.util.*;
 public class ContextSummarizerTool {
     
     @Autowired
-    private com.nl2sql.core.llm.ModelRouterService modelRouter;
+    private ModelRouterService modelRouter;
     
     /**
      * 压缩对话历史

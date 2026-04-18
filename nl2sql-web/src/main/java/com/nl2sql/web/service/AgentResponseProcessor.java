@@ -2,6 +2,8 @@ package com.nl2sql.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.tools.NL2SQLTool;
+import com.nl2sql.core.agent.tools.SQLExecutionTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,10 +36,10 @@ public class AgentResponseProcessor {
     private JdbcTemplate jdbcTemplate;
     
     @Autowired
-    private com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool;
+    private NL2SQLTool nl2sqlTool;
     
     @Autowired
-    private com.nl2sql.core.agent.tools.SQLExecutionTool sqlExecutionTool;
+    private SQLExecutionTool sqlExecutionTool;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     

@@ -415,6 +415,7 @@
                     
                 case 'complete':
                     addMessage(data.message || '✨ 查询完成', 'system');
+                    removeTypingIndicator(); // ✅ 收到完成事件立即移除 Loading
                     break;
                     
                 default:

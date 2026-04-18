@@ -2,6 +2,7 @@ package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.nl2sql.core.agent.prompt.DynamicPromptBuilder;
 import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
 import com.nl2sql.core.monitor.PerformanceMonitor;
 import dev.langchain4j.data.message.AiMessage;
@@ -33,6 +34,7 @@ public class ReActAgent {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private SkillsMetadataLoader skillsMetadataLoader;
     private PerformanceMonitor performanceMonitor;
+    private DynamicPromptBuilder promptBuilder; // ✅ 新增：动态提示词构建器
     
     // 最大迭代次数，防止无限循环
     private static final int MAX_ITERATIONS = 10;
@@ -86,10 +88,25 @@ public class ReActAgent {
     }
     
     /**
+     * 设置动态提示词构建器（可选）
+     */
+    public void setPromptBuilder(DynamicPromptBuilder builder) {
+        this.promptBuilder = builder;
+        log.info("[ReActAgent] 已设置动态提示词构建器");
+    }
+    
+    /**
      * 获取已注册工具数量
      */
     public int getToolCount() {
         return tools.size();
+    }
+    
+    /**
+     * 获取所有注册的工具（供 Prompt 模块使用）
+     */
+    public Map<String, ToolExecutor> getTools() {
+        return Collections.unmodifiableMap(tools);
     }
     
     /**
@@ -283,9 +300,24 @@ public class ReActAgent {
     }
     
     /**
-     * 构建SystemMessage
+     * 构建SystemMessage（✅ 优化：使用动态提示词构建器）
      */
     private String buildSystemMessage() {
+        // ✅ 如果配置了 DynamicPromptBuilder，使用模块化构建
+        if (promptBuilder != null) {
+            log.debug("[ReActAgent] 使用 DynamicPromptBuilder 构建 System Prompt");
+            return promptBuilder.build();
+        }
+        
+        // ⚠️ 回退到旧版静态构建（兼容模式）
+        log.warn("[ReActAgent] 未配置 DynamicPromptBuilder，使用静态构建（不推荐）");
+        return buildSystemMessageLegacy();
+    }
+    
+    /**
+     * 旧版静态构建方法（兼容模式，仅当 DynamicPromptBuilder 未配置时使用）
+     */
+    private String buildSystemMessageLegacy() {
         StringBuilder sb = new StringBuilder();
         sb.append("你是一个智能数据分析助手。\n\n");
         
@@ -316,6 +348,9 @@ public class ReActAgent {
         sb.append("   - ⚠️ **绝对禁止**：如果已有数据源ID，绝对不能再次调用 clarify_datasource！\n");
         sb.append("3. **执行查询**（数据源明确时）：\n");
         sb.append("   - ⚠️ **唯一正确做法**：直接调用 execute_standard_query(question, datasourceId)\n");
+        sb.append("   - ✅ **参数格式**：平铺式，不要嵌套在 context 中\n");
+        sb.append("     正确：{\"name\": \"execute_standard_query\", \"arguments\": {\"question\": \"查询某类数据\", \"datasourceId\": 1}}\n");
+        sb.append("     错误：{\"name\": \"execute_standard_query\", \"arguments\": {\"context\": {...}}}\n");
         sb.append("   - ✅ execute_standard_query 会自动完成以下所有步骤：\n");
         sb.append("     1. 检索表结构 (retrieve_schema)\n");
         sb.append("     2. 生成 SQL (generate_sql)\n");

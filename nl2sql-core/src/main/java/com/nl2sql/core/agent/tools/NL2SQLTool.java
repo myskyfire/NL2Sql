@@ -1,7 +1,9 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.common.event.StreamProgressEvent;
 import com.nl2sql.common.util.MarkdownUtils;
 import com.nl2sql.core.agent.validation.SQLValidationService;
+import com.nl2sql.core.llm.IndustryConceptDictionary;
 import com.nl2sql.core.llm.ModelRouterService;
 import com.nl2sql.core.llm.SynonymService;
 import com.nl2sql.core.rag.RagKnowledgeBaseService;
@@ -11,6 +13,7 @@ import com.nl2sql.metadata.service.TableRelationshipService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -45,7 +48,53 @@ public class NL2SQLTool {
     private RagKnowledgeBaseService ragService;
     
     @Autowired
-    private com.nl2sql.core.llm.IndustryConceptDictionary industryConceptDictionary;
+    private IndustryConceptDictionary industryConceptDictionary;
+    
+    @Autowired(required = false)
+    private ApplicationEventPublisher eventPublisher;
+    
+    // ThreadLocal 存储当前会话ID
+    private static final ThreadLocal<String> CURRENT_SESSION_ID = new ThreadLocal<>();
+    
+    /**
+     * 设置当前会话ID（由调用方设置）
+     */
+    public void setCurrentSessionId(String sessionId) {
+        CURRENT_SESSION_ID.set(sessionId);
+    }
+    
+    /**
+     * 获取当前会话ID
+     */
+    public String getCurrentSessionId() {
+        return CURRENT_SESSION_ID.get();
+    }
+    
+    /**
+     * 清除当前会话ID
+     */
+    public void clearCurrentSessionId() {
+        CURRENT_SESSION_ID.remove();
+    }
+    
+    /**
+     * 发布进度事件
+     */
+    private void publishProgress(String step, String message) {
+        if (eventPublisher != null) {
+            String sessionId = CURRENT_SESSION_ID.get();
+            if (sessionId != null) {
+                try {
+                    eventPublisher.publishEvent(new StreamProgressEvent(
+                        this, sessionId, step, message, null
+                    ));
+                    log.debug("[StreamProgress] 发布事件: step={}, message={}", step, message);
+                } catch (Exception e) {
+                    log.warn("[StreamProgress] 发布事件失败: {}", e.getMessage());
+                }
+            }
+        }
+    }
     
     /**
      * 根据用户问题和数据源ID生成SQL
@@ -59,19 +108,24 @@ public class NL2SQLTool {
         try {
             log.info("[NL2SQLTool] 开始生成SQL: query={}, datasourceId={}", query, datasourceId);
             
+            publishProgress("generating_sql", "🔍 正在分析问题...");
+            
             // 0. 同义词扩展（增强语义理解）
             String expandedQuery = synonymService.expandSynonyms(query);
             if (!expandedQuery.equals(query)) {
                 log.info("[NL2SQLTool] 查询扩展: {} -> {}", query, expandedQuery);
+                publishProgress("synonym_expansion", "💡 语义扩展完成");
             }
             
             // 1. 初始向量检索（高召回）
+            publishProgress("retrieving_tables", "📊 检索相关表结构...");
             List<String> initialTables = vectorRetriever.retrieveTopTables(expandedQuery, 15);  // 提高到15
             if (initialTables.isEmpty()) {
                 return "ERROR: 未找到任何相关表，请检查元数据是否已加载";
             }
             
             log.info("[NL2SQLTool] 初始检索到 {} 个表: {}", initialTables.size(), initialTables);
+            publishProgress("tables_retrieved", "✅ 找到 " + initialTables.size() + " 个候选表");
             
             // 2. 迭代式表发现 + 回溯机制
             Set<String> allTables = new HashSet<>(initialTables);
@@ -80,6 +134,7 @@ public class NL2SQLTool {
                         
             for (int iteration = 0; iteration < 3; iteration++) {  // 最多3轮迭代
                 log.info("[NL2SQLTool] 第{}轮迭代，当前表数量: {}", iteration + 1, allTables.size());
+                publishProgress("table_iteration", "🔄 第" + (iteration + 1) + "轮表选择优化...");
                 
                 // ⚠️ 获取关联关系（用于表选择阶段）
                 String relationshipInfo = relationshipService.getRelationshipsForPrompt(
@@ -89,6 +144,7 @@ public class NL2SQLTool {
                 String schemaInfo = buildTableSchemaInfo(new ArrayList<>(allTables), datasourceId);
                             
                 // 调用 LLM 判断并选择需要的表
+                publishProgress("llm_selecting_tables", "🤖 AI分析表依赖关系...");
                 String checkPrompt = buildTableCheckPrompt(expandedQuery, schemaInfo, relationshipInfo, datasourceId);
                 String llmResponse = modelRouter.smartGenerateSQL(checkPrompt, expandedQuery);
                             
@@ -137,6 +193,7 @@ public class NL2SQLTool {
                                 log.info("[NL2SQLTool] LLM精简表: {} -> {}", allTables.size(), selectedTables.size());
                                 log.info("[NL2SQLTool] 最终选择的表: {}", selectedTables);
                                 allTables = selectedTables; // 替换为精简后的表
+                                publishProgress("tables_optimized", "✨ 优化后选定 " + selectedTables.size() + " 张表");
                             }
                             break; // 已得到精简结果，退出迭代
                         }
@@ -150,6 +207,8 @@ public class NL2SQLTool {
                                 missingTables.add(tableNode.asText().toLowerCase());
                             }
                                         
+                            publishProgress("finding_missing_tables", "🔎 查找缺失的表: " + String.join(", ", missingTables));
+                            
                             // 尝试查找缺失的表
                             boolean foundNew = false;
                             for (String tableName : missingTables) {
@@ -172,6 +231,7 @@ public class NL2SQLTool {
                                 String reason = jsonNode.has("reason") ? jsonNode.get("reason").asText() : "缺少必要的表";
                                 needsClarification = true;
                                 clarificationMessage = reason;
+                                publishProgress("clarification_needed", "⚠️ " + reason);
                                 break;
                             }
                             // 找到了新表，继续下一轮迭代
@@ -244,6 +304,7 @@ public class NL2SQLTool {
             String ragEnhancement = "";
             if (ragService != null) {
                 try {
+                    publishProgress("rag_search", "📚 检索历史相似案例...");
                     List<RagKnowledgeBaseService.KnowledgeItem> similarItems = 
                         ragService.searchSimilarQuestions(expandedQuery, 3);
                     
@@ -283,6 +344,7 @@ public class NL2SQLTool {
                         if (validCount > 0) {
                             ragEnhancement = ragBuilder.toString();
                             log.info("[NL2SQLTool] 有效RAG示例数量: {}", validCount);
+                            publishProgress("rag_completed", "✅ 找到 " + validCount + " 个参考案例");
                         } else {
                             log.info("[NL2SQLTool] 所有RAG示例均被过滤，不使用RAG增强");
                         }
@@ -295,6 +357,8 @@ public class NL2SQLTool {
             }
             // 6. ✅ 基于关联关系智能扩展表（补充必要的JOIN表）
             Set<String> expandedTables = new HashSet<>(allTables);
+            
+            publishProgress("expanding_relationships", "🔗 分析表关联关系...");
             
             // 第一次：基于LLM选的表获取关联关系
             String relationshipInfo = relationshipService.getRelationshipsForPrompt(
@@ -316,6 +380,7 @@ public class NL2SQLTool {
                     newTables.removeAll(allTables);
                     log.info("[NL2SQLTool] 基于关联关系扩展表: {} -> {}", allTables.size(), expandedTables.size());
                     log.info("[NL2SQLTool] 新增表: {}", newTables);
+                    publishProgress("relationships_expanded", "🔗 基于关联关系扩展至 " + expandedTables.size() + " 张表");
                 }
             }
             
@@ -338,6 +403,8 @@ public class NL2SQLTool {
             
             // ✅ 关键：明确列出可用表清单，强化约束
             String availableTablesList = String.join(", ", expandedTables);
+            
+            publishProgress("generating_final_sql", "🤖 生成最终SQL...");
             
             String sqlPrompt = String.format(
                 "你是一个MySQL SQL专家。根据以下数据库结构和用户问题，生成一条MySQL查询SQL。\n\n" +
@@ -410,9 +477,12 @@ public class NL2SQLTool {
             sql = cleanSQL(sql);
             
             log.info("[NL2SQLTool] 生成的SQL: {}", sql);
+            publishProgress("sql_generated", "✅ SQL生成完成");
             
             // ⚠️ P0优化：SQL 验证与 Self-Correction
+            publishProgress("validating_sql", "🔍 验证SQL正确性...");
             sql = validateAndCorrectSQL(sql, expandedQuery, datasourceId, schemaInfo, relationshipInfo, 3);
+            publishProgress("validation_completed", "✅ SQL验证通过");
             
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
             RagLearningContext.setCurrentQuestion(expandedQuery);
