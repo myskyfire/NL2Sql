@@ -292,6 +292,7 @@
     <script>
         let sessionId = 'session_' + Date.now();
         let currentEventSource = null;
+        let currentEventType = null; // ✅ 保存当前事件类型
         
         // 发送消息
         async function sendMessage() {
@@ -352,13 +353,13 @@
                     
                     for (const line of lines) {
                         if (line.startsWith('event:')) {
-                            const eventName = line.substring(6).trim();
-                            logEvent(eventName);
+                            currentEventType = line.substring(6).trim(); // ✅ 保存事件类型
+                            logEvent(currentEventType);
                         } else if (line.startsWith('data:')) {
                             const dataStr = line.substring(5).trim();
                             try {
                                 const data = JSON.parse(dataStr);
-                                handleStreamEvent(data);
+                                handleStreamEvent(data, currentEventType); // ✅ 传递事件类型
                             } catch (e) {
                                 console.error('解析数据失败:', e);
                             }
@@ -376,36 +377,41 @@
         }
         
         // 处理流式事件
-        function handleStreamEvent(data) {
-            console.log('收到事件:', data);
+        function handleStreamEvent(data, eventType) {
+            console.log('收到事件:', eventType, data);
             
-            switch(data.type || 'unknown') {
+            switch(eventType) {
                 case 'start':
-                    addMessage('🔄 ' + data.message, 'system');
+                    addMessage('🔄 ' + (data.message || '开始生成SQL...'), 'system');
                     break;
                     
                 case 'sql_generated':
-                    addMessage(`<div class="sql-display">${escapeHtml(data.sql)}</div>`, 'agent');
-                    break;
-                    
-                case 'executing':
-                    addMessage('⚙️ ' + data.message, 'system');
+                    if (data.sql) {
+                        addMessage(`<div class="sql-display"><strong>📝 生成的 SQL:</strong><br>${escapeHtml(data.sql)}</div>`, 'agent');
+                    }
                     break;
                     
                 case 'result':
-                    if (data.data && data.data.length > 0) {
-                        addMessage(renderTable(data.data), 'agent');
+                    if (data.status === 'success') {
+                        if (data.data && data.data.length > 0) {
+                            addMessage(renderTable(data.data), 'agent');
+                            addMessage(`✅ 共 ${data.rowCount || 0} 条记录，耗时 ${(data.executionTime || 0).toFixed(2)} ms`, 'system');
+                        } else {
+                            addMessage('📭 未查到数据', 'system');
+                        }
+                    } else if (data.status === 'error') {
+                        addMessage('❌ 错误: ' + (data.error || '未知错误'), 'system');
+                    } else if (data.status === 'clarification_needed') {
+                        addMessage('❓ ' + (data.message || '需要澄清'), 'system');
                     }
-                    addMessage('✅ ' + (data.summary || '查询完成'), 'agent');
                     break;
                     
                 case 'complete':
-                    addMessage('✨ ' + data.message, 'system');
+                    addMessage('✨ ' + (data.message || '查询完成'), 'system');
                     break;
                     
-                case 'error':
-                    addMessage('❌ 错误: ' + data.error, 'system');
-                    break;
+                default:
+                    console.warn('未知事件类型:', eventType);
             }
         }
         
