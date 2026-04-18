@@ -1,6 +1,7 @@
 package com.nl2sql.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
@@ -35,7 +36,12 @@ public class StreamChatController {
     @Autowired
     private SQLExecutionTool sqlExecutionTool;
     
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+    
+    public StreamChatController() {
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
+    }
     
     /**
      * 流式对话接口（SSE）
