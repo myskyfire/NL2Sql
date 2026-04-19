@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -68,16 +69,19 @@ public class OllamaProvider implements LLMProvider {
     @Override
     public String generate(String prompt, double temperature) {
         try {
+            // ✅ 使用 Chat API 支持 Tool Calling
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", modelName);
-            requestBody.put("prompt", prompt);
+            requestBody.put("messages", List.of(
+                Map.of("role", "user", "content", prompt)
+            ));
             requestBody.put("temperature", temperature);
             requestBody.put("stream", false);
             
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/generate"))
+                .uri(URI.create(baseUrl + "/api/chat"))  // ✅ 使用 Chat API
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofSeconds(timeout))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
@@ -90,7 +94,7 @@ public class OllamaProvider implements LLMProvider {
                 throw new RuntimeException("Ollama API返回错误: " + response.body());
             }
             
-            return extractResponse(response.body());
+            return extractChatResponse(response.body());
             
         } catch (Exception e) {
             log.error("[OllamaProvider] 生成文本失败", e);
@@ -100,11 +104,14 @@ public class OllamaProvider implements LLMProvider {
     
     @Override
     public String generateJson(String systemPrompt, String userPrompt, double temperature) {
-        // Ollama支持format参数来强制JSON输出
+        // ✅ 使用 Chat API + format 参数强制 JSON 输出
         try {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", modelName);
-            requestBody.put("prompt", systemPrompt + "\n\n" + userPrompt);
+            requestBody.put("messages", List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)
+            ));
             requestBody.put("temperature", temperature);
             requestBody.put("stream", false);
             requestBody.put("format", "json");  // 强制JSON格式
@@ -112,7 +119,7 @@ public class OllamaProvider implements LLMProvider {
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/generate"))
+                .uri(URI.create(baseUrl + "/api/chat"))  // ✅ 使用 Chat API
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofSeconds(timeout))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
@@ -125,7 +132,7 @@ public class OllamaProvider implements LLMProvider {
                 throw new RuntimeException("Ollama API返回错误: " + response.body());
             }
             
-            return extractResponse(response.body());
+            return extractChatResponse(response.body());
             
         } catch (Exception e) {
             log.error("[OllamaProvider] 生成JSON失败", e);
@@ -144,10 +151,27 @@ public class OllamaProvider implements LLMProvider {
     }
     
     /**
-     * 从Ollama响应中提取文本
+     * 从 Ollama Generate API 响应中提取文本（已废弃，保留兼容）
      */
+    @Deprecated
     private String extractResponse(String responseBody) throws IOException {
         Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
+        return (String) responseMap.getOrDefault("response", "");
+    }
+    
+    /**
+     * 从 Ollama Chat API 响应中提取文本
+     */
+    private String extractChatResponse(String responseBody) throws IOException {
+        Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
+        
+        // Chat API 返回结构: {"message": {"role": "assistant", "content": "..."}}
+        Map<String, Object> message = (Map<String, Object>) responseMap.get("message");
+        if (message != null) {
+            return (String) message.getOrDefault("content", "");
+        }
+        
+        // 兼容旧版本或错误情况
         return (String) responseMap.getOrDefault("response", "");
     }
 }
