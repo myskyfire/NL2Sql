@@ -46,21 +46,59 @@ spring:
 # LLM Configuration - 多提供者架构
 # 支持企业内部部署的多种LLM后端（Ollama、ChatGLM、Qwen、Baichuan等）
 llm:
-  # 活跃的提供者名称（ollama | chatglm | qwen | baichuan）
+  # 活跃的提供者名称（根据环境切换）
+  # 开发: ollama
+  # 生产: vllm | tgi | tensorrt | llamacpp
   active-provider: ollama
   
   # 提供者优先级列表（用于自动故障转移）
   provider-priority:
     - ollama
+    - vllm
+    - tgi
+    - tensorrt
+    - llamacpp
     - chatglm
     - qwen
   
-  # Ollama配置（本地私有化部署）
+  # ========== Ollama配置（开发环境）==========
   ollama:
     enabled: true
     base-url: http://localhost:11434
     code-model: qwen2.5-coder:7b-instruct-q4_0
     nlp-model: qwen3:8b
+    timeout: 60
+  
+  # ========== vLLM配置（生产 - 高性能GPU）==========
+  vllm:
+    enabled: false
+    base-url: http://localhost:8000/v1
+    model: Qwen/Qwen3-8B
+    api-key: ${VLLM_API_KEY:}
+    timeout: 60
+  
+  # ========== TGI配置（生产 - HuggingFace官方）==========
+  tgi:
+    enabled: false
+    base-url: http://localhost:8080/v1
+    model: Qwen/Qwen3-8B
+    api-key: ""
+    timeout: 60
+  
+  # ========== TensorRT-LLM配置（生产 - NVIDIA优化）==========
+  tensorrt:
+    enabled: false
+    base-url: http://localhost:8000/v1
+    model: qwen3-8b-trt
+    api-key: ${TRITON_API_KEY:}
+    timeout: 60
+  
+  # ========== llama.cpp配置（生产 - CPU/GPU混合）==========
+  llamacpp:
+    enabled: false
+    base-url: http://localhost:8080/v1
+    model: /models/qwen3-8b-q4_k_m.gguf
+    api-key: ""
     timeout: 60
   
   # ChatGLM配置（企业内部部署，预留）

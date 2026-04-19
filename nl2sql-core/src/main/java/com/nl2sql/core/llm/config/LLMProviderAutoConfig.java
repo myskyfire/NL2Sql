@@ -48,6 +48,26 @@ public class LLMProviderAutoConfig {
      */
     private QwenConfig qwen = new QwenConfig();
     
+    /**
+     * vLLM配置（生产环境 - 高性能GPU）
+     */
+    private VllmConfig vllm = new VllmConfig();
+    
+    /**
+     * TGI配置（生产环境 - HuggingFace官方）
+     */
+    private TgiConfig tgi = new TgiConfig();
+    
+    /**
+     * TensorRT-LLM配置（生产环境 - NVIDIA优化）
+     */
+    private TensorRTConfig tensorrt = new TensorRTConfig();
+    
+    /**
+     * llama.cpp配置（生产环境 - CPU/GPU混合）
+     */
+    private LlamaCppConfig llamacpp = new LlamaCppConfig();
+    
     @Data
     public static class OllamaConfig {
         private boolean enabled = true;
@@ -70,6 +90,42 @@ public class LLMProviderAutoConfig {
         private boolean enabled = false;
         private String baseUrl = "http://localhost:8000";
         private String model = "qwen-7b-chat";
+        private String apiKey = "";
+        private int timeout = 60;
+    }
+    
+    @Data
+    public static class VllmConfig {
+        private boolean enabled = false;
+        private String baseUrl = "http://localhost:8000/v1";
+        private String model = "Qwen/Qwen3-8B";
+        private String apiKey = "${VLLM_API_KEY:}";
+        private int timeout = 60;
+    }
+    
+    @Data
+    public static class TgiConfig {
+        private boolean enabled = false;
+        private String baseUrl = "http://localhost:8080/v1";
+        private String model = "Qwen/Qwen3-8B";
+        private String apiKey = "";
+        private int timeout = 60;
+    }
+    
+    @Data
+    public static class TensorRTConfig {
+        private boolean enabled = false;
+        private String baseUrl = "http://localhost:8000/v1";
+        private String model = "qwen3-8b-trt";
+        private String apiKey = "${TRITON_API_KEY:}";
+        private int timeout = 60;
+    }
+    
+    @Data
+    public static class LlamaCppConfig {
+        private boolean enabled = false;
+        private String baseUrl = "http://localhost:8080/v1";
+        private String model = "/models/qwen3-8b-q4_k_m.gguf";
         private String apiKey = "";
         private int timeout = 60;
     }
@@ -127,6 +183,70 @@ public class LLMProviderAutoConfig {
     }
     
     /**
+     * 注册vLLM提供者（生产环境 - 高性能GPU）
+     */
+    @Bean
+    @ConditionalOnProperty(name = "llm.vllm.enabled", havingValue = "true")
+    public OpenAICompatibleProvider vllmProvider() {
+        log.info("[LLM配置] 注册vLLM提供者: model={}, url={}", vllm.getModel(), vllm.getBaseUrl());
+        return new OpenAICompatibleProvider(
+            "vllm",
+            vllm.getBaseUrl(),
+            vllm.getModel(),
+            resolveApiKey(vllm.getApiKey()),
+            vllm.getTimeout()
+        );
+    }
+    
+    /**
+     * 注册TGI提供者（生产环境 - HuggingFace官方）
+     */
+    @Bean
+    @ConditionalOnProperty(name = "llm.tgi.enabled", havingValue = "true")
+    public OpenAICompatibleProvider tgiProvider() {
+        log.info("[LLM配置] 注册TGI提供者: model={}, url={}", tgi.getModel(), tgi.getBaseUrl());
+        return new OpenAICompatibleProvider(
+            "tgi",
+            tgi.getBaseUrl(),
+            tgi.getModel(),
+            tgi.getApiKey(),
+            tgi.getTimeout()
+        );
+    }
+    
+    /**
+     * 注册TensorRT-LLM提供者（生产环境 - NVIDIA优化）
+     */
+    @Bean
+    @ConditionalOnProperty(name = "llm.tensorrt.enabled", havingValue = "true")
+    public OpenAICompatibleProvider tensorRTProvider() {
+        log.info("[LLM配置] 注册TensorRT-LLM提供者: model={}, url={}", tensorrt.getModel(), tensorrt.getBaseUrl());
+        return new OpenAICompatibleProvider(
+            "tensorrt",
+            tensorrt.getBaseUrl(),
+            tensorrt.getModel(),
+            resolveApiKey(tensorrt.getApiKey()),
+            tensorrt.getTimeout()
+        );
+    }
+    
+    /**
+     * 注册llama.cpp提供者（生产环境 - CPU/GPU混合）
+     */
+    @Bean
+    @ConditionalOnProperty(name = "llm.llamacpp.enabled", havingValue = "true")
+    public OpenAICompatibleProvider llamaCppProvider() {
+        log.info("[LLM配置] 注册llama.cpp提供者: model={}, url={}", llamacpp.getModel(), llamacpp.getBaseUrl());
+        return new OpenAICompatibleProvider(
+            "llamacpp",
+            llamacpp.getBaseUrl(),
+            llamacpp.getModel(),
+            llamacpp.getApiKey(),
+            llamacpp.getTimeout()
+        );
+    }
+    
+    /**
      * 初始化LLM提供者管理器
      */
     @Bean
@@ -153,5 +273,21 @@ public class LLMProviderAutoConfig {
         }
         
         return manager;
+    }
+    
+    /**
+     * 解析API Key（支持环境变量）
+     */
+    private String resolveApiKey(String apiKey) {
+        if (apiKey != null && apiKey.startsWith("${") && apiKey.endsWith("}")) {
+            String envVar = apiKey.substring(2, apiKey.length() - 1).split(":")[0];
+            String value = System.getenv(envVar);
+            if (value != null && !value.isEmpty()) {
+                log.debug("[LLM配置] 从环境变量读取 API Key: {}", envVar);
+                return value;
+            }
+            log.warn("[LLM配置] 环境变量 {} 未设置，使用空值", envVar);
+        }
+        return apiKey;
     }
 }

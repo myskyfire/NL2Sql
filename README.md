@@ -376,6 +376,10 @@ java -jar nl2sql-web-1.0.0.jar
 | 提供者 | 部署方式 | 状态 | 适用场景 |
 |--------|---------|------|----------|
 | **Ollama** | 本地/内网服务器 | ✅ 默认启用 | 开发测试、小团队 |
+| **vLLM** | GPU服务器/K8s | ✅ 已实现 | 高并发生产环境（推荐） |
+| **TGI** | GPU服务器/K8s | ✅ 已实现 | HuggingFace生态企业 |
+| **TensorRT-LLM** | NVIDIA GPU服务器 | ✅ 已实现 | NVIDIA极致性能优化 |
+| **llama.cpp** | CPU/GPU混合 | ✅ 已实现 | 边缘设备、资源受限环境 |
 | **ChatGLM** | 企业内部服务器 | 🔧 预留 | 中大型企业 |
 | **Qwen** | 阿里云私有化部署 | 🔧 预留 | 阿里生态企业 |
 | **Baichuan** | 企业内部服务器 | 🔧 预留 | 百川生态企业 |
@@ -385,21 +389,59 @@ java -jar nl2sql-web-1.0.0.jar
 ```yaml
 # application.yml
 llm:
-  # 活跃的提供者名称
+  # 活跃的提供者名称（根据环境切换）
+  # 开发: ollama
+  # 生产: vllm | tgi | tensorrt | llamacpp
   active-provider: ollama
   
   # 提供者优先级列表（用于自动故障转移）
   provider-priority:
     - ollama
+    - vllm
+    - tgi
+    - tensorrt
+    - llamacpp
     - chatglm
     - qwen
   
-  # Ollama配置
+  # ========== Ollama配置（开发环境）==========
   ollama:
     enabled: true
     base-url: http://localhost:11434
     code-model: qwen2.5-coder:7b-instruct-q4_0
     nlp-model: qwen3:8b
+    timeout: 60
+  
+  # ========== vLLM配置（生产 - 高性能GPU）==========
+  vllm:
+    enabled: false
+    base-url: http://gpu-server:8000/v1
+    model: Qwen/Qwen3-8B
+    api-key: ${VLLM_API_KEY:}
+    timeout: 60
+  
+  # ========== TGI配置（生产 - HuggingFace官方）==========
+  tgi:
+    enabled: false
+    base-url: http://tgi-server:8080/v1
+    model: Qwen/Qwen3-8B
+    api-key: ""
+    timeout: 60
+  
+  # ========== TensorRT-LLM配置（生产 - NVIDIA优化）==========
+  tensorrt:
+    enabled: false
+    base-url: http://triton-server:8000/v1
+    model: qwen3-8b-trt
+    api-key: ${TRITON_API_KEY:}
+    timeout: 60
+  
+  # ========== llama.cpp配置（生产 - CPU/GPU混合）==========
+  llamacpp:
+    enabled: false
+    base-url: http://cpu-server:8080/v1
+    model: /models/qwen3-8b-q4_k_m.gguf
+    api-key: ""
     timeout: 60
   
   # ChatGLM配置（企业内部部署）
@@ -430,12 +472,12 @@ llm:
 │  - generateJson()  // JSON响应              │
 └──────────────┬──────────────────────────────┘
                │ 实现
-     ┌─────────┼──────────┬──────────┐
-     ▼         ▼          ▼          ▼
-┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
-│Ollama  │ │ChatGLM │ │ Qwen   │ │Baichuan│
-│Provider│ │Provider│ │Provider│ │Provider│
-└────────┘ └────────┘ └────────┘ └────────┘
+     ┌─────────┼──────────┬──────────┬──────────┬──────────┐
+     ▼         ▼          ▼          ▼          ▼          ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+│Ollama  │ │ vLLM   │ │ TGI    │ │TensorRT│ │llama.cpp│ │ChatGLM │
+│Provider│ │Provider│ │Provider│ │Provider│ │Provider│ │Provider│
+└────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
      │
      ▼
 ┌─────────────────────────────────────────────┐
@@ -1652,21 +1694,59 @@ spring:
 
 # LLM多提供者配置
 llm:
-  # 活跃的提供者名称
+  # 活跃的提供者名称（根据环境切换）
+  # 开发: ollama
+  # 生产: vllm | tgi | tensorrt | llamacpp
   active-provider: ollama
   
   # 提供者优先级列表（用于自动故障转移）
   provider-priority:
     - ollama
+    - vllm
+    - tgi
+    - tensorrt
+    - llamacpp
     - chatglm
     - qwen
   
-  # Ollama配置
+  # ========== Ollama配置（开发环境）==========
   ollama:
     enabled: true
     base-url: http://localhost:11434
     code-model: qwen2.5-coder:7b-instruct-q4_0
     nlp-model: qwen3:8b
+    timeout: 60
+  
+  # ========== vLLM配置（生产 - 高性能GPU）==========
+  vllm:
+    enabled: false
+    base-url: http://gpu-server:8000/v1
+    model: Qwen/Qwen3-8B
+    api-key: ${VLLM_API_KEY:}
+    timeout: 60
+  
+  # ========== TGI配置（生产 - HuggingFace官方）==========
+  tgi:
+    enabled: false
+    base-url: http://tgi-server:8080/v1
+    model: Qwen/Qwen3-8B
+    api-key: ""
+    timeout: 60
+  
+  # ========== TensorRT-LLM配置（生产 - NVIDIA优化）==========
+  tensorrt:
+    enabled: false
+    base-url: http://triton-server:8000/v1
+    model: qwen3-8b-trt
+    api-key: ${TRITON_API_KEY:}
+    timeout: 60
+  
+  # ========== llama.cpp配置（生产 - CPU/GPU混合）==========
+  llamacpp:
+    enabled: false
+    base-url: http://cpu-server:8080/v1
+    model: /models/qwen3-8b-q4_k_m.gguf
+    api-key: ""
     timeout: 60
   
   # ChatGLM配置（企业内部部署）
@@ -1941,6 +2021,146 @@ docker run -p 8000:8000 chromadb/chroma
 - [ ] Milvus向量数据库支持（大规模生产环境）
 - [ ] Qdrant向量数据库支持（高性能向量检索）
 - [ ] 前端集成反馈学习（评分后提示添加新术语）
+
+---
+
+## 🚀 生产环境部署指南
+
+### LLM后端选择
+
+| 场景 | 推荐方案 | 配置 |
+|------|---------|------|
+| **本地开发** | Ollama | `active-provider: ollama` |
+| **中小企业生产** | vLLM | `active-provider: vllm` |
+| **大型企业生产** | TensorRT-LLM | `active-provider: tensorrt` |
+| **边缘部署** | llama.cpp | `active-provider: llamacpp` |
+
+### vLLM 部署（推荐）
+
+```bash
+# 1. 安装 vLLM
+pip install vllm
+
+# 2. 启动服务
+cd /path/to/vllm
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen3-8B \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --tensor-parallel-size 1 \
+  --max-model-len 32768
+
+# 3. 验证服务
+curl http://localhost:8000/v1/models
+```
+
+**application.yml 配置：**
+```yaml
+llm:
+  active-provider: vllm
+  vllm:
+    enabled: true
+    base-url: http://gpu-server:8000/v1
+    model: Qwen/Qwen3-8B
+    api-key: ${VLLM_API_KEY:}
+    timeout: 60
+```
+
+### TGI 部署（HuggingFace官方）
+
+```bash
+# Docker 启动
+docker run --gpus all \
+  -p 8080:80 \
+  ghcr.io/huggingface/text-generation-inference:latest \
+  --model-id Qwen/Qwen3-8B \
+  --num-shard 1 \
+  --max-input-length 4096 \
+  --max-total-tokens 8192
+```
+
+**application.yml 配置：**
+```yaml
+llm:
+  active-provider: tgi
+  tgi:
+    enabled: true
+    base-url: http://tgi-server:8080/v1
+    model: Qwen/Qwen3-8B
+    api-key: ""
+    timeout: 60
+```
+
+### TensorRT-LLM 部署（NVIDIA优化）
+
+```bash
+# 1. 构建 TensorRT 引擎
+trtllm-build \
+  --checkpoint_dir ./qwen3-8b-checkpoint \
+  --output_dir ./qwen3-8b-trt-engine \
+  --max_batch_size 8 \
+  --max_input_len 4096 \
+  --max_output_len 2048
+
+# 2. 启动 Triton Server
+docker run --gpus all \
+  -p 8000:8000 \
+  -v ./qwen3-8b-trt-engine:/models \
+  nvcr.io/nvidia/tritonserver:24.01-py3 \
+  tritonserver --model-repository=/models
+```
+
+**application.yml 配置：**
+```yaml
+llm:
+  active-provider: tensorrt
+  tensorrt:
+    enabled: true
+    base-url: http://triton-server:8000/v1
+    model: qwen3-8b-trt
+    api-key: ${TRITON_API_KEY:}
+    timeout: 60
+```
+
+### llama.cpp 部署（CPU/GPU混合）
+
+```bash
+# 1. 下载模型
+gguf_download qwen3-8b-q4_k_m.gguf
+
+# 2. 启动 llama-server
+./llama-server \
+  --model qwen3-8b-q4_k_m.gguf \
+  --port 8080 \
+  --host 0.0.0.0 \
+  --chat-template qwen2 \
+  --ctx-size 32768
+```
+
+**application.yml 配置：**
+```yaml
+llm:
+  active-provider: llamacpp
+  llamacpp:
+    enabled: true
+    base-url: http://cpu-server:8080/v1
+    model: /models/qwen3-8b-q4_k_m.gguf
+    api-key: ""
+    timeout: 60
+```
+
+### 故障转移配置
+
+```yaml
+llm:
+  active-provider: ollama
+  provider-priority:
+    - ollama    # 优先尝试
+    - vllm      # Ollama 失败时降级
+    - tgi       # 再次降级
+```
+
+---
 
 #### 中优先级
 - [ ] 支持更多数据库（PostgreSQL、Oracle、SQL Server）
