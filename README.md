@@ -85,7 +85,7 @@ AI自动分析数据<br>提供业务建议
 - **🎯 指代消解**: 理解“它”、“这个”、“它们”等代词
 - **📝 上下文压缩**: 智能提取关键信息，避免Prompt过长
 - **❓ 智能澄清**: 当查询意图不明确时主动询问（数据源选择、表关系澄清）
-- **🤖 ReAct Agent架构**: LLM自主决策工具调用，非硬编码路由
+- **🤖 ReAct Agent架构**: 基于Ollama原生Tool Calling，LLM通过结构化`tool_calls`自主决策工具调用
 
 #### 📊 可视化与导出
 - **📈 智能图表推荐**: 根据数据特征自动推荐柱状图/折线图/饼图/表格
@@ -1208,6 +1208,13 @@ Authorization: Bearer {token}
 ### 💬 Agent对话接口
 
 #### 16. ReAct Agent对话（推荐）
+
+**架构说明**：
+- ✅ **原生 Tool Calling**: 使用 Ollama `/api/chat` + `tools` 参数
+- ✅ **结构化返回**: LLM 返回 `tool_calls` 数组，无需正则解析
+- ✅ **多轮对话**: 自动维护 messages 历史，支持复杂推理
+- ✅ **双模型路由**: qwen3:8b（推理）+ qwen2.5-coder（SQL生成）
+
 ```http
 POST /api/agent/chat
 Authorization: Bearer {token}
@@ -1221,6 +1228,21 @@ Content-Type: application/json
     "generatedSQL": "SELECT ..."
   }
 }
+```
+
+**工作流程**：
+```
+用户问题 → ReActAgent.execute()
+  ↓
+构建 messages + tools 定义
+  ↓
+调用 LLMService.generateWithTools(messages, tools)
+  ↓
+Ollama /api/chat 返回 tool_calls 数组
+  ↓
+执行工具 → 结果反馈给 LLM
+  ↓
+最终答案或结构化数据
 ```
 
 **响应:**
@@ -1943,7 +1965,12 @@ docker run -p 8000:8000 chromadb/chroma
 - [x] 全链路追踪（MDC上下文、JSON结构化日志）
 
 #### 对话系统
-- [x] ReAct Agent架构（LLM自主决策工具调用）
+- [x] ReAct Agent架构（Ollama原生Tool Calling）
+  - [x] 切换到 `/api/chat` 端点
+  - [x] 移除 JSON 解析逻辑（extractToolCall）
+  - [x] 移除模糊匹配算法（findSimilarToolName）
+  - [x] 精简 System Prompt（减少 20% Token）
+  - [x] 双模型路由（qwen3推理 + qwen2.5-coder代码）
 - [x] 多轮对话（保存最近10轮历史）
 - [x] 指代消解（理解“它”、“这个”等代词）
 - [x] 上下文压缩（智能提取关键信息）
