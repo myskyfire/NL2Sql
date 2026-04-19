@@ -105,7 +105,12 @@ public class MetadataCollectorService {
         List<TableMetadata> tables = new ArrayList<>();
         DatabaseMetaData metaData = conn.getMetaData();
         
-        ResultSet rs = metaData.getTables(null, null, "%", new String[]{"TABLE", "VIEW"});
+        // ✅ 关键修复：获取当前连接的数据库名，只采集该库的表
+        String currentSchema = conn.getCatalog();
+        log.info("开始采集元数据: datasourceId={}, schema={}", datasourceId, currentSchema);
+        
+        // 指定 schema 参数，避免跨库污染
+        ResultSet rs = metaData.getTables(currentSchema, currentSchema, "%", new String[]{"TABLE", "VIEW"});
         
         while (rs.next()) {
             String tableName = rs.getString("TABLE_NAME");
@@ -193,7 +198,9 @@ public class MetadataCollectorService {
         List<ColumnMetadata> columns = new ArrayList<>();
         DatabaseMetaData metaData = conn.getMetaData();
         
-        ResultSet rs = metaData.getColumns(null, null, tableName, "%");
+        // ✅ 指定 schema，避免跨库
+        String currentSchema = conn.getCatalog();
+        ResultSet rs = metaData.getColumns(currentSchema, currentSchema, tableName, "%");
         
         // 检测可用字段（兼容不同MySQL版本）
         ResultSetMetaData rsMeta = rs.getMetaData();
@@ -256,7 +263,10 @@ public class MetadataCollectorService {
      */
     private void markPrimaryKeys(Connection conn, Long datasourceId, String tableName, List<ColumnMetadata> columns) throws SQLException {
         DatabaseMetaData metaData = conn.getMetaData();
-        ResultSet pkRs = metaData.getPrimaryKeys(null, null, tableName);
+        
+        // ✅ 指定 schema，避免跨库
+        String currentSchema = conn.getCatalog();
+        ResultSet pkRs = metaData.getPrimaryKeys(currentSchema, currentSchema, tableName);
         
         List<String> pkColumns = new ArrayList<>();
         while (pkRs.next()) {

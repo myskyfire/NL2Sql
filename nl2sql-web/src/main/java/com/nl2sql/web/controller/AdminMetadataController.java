@@ -136,23 +136,24 @@ public class AdminMetadataController {
      * 查询已同步的元数据（所有数据源）
      */
     @GetMapping("/metadata/list")
-    public Result<Map<String, Object>> getSyncedMetadata() {
+    public Result<Map<String, Object>> getSyncedMetadata(@RequestParam(required = false) Long datasourceId) {
         try {
-            // 获取所有数据源
-            List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
-            
             Map<String, Object> response = new HashMap<>();
             Map<String, Object> allTables = new HashMap<>();
             
-            for (DataSourceConfig ds : datasources) {
-                // 获取该数据源的所有表
+            if (datasourceId != null) {
+                // ✅ 按指定数据源查询
+                DataSourceConfig ds = dataSourceConfigService.getConfigById(datasourceId);
+                if (ds == null) {
+                    return Result.error("数据源不存在: " + datasourceId);
+                }
+                
                 List<com.nl2sql.metadata.entity.TableMetadata> tables = 
-                    metadataQueryService.getAllTables(ds.getId());
+                    metadataQueryService.getAllTables(datasourceId);
                 
                 for (com.nl2sql.metadata.entity.TableMetadata table : tables) {
-                    // 获取字段信息
                     MetadataQueryService.TableDetail detail = 
-                        metadataQueryService.getTableDetail(ds.getId(), table.getTableName());
+                        metadataQueryService.getTableDetail(datasourceId, table.getTableName());
                     
                     Map<String, Object> tableInfo = new HashMap<>();
                     tableInfo.put("tableName", table.getTableName());
@@ -166,11 +167,40 @@ public class AdminMetadataController {
                     
                     allTables.put(table.getTableName(), tableInfo);
                 }
+                
+                response.put("tables", allTables);
+                response.put("datasourceCount", 1);
+                response.put("tableCount", allTables.size());
+            } else {
+                // 查询所有数据源
+                List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
+                
+                for (DataSourceConfig ds : datasources) {
+                    List<com.nl2sql.metadata.entity.TableMetadata> tables = 
+                        metadataQueryService.getAllTables(ds.getId());
+                    
+                    for (com.nl2sql.metadata.entity.TableMetadata table : tables) {
+                        MetadataQueryService.TableDetail detail = 
+                            metadataQueryService.getTableDetail(ds.getId(), table.getTableName());
+                        
+                        Map<String, Object> tableInfo = new HashMap<>();
+                        tableInfo.put("tableName", table.getTableName());
+                        tableInfo.put("tableComment", table.getTableComment());
+                        tableInfo.put("datasourceName", ds.getName());
+                        tableInfo.put("datasourceId", ds.getId());
+                        
+                        if (detail != null && detail.getColumns() != null) {
+                            tableInfo.put("columns", detail.getColumns());
+                        }
+                        
+                        allTables.put(table.getTableName(), tableInfo);
+                    }
+                }
+                
+                response.put("tables", allTables);
+                response.put("datasourceCount", datasources.size());
+                response.put("tableCount", allTables.size());
             }
-            
-            response.put("tables", allTables);
-            response.put("datasourceCount", datasources.size());
-            response.put("tableCount", allTables.size());
             
             return Result.success(response);
         } catch (Exception e) {

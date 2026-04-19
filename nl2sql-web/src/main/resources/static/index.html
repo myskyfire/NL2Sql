@@ -437,9 +437,17 @@
                     <p>浏览数据库表结构和字段信息</p>
                 </div>
                 <div class="card">
-                    <h3>数据库表列表</h3>
+                    <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
+                        <label style="font-weight: 600; color: #333;">选择数据源：</label>
+                        <select id="datasourceSelect" onchange="onDatasourceChange()" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 200px;">
+                            <option value="">-- 请选择数据源 --</option>
+                        </select>
+                        <button onclick="loadMetadataByDatasource()" id="queryBtn" style="padding: 8px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;" disabled>
+                            🔍 查询
+                        </button>
+                    </div>
                     <div id="metadataList">
-                        <p style="color: #999; text-align: center; padding: 40px;">加载中...</p>
+                        <p style="color: #999; text-align: center; padding: 40px;">请选择数据源后点击查询</p>
                     </div>
                 </div>
             </div>
@@ -501,6 +509,14 @@
         let token = localStorage.getItem('token');
         let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
         
+        // HTML转义函数（防止XSS）
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         // 检查登录状态
         if (!token) {
             window.location.href = '/login.html';
@@ -543,7 +559,7 @@
             if (pageName === 'home') {
                 loadStats();
             } else if (pageName === 'metadata') {
-                loadMetadata();
+                loadDatasourceList(); // ✅ 只加载数据源列表，不查询元数据
             }
         }
         
@@ -584,13 +600,116 @@
             }
         }
         
+        // ✅ 加载数据源列表（填充下拉框）
+        async function loadDatasourceList() {
+            try {
+                const response = await fetch('/api/admin/datasource/list');
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    const select = document.getElementById('datasourceSelect');
+                    select.innerHTML = '<option value="">-- 请选择数据源 --</option>';
+                    
+                    result.data.forEach(ds => {
+                        const option = document.createElement('option');
+                        option.value = ds.id;
+                        option.textContent = `${ds.name} (${ds.dbType})`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载数据源列表失败:', error);
+            }
+        }
+        
+        // ✅ 数据源选择变化时启用/禁用查询按钮
+        function onDatasourceChange() {
+            const select = document.getElementById('datasourceSelect');
+            const queryBtn = document.getElementById('queryBtn');
+            queryBtn.disabled = !select.value;
+        }
+        
+        // ✅ 根据选中的数据源加载元数据
+        async function loadMetadataByDatasource() {
+            const select = document.getElementById('datasourceSelect');
+            const datasourceId = select.value;
+            
+            if (!datasourceId) {
+                alert('请先选择数据源');
+                return;
+            }
+            
+            try {
+                document.getElementById('metadataList').innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">加载中...</p>';
+                
+                const response = await fetch(`/api/admin/metadata/list?datasourceId=${datasourceId}`);
+                const result = await response.json();
+                
+                console.log('元数据接口返回:', result);
+                
+                if (result.code === 200 && result.data && result.data.tables) {
+                    const tables = result.data.tables;
+                    const container = document.getElementById('metadataList');
+                    
+                    if (Object.keys(tables).length === 0) {
+                        container.innerHTML = `
+                            <div style="text-align: center; padding: 40px; color: #999;">
+                                <p style="font-size: 16px; margin-bottom: 10px;">📭 该数据源暂无元数据</p>
+                                <p style="font-size: 14px;">请先在“数据源管理”中同步元数据</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = Object.keys(tables).map((tableName, index) => {
+                        const table = tables[tableName];
+                        const columnCount = table.columns ? table.columns.length : 0;
+                        const datasourceName = table.datasourceName || '未知数据源';
+                        const tableComment = table.tableComment || '';
+                        const tableId = `table-${index}`;
+                        const columnsId = `columns-${index}`;
+                        
+                        return `
+                            <div style="border-bottom: 1px solid #f0f0f0;">
+                                <div style="padding: 15px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleTableColumns('${tableId}', '${columnsId}')">
+                                    <div>
+                                        <strong style="font-size: 16px; color: #333;">${escapeHtml(tableName)}</strong>
+                                        ${tableComment ? `<span style="color: #888; margin-left: 10px;">${escapeHtml(tableComment)}</span>` : ''}
+                                        <span style="color: #667eea; margin-left: 10px; font-size: 12px;">[${escapeHtml(datasourceName)}]</span>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <span id="${tableId}" style="color: #667eea; font-size: 13px; padding: 4px 12px; background: #f0f4ff; border-radius: 12px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background='#667eea'; this.style.color='white'" onmouseout="this.style.background='#f0f4ff'; this.style.color='#667eea'">
+                                            ${columnCount} 个字段 ▼
+                                        </span>
+                                    </div>
+                                </div>
+                                <div id="${columnsId}" style="display: none; padding: 0 15px 15px 15px; background: #fafafa;">
+                                    ${renderColumns(table.columns)}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    console.error('元数据接口返回异常:', result);
+                    document.getElementById('metadataList').innerHTML = 
+                        `<p style="color: #f44336; text-align: center;">加载失败: ${result.message || '未知错误'}</p>`;
+                }
+            } catch (error) {
+                console.error('加载元数据失败:', error);
+                document.getElementById('metadataList').innerHTML = 
+                    `<p style="color: #f44336; text-align: center;">加载失败: ${error.message}</p>`;
+            }
+        }
+        
         // 加载元数据（从已同步的元数据表查询）
         async function loadMetadata() {
             try {
                 const response = await fetch('/api/admin/metadata/list');
                 const result = await response.json();
                 
-                if (result.code === 200 && result.data.tables) {
+                console.log('元数据接口返回:', result); // ✅ 调试日志
+                
+                if (result.code === 200 && result.data && result.data.tables) {
                     const tables = result.data.tables;
                     const container = document.getElementById('metadataList');
                     
@@ -608,6 +727,7 @@
                         const table = tables[tableName];
                         const columnCount = table.columns ? table.columns.length : 0;
                         const datasourceName = table.datasourceName || '未知数据源';
+                        const tableComment = table.tableComment || '';
                         const tableId = `table-${index}`;
                         const columnsId = `columns-${index}`;
                         
@@ -615,9 +735,9 @@
                             <div style="border-bottom: 1px solid #f0f0f0;">
                                 <div style="padding: 15px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleTableColumns('${tableId}', '${columnsId}')">
                                     <div>
-                                        <strong style="font-size: 16px; color: #333;">${tableName}</strong>
-                                        <span style="color: #888; margin-left: 10px;">${table.tableComment || ''}</span>
-                                        <span style="color: #667eea; margin-left: 10px; font-size: 12px;">[${datasourceName}]</span>
+                                        <strong style="font-size: 16px; color: #333;">${escapeHtml(tableName)}</strong>
+                                        ${tableComment ? `<span style="color: #888; margin-left: 10px;">${escapeHtml(tableComment)}</span>` : ''}
+                                        <span style="color: #667eea; margin-left: 10px; font-size: 12px;">[${escapeHtml(datasourceName)}]</span>
                                     </div>
                                     <div style="display: flex; align-items: center; gap: 10px;">
                                         <span id="${tableId}" style="color: #667eea; font-size: 13px; padding: 4px 12px; background: #f0f4ff; border-radius: 12px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background='#667eea'; this.style.color='white'" onmouseout="this.style.background='#f0f4ff'; this.style.color='#667eea'">
@@ -632,13 +752,14 @@
                         `;
                     }).join('');
                 } else {
+                    console.error('元数据接口返回异常:', result);
                     document.getElementById('metadataList').innerHTML = 
-                        '<p style="color: #f44336; text-align: center;">加载失败</p>';
+                        `<p style="color: #f44336; text-align: center;">加载失败: ${result.message || '未知错误'}</p>`;
                 }
             } catch (error) {
                 console.error('加载元数据失败:', error);
                 document.getElementById('metadataList').innerHTML = 
-                    '<p style="color: #f44336; text-align: center;">加载失败</p>';
+                    `<p style="color: #f44336; text-align: center;">加载失败: ${error.message}</p>`;
             }
         }
         
