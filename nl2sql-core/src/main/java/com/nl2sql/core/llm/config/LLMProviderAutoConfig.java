@@ -137,12 +137,26 @@ public class LLMProviderAutoConfig {
     }
     
     /**
-     * 注册Ollama提供者
+     * 注册Ollama推理提供者（qwen3:8b - 支持 Tool Calling）
      */
-    @Bean
+    @Bean("ollamaReasoningProvider")
     @ConditionalOnProperty(name = "llm.ollama.enabled", havingValue = "true", matchIfMissing = true)
-    public OllamaProvider ollamaProvider() {
-        log.info("[LLM配置] 注册Ollama提供者: model={}", ollama.getCodeModel());
+    public OllamaProvider ollamaReasoningProvider() {
+        log.info("[LLM配置] 注册Ollama推理提供者: model={}", ollama.getNlpModel());
+        return new OllamaProvider(
+            ollama.getBaseUrl(),
+            ollama.getNlpModel(),
+            ollama.getTimeout()
+        );
+    }
+    
+    /**
+     * 注册Ollama代码提供者（qwen2.5-coder - SQL生成专用）
+     */
+    @Bean("ollamaCodeProvider")
+    @ConditionalOnProperty(name = "llm.ollama.enabled", havingValue = "true", matchIfMissing = true)
+    public OllamaProvider ollamaCodeProvider() {
+        log.info("[LLM配置] 注册Ollama代码提供者: model={}", ollama.getCodeModel());
         return new OllamaProvider(
             ollama.getBaseUrl(),
             ollama.getCodeModel(),
