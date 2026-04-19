@@ -51,7 +51,7 @@ public class MetadataCollectorService {
                 List<TableMetadata> tables = collectTables(remoteConn, datasourceId);
                 result.setTableCount(tables.size());
                 
-                // 2. 清空旧数据
+                // 2. 清空旧数据（在事务内，确保原子性）
                 clearOldMetadata(datasourceId);
                 
                 // 3. 保存表元数据
@@ -305,10 +305,10 @@ public class MetadataCollectorService {
     }
     
     /**
-     * 保存表元数据
+     * 保存表元数据（使用 INSERT IGNORE 避免重复键冲突）
      */
     private void saveTableMetadata(List<TableMetadata> tables) {
-        String sql = "INSERT INTO table_metadata (datasource_id, table_name, table_comment, table_type, schema_name) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT IGNORE INTO table_metadata (datasource_id, table_name, table_comment, table_type, schema_name) VALUES (?, ?, ?, ?, ?)";
         
         for (TableMetadata table : tables) {
             localJdbcTemplate.update(sql,
@@ -322,10 +322,10 @@ public class MetadataCollectorService {
     }
     
     /**
-     * 保存字段元数据
+     * 保存字段元数据（使用 INSERT IGNORE 避免重复键冲突）
      */
     private void saveColumnMetadata(List<ColumnMetadata> columns) {
-        String sql = "INSERT INTO column_metadata (datasource_id, table_name, table_comment, column_name, data_type, column_size, decimal_digits, is_nullable, column_default, column_comment, is_primary_key, ordinal_position, character_set_name) " +
+        String sql = "INSERT IGNORE INTO column_metadata (datasource_id, table_name, table_comment, column_name, data_type, column_size, decimal_digits, is_nullable, column_default, column_comment, is_primary_key, ordinal_position, character_set_name) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         for (ColumnMetadata column : columns) {
