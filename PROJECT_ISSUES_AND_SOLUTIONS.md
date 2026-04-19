@@ -862,6 +862,7 @@ SQL语句：{sql}
 
 ### 问题12.1：LLM自主评估SQL风险的设计原则
 **时间**：2026-04-10  
+**最后更新**：2026-04-18  
 **现象**：最初设计将`analyze_sql_risk`作为独立Tool供LLM调用，但违背了Agent架构原则。
 
 **错误设计**：
@@ -877,36 +878,70 @@ agent.registerTool("execute_direct_sql", ...); // 绕过StandardQuerySkill
 - `execute_direct_sql`破坏了NL2SQL生成流程
 
 **正确方案**：
-在StandardQuerySkill内部集成风险评估：
-```java
-// ✅ 正确做法：Skill内部评估
-String sql = nl2sqlTool.generateSQL(question, datasourceId);
-RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId);
+在StandardQuerySkill内部集成 **EXPLAIN优先 + LLM辅助优化** 机制：
+```groovy
+// ✅ 正确做法：Skill内部评估（Groovy脚本）
+String sql = nl2sqlTool.generateSQL(question, datasourceId)
+RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer, nl2sqlTool)
 
 if ("HIGH".equals(riskResult.getRiskLevel())) {
-    return QueryResult.riskBlocked(riskResult.getReason(), sql);
+    // 构建优化建议
+    String optimizationSuggestion = buildOptimizationSuggestionForFrontend(riskResult)
+    return createRiskBlockedResult(riskResult.getReason(), sqlToReturn, optimizationSuggestion)
 }
 // 继续执行...
 ```
 
-**评估流程**：
+**完整评估流程**（EXPLAIN优先 + LLM辅助优化）：
 ```
-1. LLM自行评估 → {risk_level: LOW/MEDIUM/HIGH/UNCERTAIN}
-   - LOW/MEDIUM → 继续执行
-   - HIGH → 阻断
-   - UNCERTAIN → Step 2
+Step 0: 快速判断 → 简单查询直接放行（不调用 EXPLAIN）
+   - 单表查询、主键等值查询、无 JOIN/子查询/聚合函数
+   - 直接判定为 LOW 风险
 
-2. (仅当UNCERTAIN) 调用SQLRiskAnalyzer.analyzeRisk()执行EXPLAIN
-   → 将EXPLAIN结果 + SQL再次给LLM判断
-   → LLM最终决定: LOW/MEDIUM/HIGH
+Step 1: EXPLAIN 分析 → 获取客观风险等级
+   - 执行 EXPLAIN SQL 获取执行计划
+   - 分析表扫描类型、索引使用情况、行数估算等
+   - 风险等级：LOW / MEDIUM / HIGH
+
+Step 2: 根据风险等级处理
+
+1. LOW 风险 → 直接执行
+   - EXPLAIN 显示使用索引、扫描行数少
+   - 无需额外处理
+
+2. MEDIUM 风险 → 调用 LLM 获取优化建议（仅供参考，仍执行原 SQL）
+   - 将 EXPLAIN 结果传给 LLM
+   - LLM 分析性能瓶颈，给出优化建议
+   - 前端展示：橙色渐变背景显示优化建议
+   - SQL 继续执行
+
+3. HIGH 风险 → 调用 LLM 重新生成 SQL → 重新 EXPLAIN
+   - 告知 LLM 原始 SQL 和风险原因
+   - LLM 生成优化后的新 SQL
+   - 对新 SQL 再次执行 EXPLAIN
+   - 如果优化后仍是 HIGH：
+     ✅ 只返回优化后的 SQL 给前端
+     ✅ 标注高风险，需要人工介入
+     ✅ 绝对不执行 SQL
+     前端展示：错误信息 + 优化建议 + 优化后的 SQL
+   - 如果优化后风险降低：
+     使用优化后的 SQL 继续执行
+     前端展示：优化建议（如果有）
 ```
+
+**新增字段：optimizationSuggestion**
+- **中风险**：存储 LLM 给出的优化建议（性能瓶颈 + 优化建议 + 预期效果）
+- **高风险**：存储风险原因 + LLM 优化后的 SQL（如果有）+ 人工审核提示
+- **前端展示**：橙色渐变背景，清晰显示建议内容
 
 **经验教训**：
 - ✅ Agent架构中，辅助决策应在Skill内部完成
 - ✅ 不要暴露底层工具给LLM，保持分层清晰
-- ✅ LLM自主评估 + EXPLAIN辅助是最佳组合
-- ✅ 必须控制循环次数（最多2次LLM调用）
-- ✅ 高风险阻断应返回结构化错误，而非抛异常
+- ✅ **EXPLAIN 客观分析 + LLM 智能优化**是最佳组合
+- ✅ **高风险必须阻断**，绝对不能执行，即使 LLM 优化后仍是 HIGH
+- ✅ **前端友好展示**：清晰的优化建议和风险原因，帮助用户理解
+- ✅ 必须控制循环次数（最多 2 次 EXPLAIN + 2 次 LLM 调用）
+- ✅ 高风险阻断应返回结构化错误，并包含优化后的 SQL 供人工审核
 
 ---
 

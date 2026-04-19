@@ -7,6 +7,11 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
+        html, body {
+            overflow: hidden; /* ✅ 禁止全局滚动 */
+            height: 100%; /* ✅ 确保高度固定 */
+        }
+        
         body {
             font-family: 'Microsoft YaHei', Arial, sans-serif;
             background: #f5f7fa;
@@ -23,6 +28,12 @@
             align-items: center;
             justify-content: space-between;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            /* ✅ 固定顶部导航栏 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
         }
         
         .navbar h1 {
@@ -59,18 +70,63 @@
         .main-container {
             display: flex;
             min-height: calc(100vh - 60px);
+            margin-top: 60px; /* ✅ 为固定导航栏留出空间 */
         }
         
         /* 侧边栏 */
         .sidebar {
-            width: 240px;
+            width: 200px; /* ✅ 调整宽度，避免菜单项换行 */
+            min-width: 150px; /* ✅ 最小宽度 */
+            max-width: 400px; /* ✅ 最大宽度 */
             background: white;
             box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            border-right: 1px solid #e0e0e0; /* ✅ 添加右边框区分 */
             padding: 20px 0;
+            /* ✅ 侧边栏独立滚动 */
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-height: calc(100vh - 60px); /* ✅ 减去顶部导航栏高度 */
+            position: relative; /* ✅ 为拖拽条定位 */
+        }
+        
+        /* ✅ 拖拽条 */
+        .sidebar-resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            transition: background 0.2s;
+            z-index: 10;
+        }
+        
+        .sidebar-resizer:hover,
+        .sidebar-resizer.active {
+            background: #667eea;
+        }
+        
+        /* ✅ 隐藏侧边栏滚动条 */
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .sidebar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        
+        .sidebar::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
         
         .menu-item {
-            padding: 14px 24px;
+            padding: 10px 16px; /* ✅ 减小左右内边距 */
             cursor: pointer;
             transition: all 0.3s;
             border-left: 3px solid transparent;
@@ -79,6 +135,11 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            /* ✅ 动态压缩：允许缩小 */
+            min-height: 36px; /* ✅ 最小高度 */
+            white-space: nowrap; /* ✅ 禁止换行 */
+            overflow: hidden; /* ✅ 隐藏溢出 */
+            text-overflow: ellipsis; /* ✅ 显示省略号 */
         }
         
         .menu-item:hover {
@@ -99,17 +160,99 @@
         
         /* 内容区 */
         .content-area {
-            flex: 1;
-            padding: 30px;
-            overflow-y: auto;
+             flex: 1;display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         
-        .page {
+        /* 页签栏 */
+        .tab-bar {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            height: 40px;
+            overflow-x: auto; /* ✅ 允许横向滚动 */
+            overflow-y: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            /* ✅ 隐藏滚动条 - Chrome/Safari */
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+        }
+        
+        /* ✅ 隐藏滚动条 - Chrome/Safari/Opera */
+        .tab-bar::-webkit-scrollbar {
             display: none;
         }
         
+        .tab-item {
+            padding: 8px 16px;
+            margin-right: 4px;
+            cursor: pointer;
+            border-radius: 4px 4px 0 0;
+            font-size: 13px;
+            color: #666;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            position: relative;
+            /* ✅ 允许页签缩小 */
+            flex-shrink: 1;
+            min-width: 80px; /* ✅ 最小宽度 */
+            max-width: 200px; /* ✅ 最大宽度 */
+        }
+        
+        .tab-item:hover {
+            background: #f5f7fa;
+            color: #667eea;
+        }
+        
+        .tab-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            /* ✅ 激活的页签不缩小 */
+            flex-shrink: 0;
+        }
+        
+        .tab-close {
+            font-size: 16px;
+            line-height: 1;
+            padding: 0 2px;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        
+        .tab-close:hover {
+            background: rgba(0,0,0,0.1);
+        }
+        
+        .tab-item.active .tab-close:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* 页面容器 */
+        .pages-container {
+            flex: 1;
+            overflow-y: auto; /* ✅ 允许滚动 */
+            overflow-x: hidden;
+            padding: 0;
+            background: #f5f7fa;
+            position: relative;
+        }
+        
+        .page {
+            display: none !important; /* ✅ 强制隐藏，不占用空间 */
+            width: 100%;
+            min-height: auto;
+            height: auto;
+        }
+        
         .page.active {
-            display: block;
+            display: block !important; /* ✅ 只显示当前激活的页面 */
             animation: fadeIn 0.3s;
         }
         
@@ -153,9 +296,12 @@
         /* iframe容器 */
         .iframe-container {
             width: 100%;
-            height: calc(100vh - 180px);
+            min-height: calc(100vh - 60px); /* ✅ 最小高度占满视口 */
+            height: auto; /* ✅ 自动高度，根据内容调整 */
             border: none;
-            border-radius: 8px;
+            border-radius: 0;
+            background: white;
+            display: block;
         }
         
         /* 欢迎页面 */
@@ -247,236 +393,241 @@
     <!-- 主容器 -->
     <div class="main-container">
         <!-- 侧边栏菜单 -->
-        <div class="sidebar">
-            <div class="menu-item active" onclick="showPage('home')">
-                <span class="menu-icon">🏠</span>
-                <span>首页</span>
-            </div>
-            <div class="menu-item" onclick="window.open('/agent-chat.html', '_blank')">
+        <div class="sidebar" id="sidebar">
+            <div class="menu-item active" onclick="showPage('agent-chat', this)" title="真正的智能体交互，支持多轮对话、自动追问、图表推荐和数据分析">
                 <span class="menu-icon">🤖</span>
                 <span>AI Agent 对话</span>
             </div>
-            <div class="menu-item" onclick="window.open('/stream-chat.html', '_blank')">
+            <div class="menu-item" onclick="showPage('stream-chat', this)" title="实时显示SQL生成过程，SSE流式推送，体验更流畅的交互">
                 <span class="menu-icon">⚡</span>
                 <span>流式对话</span>
             </div>
-            <div class="menu-item" onclick="window.open('/relationship-management.html', '_blank')">
+            <div class="menu-item" onclick="showPage('relationship-management', this)" title="配置和管理数据库表之间的关联关系，提升SQL生成准确性">
                 <span class="menu-icon">🔗</span>
                 <span>表关联管理</span>
             </div>
-            <div class="menu-item" onclick="showPage('query')">
+            <div class="menu-item" onclick="showPage('query', this)" title="用中文直接提问，AI自动生成SQL并执行，支持多轮对话和上下文理解">
                 <span class="menu-icon">💬</span>
                 <span>NL2SQL查询</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('table-permission')">
+            <div class="menu-item admin-only hidden" onclick="showPage('table-permission', this)" title="管理用户对数据库表的访问权限，支持按用户和按表双向查询">
                 <span class="menu-icon">🔐</span>
                 <span>表授权管理</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('execution-logs')">
+            <div class="menu-item admin-only hidden" onclick="showPage('execution-logs', this)" title="查看所有SQL执行记录，包括执行时间、性能分析和慢查询监控">
                 <span class="menu-icon">📊</span>
                 <span>执行日志</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('datasource')">
+            <div class="menu-item admin-only hidden" onclick="showPage('datasource', this)" title="配置和管理数据库连接，同步元数据到本地库">
                 <span class="menu-icon">🗄️</span>
                 <span>数据源管理</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('manual-sql')">
+            <div class="menu-item admin-only hidden" onclick="showPage('manual-sql', this)" title="直接编写和执行SQL语句，支持权限校验和安全检查">
                 <span class="menu-icon">⚡</span>
                 <span>手动执行SQL</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('template')">
+            <div class="menu-item admin-only hidden" onclick="showPage('template', this)" title="管理和复用常用查询模板，提升查询效率">
                 <span class="menu-icon">📝</span>
                 <span>查询模板</span>
             </div>
-            <div class="menu-item" onclick="showPage('metadata')">
+            <div class="menu-item" onclick="showPage('metadata', this)" title="查看数据库表结构、字段信息、索引详情等元数据">
                 <span class="menu-icon">📋</span>
                 <span>元数据查看</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('user-management')">
+            <div class="menu-item admin-only hidden" onclick="showPage('user-management', this)" title="创建和管理系统用户">
                 <span class="menu-icon">👥</span>
                 <span>用户管理</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="window.open('/admin-rag-management.html', '_blank')">
+            <div class="menu-item admin-only hidden" onclick="showPage('rag-management', this)" title="导入和管理QA对，优化SQL生成质量，支持批量导入和智能检索">
                 <span class="menu-icon">🧠</span>
                 <span>RAG知识库</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="window.open('/admin-prompt-learning.html', '_blank')">
+            <div class="menu-item admin-only hidden" onclick="showPage('prompt-learning', this)" title="管理Prompt版本、A/B测试和优化建议，持续提升AI能力">
                 <span class="menu-icon">🎯</span>
                 <span>Prompt学习</span>
             </div>
+            
+            <!-- ✅ 拖拽条 -->
+            <div class="sidebar-resizer" id="sidebarResizer"></div>
         </div>
         
         <!-- 内容区域 -->
         <div class="content-area">
+            <!-- 页签栏 -->
+            <div class="tab-bar" id="tabBar">
+                <div class="tab-item active" data-page="agent-chat" onclick="switchTab('agent-chat')">
+                    <span>🤖 AI Agent 对话</span>
+                </div>
+            </div>
+            
+            <!-- 页面容器 -->
+            <div class="pages-container">
             <!-- 首页 -->
-            <div id="page-home" class="page active">
-                <div class="page-header">
-                    <h2>欢迎使用 NLP2SQL</h2>
-                    <p>企业级自然语言转SQL智能查询系统</p>
-                </div>
-                
-                <div class="stats-grid" id="statsGrid">
-                    <!-- 动态加载统计数据 -->
-                </div>
-                
-                <div class="welcome-grid">
-                    <div class="welcome-card" onclick="window.open('/agent-chat.html', '_blank')" style="border: 2px solid #667eea; background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%);">
-                        <div class="welcome-icon">🤖</div>
-                        <h3>AI Agent 对话（推荐）</h3>
-                        <p>真正的智能体交互，支持多轮对话、自动追问、图表推荐和数据分析</p>
+            <div id="page-home" class="page">
+                <div style="padding: 30px;"> <!-- ✅ 为首页添加内边距 -->
+                    <div class="page-header">
+                        <h2>欢迎使用 NLP2SQL</h2>
+                        <p>企业级自然语言转SQL智能查询系统</p>
                     </div>
                     
-                    <div class="welcome-card" onclick="window.open('/stream-chat.html', '_blank')" style="border: 2px solid #f093fb; background: linear-gradient(135deg, #fff0f6 0%, #ffe6f0 100%);">
-                        <div class="welcome-icon">⚡</div>
-                        <h3>流式对话</h3>
-                        <p>实时显示SQL生成过程，SSE流式推送，体验更流畅的交互</p>
+                    <div class="stats-grid" id="statsGrid">
+                        <!-- 动态加载统计数据 -->
                     </div>
                     
-                    <div class="welcome-card" onclick="window.open('/relationship-management.html', '_blank')">
-                        <div class="welcome-icon">🔗</div>
-                        <h3>表关联关系管理</h3>
-                        <p>配置和管理数据库表之间的关联关系，提升SQL生成准确性</p>
-                    </div>
-                    
-                    <div class="welcome-card" onclick="showPage('query')">
-                        <div class="welcome-icon">💬</div>
-                        <h3>自然语言查询</h3>
-                        <p>用中文直接提问，AI自动生成SQL并执行，支持多轮对话和上下文理解</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="showPage('table-permission')">
-                        <div class="welcome-icon">🔐</div>
-                        <h3>表授权管理</h3>
-                        <p>管理用户对数据库表的访问权限，支持按用户和按表双向查询</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="showPage('execution-logs')">
-                        <div class="welcome-icon">📊</div>
-                        <h3>执行日志</h3>
-                        <p>查看所有SQL执行记录，包括执行时间、性能分析和慢查询监控</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="showPage('datasource')">
-                        <div class="welcome-icon">🗄️</div>
-                        <h3>数据源管理</h3>
-                        <p>配置和管理数据库连接，同步元数据到本地库</p>
-                    </div>
-                    
-                    <div class="welcome-card" onclick="showPage('metadata')">
-                        <div class="welcome-icon">📋</div>
-                        <h3>元数据浏览</h3>
-                        <p>查看数据库表结构、字段信息、索引详情等元数据</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="showPage('manual-sql')">
-                        <div class="welcome-icon">⚡</div>
-                        <h3>手动执行SQL</h3>
-                        <p>直接编写和执行SQL语句，支持权限校验和安全检查</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="showPage('template')">
-                        <div class="welcome-icon">📝</div>
-                        <h3>查询模板</h3>
-                        <p>管理和复用常用查询模板，提升查询效率</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="window.open('/admin-rag-management.html', '_blank')">
-                        <div class="welcome-icon">🧠</div>
-                        <h3>RAG知识库管理</h3>
-                        <p>导入和管理QA对，优化SQL生成质量，支持批量导入和智能检索</p>
-                    </div>
-                    
-                    <div class="welcome-card admin-only hidden" onclick="window.open('/admin-prompt-learning.html', '_blank')">
-                        <div class="welcome-icon">🎯</div>
-                        <h3>Prompt学习管理</h3>
-                        <p>管理Prompt版本、A/B测试和优化建议，持续提升AI能力</p>
+                    <div class="welcome-grid">
+                        <div class="welcome-card" onclick="showPage('agent-chat')" style="border: 2px solid #667eea; background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%);">
+                            <div class="welcome-icon">🤖</div>
+                            <h3>AI Agent 对话（推荐）</h3>
+                            <p>真正的智能体交互，支持多轮对话、自动追问、图表推荐和数据分析</p>
+                        </div>
+                        
+                        <div class="welcome-card" onclick="showPage('stream-chat')" style="border: 2px solid #f093fb; background: linear-gradient(135deg, #fff0f6 0%, #ffe6f0 100%);">
+                            <div class="welcome-icon">⚡</div>
+                            <h3>流式对话</h3>
+                            <p>实时显示SQL生成过程，SSE流式推送，体验更流畅的交互</p>
+                        </div>
+                        
+                        <div class="welcome-card" onclick="showPage('relationship-management')">
+                            <div class="welcome-icon">🔗</div>
+                            <h3>表关联关系管理</h3>
+                            <p>配置和管理数据库表之间的关联关系，提升SQL生成准确性</p>
+                        </div>
+                        
+                        <div class="welcome-card" onclick="showPage('query')">
+                            <div class="welcome-icon">💬</div>
+                            <h3>自然语言查询</h3>
+                            <p>用中文直接提问，AI自动生成SQL并执行，支持多轮对话和上下文理解</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('table-permission')">
+                            <div class="welcome-icon">🔐</div>
+                            <h3>表授权管理</h3>
+                            <p>管理用户对数据库表的访问权限，支持按用户和按表双向查询</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('execution-logs')">
+                            <div class="welcome-icon">📊</div>
+                            <h3>执行日志</h3>
+                            <p>查看所有SQL执行记录，包括执行时间、性能分析和慢查询监控</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('datasource')">
+                            <div class="welcome-icon">🗄️</div>
+                            <h3>数据源管理</h3>
+                            <p>配置和管理数据库连接，同步元数据到本地库</p>
+                        </div>
+                        
+                        <div class="welcome-card" onclick="showPage('metadata')">
+                            <div class="welcome-icon">📋</div>
+                            <h3>元数据浏览</h3>
+                            <p>查看数据库表结构、字段信息、索引详情等元数据</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('manual-sql')">
+                            <div class="welcome-icon">⚡</div>
+                            <h3>手动执行SQL</h3>
+                            <p>直接编写和执行SQL语句，支持权限校验和安全检查</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('template')">
+                            <div class="welcome-icon">📝</div>
+                            <h3>查询模板</h3>
+                            <p>管理和复用常用查询模板，提升查询效率</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('rag-management')">
+                            <div class="welcome-icon">🧠</div>
+                            <h3>RAG知识库管理</h3>
+                            <p>导入和管理QA对，优化SQL生成质量，支持批量导入和智能检索</p>
+                        </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('prompt-learning')">
+                            <div class="welcome-icon">🎯</div>
+                            <h3>Prompt学习管理</h3>
+                            <p>管理Prompt版本、A/B测试和优化建议，持续提升AI能力</p>
+                        </div>
                     </div>
                 </div>
             </div>
             
             <!-- NL2SQL查询页面 -->
             <div id="page-query" class="page">
-                <div class="page-header">
-                    <h2>💬 自然语言查询</h2>
-                    <p>用自然语言描述你的查询需求，AI会自动生成并执行SQL</p>
-                </div>
-                <iframe id="iframe-query" class="iframe-container" src="/query.html"></iframe>
+                <iframe id="iframe-query" class="iframe-container" src="/query.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 表授权管理页面 -->
             <div id="page-table-permission" class="page">
-                <div class="page-header">
-                    <h2>🔐 表授权管理</h2>
-                    <p>管理用户对数据库表的访问权限（仅管理员）</p>
-                </div>
-                <iframe id="iframe-table-permission" class="iframe-container" src="/admin-table-permission.html"></iframe>
+                <iframe id="iframe-table-permission" class="iframe-container" src="/admin-table-permission.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 执行日志页面 -->
             <div id="page-execution-logs" class="page">
-                <div class="page-header">
-                    <h2>📊 SQL执行日志</h2>
-                    <p>查看SQL执行历史、性能分析和审计记录（仅管理员）</p>
-                </div>
-                <iframe id="iframe-execution-logs" class="iframe-container" src="/admin-execution-logs.html"></iframe>
+                <iframe id="iframe-execution-logs" class="iframe-container" src="/admin-execution-logs.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 数据源管理页面 -->
             <div id="page-datasource" class="page">
-                <div class="page-header">
-                    <h2>🗄️ 数据源管理</h2>
-                    <p>配置数据库连接，测试连通性，同步元数据（仅管理员）</p>
-                </div>
-                <iframe id="iframe-datasource" class="iframe-container" src="/admin-datasource.html"></iframe>
+                <iframe id="iframe-datasource" class="iframe-container" src="/admin-datasource.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 元数据查看页面 -->
             <div id="page-metadata" class="page">
-                <div class="page-header">
-                    <h2>📋 元数据查看</h2>
-                    <p>浏览数据库表结构和字段信息</p>
-                </div>
-                <div class="card">
-                    <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
-                        <label style="font-weight: 600; color: #333;">选择数据源：</label>
-                        <select id="datasourceSelect" onchange="onDatasourceChange()" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 200px;">
-                            <option value="">-- 请选择数据源 --</option>
-                        </select>
-                        <button onclick="loadMetadataByDatasource()" id="queryBtn" style="padding: 8px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;" disabled>
-                            🔍 查询
-                        </button>
-                    </div>
-                    <div id="metadataList">
-                        <p style="color: #999; text-align: center; padding: 40px;">请选择数据源后点击查询</p>
+                <div style="padding: 30px;"> <!-- ✅ 为元数据页面添加内边距 -->
+                    <div class="card">
+                        <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
+                            <label style="font-weight: 600; color: #333;">选择数据源：</label>
+                            <select id="datasourceSelect" onchange="onDatasourceChange()" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 200px;">
+                                <option value="">-- 请选择数据源 --</option>
+                            </select>
+                            <button onclick="loadMetadataByDatasource()" id="queryBtn" style="padding: 8px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;" disabled>
+                                🔍 查询
+                            </button>
+                        </div>
+                        <div id="metadataList">
+                            <p style="color: #999; text-align: center; padding: 40px;">请选择数据源后点击查询</p>
+                        </div>
                     </div>
                 </div>
             </div>
             
             <!-- 手动执行SQL页面 -->
             <div id="page-manual-sql" class="page">
-                <div class="page-header">
-                    <h2>⚡ 手动执行SQL</h2>
-                    <p>直接编写和执行SQL语句，支持权限校验和安全检查（仅管理员）</p>
-                </div>
-                <iframe id="iframe-manual-sql" class="iframe-container" src="/admin-manual-sql.html"></iframe>
+                <iframe id="iframe-manual-sql" class="iframe-container" src="/admin-manual-sql.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 查询模板管理页面 -->
             <div id="page-template" class="page">
-                <div class="page-header">
-                    <h2>📝 查询模板管理</h2>
-                    <p>管理和复用常用查询模板（仅管理员）</p>
-                </div>
-                <iframe id="iframe-template" class="iframe-container" src="/admin-template.html"></iframe>
+                <iframe id="iframe-template" class="iframe-container" src="/admin-template.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 用户管理页面 -->
             <div id="page-user-management" class="page">
-                <div class="page-header">
-                    <h2>👥 用户管理</h2>
-                    <p>创建和管理系统用户（仅管理员）</p>
-                </div>
-                <iframe id="iframe-user-management" class="iframe-container" src="/admin-user-management.html"></iframe>
+                <iframe id="iframe-user-management" class="iframe-container" src="/admin-user-management.html" onload="fixIframeStyle(this)"></iframe>
+            </div>
+            
+            <!-- AI Agent 对话页面 -->
+            <div id="page-agent-chat" class="page active">
+                <iframe id="iframe-agent-chat" class="iframe-container" src="/agent-chat.html" onload="fixIframeStyle(this)"></iframe>
+            </div>
+            
+            <!-- 流式对话页面 -->
+            <div id="page-stream-chat" class="page">
+                <iframe id="iframe-stream-chat" class="iframe-container" src="/stream-chat.html" onload="fixIframeStyle(this)"></iframe>
+            </div>
+            
+            <!-- 表关联管理页面 -->
+            <div id="page-relationship-management" class="page">
+                <iframe id="iframe-relationship-management" class="iframe-container" src="/relationship-management.html" onload="fixIframeStyle(this)"></iframe>
+            </div>
+            
+            <!-- RAG知识库管理页面 -->
+            <div id="page-rag-management" class="page">
+                <iframe id="iframe-rag-management" class="iframe-container" src="/admin-rag-management.html" onload="fixIframeStyle(this)"></iframe>
+            </div>
+            
+            <!-- Prompt学习管理页面 -->
+            <div id="page-prompt-learning" class="page">
+                <iframe id="iframe-prompt-learning" class="iframe-container" src="/admin-prompt-learning.html" onload="fixIframeStyle(this)"></iframe>
             </div>
         </div>
     </div>
@@ -509,7 +660,188 @@
         let token = localStorage.getItem('token');
         let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
         
-        // HTML转义函数（防止XSS）
+        // ✅ 修复 iframe 内嵌页面的样式冲突
+        function fixIframeStyle(iframe) {
+            const applyStyles = () => {
+                try {
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (!iframeDoc || !iframeDoc.body) {
+                        console.warn('⚠️ iframe 文档未就绪，500ms后重试...');
+                        setTimeout(applyStyles, 500);
+                        return;
+                    }
+                    
+                    // 注入样式覆盖，移除子页面的背景渐变和边距
+                    const style = iframeDoc.createElement('style');
+                    
+                    // ✅ 判断是否为对话页面（需要保留 flex 布局）
+                    const isChatPage = iframe.src.includes('agent-chat.html') || iframe.src.includes('stream-chat.html');
+                    
+                    style.textContent = `
+                        /* 强制重置 body */
+                        body {
+                            background: white !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            height: auto !important;  /* ✅ 自动高度 */
+                            overflow-y: visible !important;  /* ✅ 不内部滚动，由父容器滚动 */
+                            overflow-x: hidden !important;
+                        }
+                        html {
+                            height: auto !important;
+                            overflow: visible !important;
+                        }
+                        /* 隐藏子页面的独立 header */
+                        .chat-header, .header {
+                            display: none !important;
+                        }
+                        /* 调整容器 */
+                        .chat-container, .container, .main-container, .app-container, .query-container {
+                            height: auto !important;
+                            min-height: auto !important;
+                            max-height: none !important;
+                            border-radius: 0 !important;
+                            box-shadow: none !important;
+                            width: 100% !important;
+                            max-width: none !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            display: block !important;
+                            overflow: visible !important;
+                        }
+                        /* 内容区域允许正常显示 */
+                        .chat-messages, .content-area, .messages-container, .chat-area, .content {
+                            height: auto !important;
+                            min-height: auto !important;
+                            max-height: none !important;
+                            overflow-y: visible !important;
+                            overflow-x: hidden !important;
+                            padding: 20px !important;
+                        }
+                        /* 输入区域固定在底部 - 使用 sticky */
+                        .chat-input-area, .input-area {
+                            position: sticky !important;
+                            bottom: 0 !important;
+                            left: 0 !important;
+                            right: 0 !important;
+                            z-index: 100 !important;
+                            background: white !important;
+                            border-top: 1px solid #e0e0e0 !important;
+                        }
+                        h1, h2 {
+                            margin-top: 0 !important;
+                            padding-top: 20px !important;
+                            padding-left: 20px !important;
+                            padding-right: 20px !important;
+                        }
+                        .container > h1:first-child {
+                            display: none !important;
+                        }
+                        .stats-grid {
+                            display: grid !important;
+                            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
+                            gap: 20px !important;
+                            margin-bottom: 30px !important;
+                            padding: 0 20px !important;
+                        }
+                        .table-container {
+                            overflow-x: auto !important;
+                        }
+                        form > div[style*="grid"] {
+                            display: grid !important;
+                            grid-template-columns: 2fr 1fr !important;
+                            gap: 16px !important;
+                        }
+                        .card {
+                            margin: 0 20px 20px 20px !important;
+                            page-break-inside: avoid !important;
+                            overflow: visible !important;
+                        }
+                        table {
+                            width: 100% !important;
+                        }
+                        select, input, textarea {
+                            max-width: 100% !important;
+                            box-sizing: border-box !important;
+                        }
+                        .toolbar {
+                            display: flex !important;
+                            justify-content: space-between !important;
+                            align-items: center !important;
+                            margin-bottom: 24px !important;
+                            flex-wrap: wrap !important;
+                            gap: 12px !important;
+                            padding: 0 20px !important;
+                        }
+                        .modal-overlay, .modal {
+                            position: relative !important;
+                            display: none !important;
+                        }
+                        .modal-overlay.active, .modal.active {
+                            display: flex !important;
+                            position: fixed !important;
+                            top: 0 !important;
+                            left: 0 !important;
+                            right: 0 !important;
+                            bottom: 0 !important;
+                            width: 100% !important;
+                            height: 100% !important;
+                            background: rgba(0,0,0,0.5) !important;
+                            z-index: 9999 !important;
+                        }
+                        .modal-content, .modal > .modal-content {
+                            max-height: 80vh !important;
+                            overflow-y: auto !important;
+                        }
+                    `;
+                    iframeDoc.head.appendChild(style);
+                    
+                    // ✅ 动态调整 iframe 高度以适应内容
+                    const adjustHeight = () => {
+                        try {
+                            const docHeight = Math.max(
+                                iframeDoc.body.scrollHeight,
+                                iframeDoc.documentElement.scrollHeight,
+                                iframeDoc.body.offsetHeight
+                            );
+                            
+                            // ✅ 额外增加 50px 余量
+                            const newHeight = Math.max(docHeight + 50, window.innerHeight - 60);
+                            
+                            if (iframe.style.height !== newHeight + 'px') {
+                                iframe.style.height = newHeight + 'px';
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ 无法调整 iframe 高度:', e.message);
+                        }
+                    };
+                    
+                    // ✅ 监听 DOM 变化，动态调整高度
+                    const observer = new MutationObserver(() => {
+                        setTimeout(adjustHeight, 100);
+                    });
+                    
+                    observer.observe(iframeDoc.body, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true
+                    });
+                    
+                    // 初始调整 + 延迟调整
+                    adjustHeight();
+                    setTimeout(adjustHeight, 500);
+                    setTimeout(adjustHeight, 1500);
+                    
+                    console.log('✅ iframe 样式已修复:', iframe.src);
+                } catch (e) {
+                    console.warn('⚠️ 无法访问 iframe 内容（跨域限制）:', e.message);
+                }
+            };
+            
+            // 立即执行 + 延迟执行作为备用
+            applyStyles();
+            setTimeout(applyStyles, 1000);  // 1秒后再次尝试
+        }
         function escapeHtml(text) {
             if (text === null || text === undefined) return '';
             const div = document.createElement('div');
@@ -533,8 +865,46 @@
             });
         }
         
+        // ✅ 侧边栏拖拽调整宽度
+        const sidebar = document.getElementById('sidebar');
+        const resizer = document.getElementById('sidebarResizer');
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+        
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = parseInt(document.defaultView.getComputedStyle(sidebar).width, 10);
+            resizer.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none'; // 禁止选中文本
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const newWidth = startWidth + (e.clientX - startX);
+            const minWidth = 150;
+            const maxWidth = 400;
+            
+            if (newWidth >= minWidth && newWidth <= maxWidth) {
+                sidebar.style.width = newWidth + 'px';
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('active');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+        
         // 切换页面
-        function showPage(pageName) {
+        function showPage(pageName, clickedElement) {
             // 隐藏所有页面
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
@@ -546,20 +916,134 @@
             });
             
             // 显示目标页面
-            document.getElementById(`page-${pageName}`).classList.add('active');
-            
-            // 激活对应菜单
-            const menuItems = document.querySelectorAll('.menu-item');
-            const pageIndex = ['home', 'agent-chat', 'relationship-management', 'query', 'table-permission', 'execution-logs', 'datasource', 'manual-sql', 'template', 'metadata', 'user-management'].indexOf(pageName);
-            if (pageIndex >= 0 && menuItems[pageIndex]) {
-                menuItems[pageIndex].classList.add('active');
+            const targetPage = document.getElementById(`page-${pageName}`);
+            if (targetPage) {
+                targetPage.classList.add('active');
             }
+            
+            // ✅ 关键修复：直接高亮被点击的菜单项（避免索引错位）
+            if (clickedElement) {
+                clickedElement.classList.add('active');
+            }
+            
+            // ✅ 添加或切换到对应页签
+            addOrSwitchTab(pageName);
             
             // 加载页面数据
             if (pageName === 'home') {
                 loadStats();
             } else if (pageName === 'metadata') {
                 loadDatasourceList(); // ✅ 只加载数据源列表，不查询元数据
+            }
+        }
+        
+        // ✅ 页签管理
+        let openTabs = ['agent-chat']; // 默认打开 AI Agent 对话
+        
+        function addOrSwitchTab(pageName) {
+            const tabBar = document.getElementById('tabBar');
+            
+            // 如果页签不存在，则添加
+            if (!openTabs.includes(pageName)) {
+                openTabs.push(pageName);
+                const tabItem = createTabItem(pageName);
+                tabBar.appendChild(tabItem);
+            }
+            
+            // 激活对应页签
+            document.querySelectorAll('.tab-item').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.dataset.page === pageName) {
+                    tab.classList.add('active');
+                }
+            });
+        }
+        
+        function createTabItem(pageName) {
+            const tabNames = {
+                'agent-chat': '🤖 AI Agent',
+                'stream-chat': '⚡ 流式对话',
+                'relationship-management': '🔗 表关联',
+                'query': '💬 NL2SQL',
+                'table-permission': '🔐 表授权',
+                'execution-logs': '📊 执行日志',
+                'datasource': '🗄️ 数据源',
+                'manual-sql': '⚡ 手动SQL',
+                'template': '📝 模板',
+                'metadata': '📋 元数据',
+                'user-management': '👥 用户管理',
+                'rag-management': '🧠 RAG',
+                'prompt-learning': '🎯 Prompt'
+            };
+            
+            const tabItem = document.createElement('div');
+            tabItem.className = 'tab-item';
+            tabItem.dataset.page = pageName;
+            tabItem.onclick = () => switchTab(pageName);
+            
+            const tabName = tabNames[pageName] || pageName;
+            // ✅ 第一个页签（agent-chat）不显示关闭按钮
+            const showClose = openTabs.length > 1 || pageName !== 'agent-chat';
+            tabItem.innerHTML = `
+                <span>${tabName}</span>
+                ${showClose ? '<span class="tab-close" onclick="event.stopPropagation(); closeTab(\'' + pageName + '\')">×</span>' : ''}
+            `;
+            
+            return tabItem;
+        }
+        
+        function switchTab(pageName) {
+            // 隐藏所有页面
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // 显示目标页面
+            const targetPage = document.getElementById(`page-${pageName}`);
+            if (targetPage) {
+                targetPage.classList.add('active');
+            }
+            
+            // 激活对应页签
+            document.querySelectorAll('.tab-item').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.dataset.page === pageName) {
+                    tab.classList.add('active');
+                }
+            });
+            
+            // 高亮对应菜单
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // 加载页面数据
+            if (pageName === 'home') {
+                loadStats();
+            } else if (pageName === 'metadata') {
+                loadDatasourceList();
+            }
+        }
+        
+        function closeTab(pageName) {
+            if (openTabs.length === 1) return; // ✅ 不能关闭最后一个页签
+            
+            const index = openTabs.indexOf(pageName);
+            if (index > -1) {
+                openTabs.splice(index, 1);
+            }
+            
+            // 移除页签DOM
+            const tabToRemove = document.querySelector(`.tab-item[data-page="${pageName}"]`);
+            if (tabToRemove) {
+                tabToRemove.remove();
+            }
+            
+            // 如果关闭的是当前激活的页签，切换到前一个
+            const activeTab = document.querySelector('.tab-item.active');
+            if (!activeTab && openTabs.length > 0) {
+                const lastTab = openTabs[openTabs.length - 1];
+                switchTab(lastTab);
             }
         }
         
@@ -919,9 +1403,46 @@
             }
         }
         
+        // ✅ 动态调整菜单项行间距，避免滚动条
+        function adjustMenuSpacing() {
+            const sidebar = document.querySelector('.sidebar');
+            const menuItems = document.querySelectorAll('.menu-item');
+            
+            if (!sidebar || menuItems.length === 0) return;
+            
+            const sidebarHeight = sidebar.clientHeight; // 侧边栏可用高度
+            const padding = 40; // 上下 padding 总和 (20px * 2)
+            const availableHeight = sidebarHeight - padding;
+            const itemCount = menuItems.length;
+            
+            // 计算每个菜单项的最大允许高度
+            const maxItemHeight = availableHeight / itemCount;
+            
+            // 基础样式：padding 10px + 字体 14px + 行高约 20px = 约 40px
+            const baseItemHeight = 40;
+            
+            if (maxItemHeight < baseItemHeight) {
+                // 需要压缩
+                const newPadding = Math.max(4, Math.floor((maxItemHeight - 20) / 2)); // 保留 20px 给文字和图标
+                menuItems.forEach(item => {
+                    item.style.padding = `${newPadding}px 24px`;
+                });
+                console.log(`✅ 菜单已压缩: ${itemCount} 项, 新 padding: ${newPadding}px`);
+            } else {
+                // 恢复默认
+                menuItems.forEach(item => {
+                    item.style.padding = '10px 24px';
+                });
+            }
+        }
+        
         // 页面加载时初始化
         window.onload = function() {
             loadStats();
+            adjustMenuSpacing(); // ✅ 调整菜单间距
+            
+            // 窗口大小改变时重新调整
+            window.addEventListener('resize', adjustMenuSpacing);
         };
     </script>
 </body>

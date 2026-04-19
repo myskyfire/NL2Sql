@@ -24,6 +24,7 @@
             width: 90%;
             max-width: 1200px;
             height: 90vh;
+            min-height: calc(100vh - 60px); /* ✅ 确保最小高度 */
             background: white;
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -79,10 +80,11 @@
         }
         
         .chat-area {
-            flex: 1;
+            flex: 1; /* ✅ 占据剩余空间 */
             overflow-y: auto;
             padding: 30px;
             background: #f8f9fa;
+            min-height: 0; /* ✅ 允许收缩 */
         }
         
         .message {
@@ -198,6 +200,7 @@
             border-top: 1px solid #e0e0e0;
             display: flex;
             gap: 10px;
+            flex-shrink: 0; /* ✅ 防止被压缩 */
         }
         
         .input-wrapper {

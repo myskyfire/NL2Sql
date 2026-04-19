@@ -21,6 +21,7 @@
             width: 90%;
             max-width: 1200px;
             height: 90vh;
+            min-height: calc(100vh - 60px); /* ✅ 确保最小高度 */
             background: white;
             border-radius: 16px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -75,10 +76,11 @@
         
         /* 消息区域 */
         .chat-messages {
-            flex: 1;
+            flex: 1; /* ✅ 占据剩余空间 */
             overflow-y: auto;
             padding: 24px;
             background: #f8f9fa;
+            min-height: 0; /* ✅ 允许收缩 */
         }
         
         .message {
@@ -253,6 +255,7 @@
             border-top: 1px solid #e0e0e0;
             display: flex;
             gap: 12px;
+            flex-shrink: 0; /* ✅ 防止被压缩 */
         }
         
         .chat-input {
@@ -505,7 +508,23 @@
                     break;
                     
                 case 'error':
-                    addMessage(`❌ ${data.error}`, 'agent');
+                    let errorHtml = `❌ ${data.error}`;
+                    
+                    // ✅ 如果有优化建议，也显示出来（高风险 SQL 阻断时）
+                    if (data.optimizationSuggestion) {
+                        console.log('[错误响应] 检测到 optimizationSuggestion:', data.optimizationSuggestion);
+                        errorHtml += `<br><br><div class="ai-summary" style="background:linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);border-left-color:#ff9800;">
+                            <strong>💡 优化建议:</strong><br>
+                            ${escapeHtml(data.optimizationSuggestion).replace(/\n/g, '<br>')}
+                        </div>`;
+                        
+                        // 如果有优化后的 SQL，显示出来
+                        if (data.sql) {
+                            errorHtml += `<div class="sql-display" style="margin-top:10px;"><strong>🔧 LLM 优化后的 SQL:</strong><br>${escapeHtml(data.sql)}</div>`;
+                        }
+                    }
+                    
+                    addMessage(errorHtml, 'agent');
                     break;
                     
                 default:
@@ -578,6 +597,15 @@
             if (data.generatedSQL || data.sql) {
                 const sqlToDisplay = data.generatedSQL || data.sql;
                 html += `<div class="sql-display"><strong>📝 执行的 SQL:</strong><br>${escapeHtml(sqlToDisplay)}</div>`;
+            }
+            
+            // ✅ 新增：显示优化建议/风险原因
+            if (data.optimizationSuggestion) {
+                console.log('[优化建议] 检测到 optimizationSuggestion:', data.optimizationSuggestion);
+                html += `<div class="ai-summary" style="background:linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);border-left-color:#ff9800;">
+                    <strong>💡 优化建议:</strong><br>
+                    ${escapeHtml(data.optimizationSuggestion).replace(/\n/g, '<br>')}
+                </div>`;
             }
             
             // ✅ 显示数据表格（await异步渲染）

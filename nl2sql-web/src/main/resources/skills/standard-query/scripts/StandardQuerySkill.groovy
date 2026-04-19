@@ -37,6 +37,9 @@ class StandardQuerySkill {
         
         println "[StandardQuerySkill] 开始执行标准查询: question=${question}, datasourceId=${datasourceId}"
         
+        // ✅ 用于保存中风险结果，后续添加到返回结果中
+        RiskAssessmentResult mediumRiskResult = null
+        
         // ✅ 关键检查：如果缺少 datasourceId，返回澄清请求
         if (datasourceId == null) {
             println "[StandardQuerySkill] 缺少 datasourceId，返回澄清请求"
@@ -115,15 +118,25 @@ class StandardQuerySkill {
             if (!hasSyntaxError) {
                 log.info("Step 2.5: 评估SQL风险")
                 publishEvent(context, sessionId, "assessing_risk", "🔍 评估SQL风险...")
-                RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer)
+                RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer, nl2sqlTool, context, sessionId)
                 
                 if ("HIGH".equals(riskResult.getRiskLevel())) {
                     log.warn("SQL风险评估为高风险，阻断执行: {}", riskResult.getReason())
                     publishEvent(context, sessionId, "risk_blocked", "⚠️ 高风险SQL已阻断: " + riskResult.getReason())
-                    return createRiskBlockedResult(riskResult.getReason(), sql)
+                    
+                    // ✅ 关键修复：如果经过 LLM 优化，返回优化后的 SQL；否则返回原始 SQL
+                    String sqlToReturn = riskResult.getOptimizedSql() != null ? riskResult.getOptimizedSql() : sql
+                    
+                    // ✅ 构建优化建议/风险原因
+                    String optimizationSuggestion = buildOptimizationSuggestionForFrontend(riskResult)
+                    
+                    return createRiskBlockedResult(riskResult.getReason(), sqlToReturn, optimizationSuggestion)
                 } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
                     log.info("SQL风险评估为中风险，继续执行但提示用户: {}", riskResult.getReason())
                     publishEvent(context, sessionId, "risk_medium", "⚠️ 中风险SQL，继续执行")
+                    
+                    // ✅ 保存风险结果，用于后续添加到返回结果中
+                    mediumRiskResult = riskResult
                 } else {
                     log.debug("SQL风险评估为低风险，直接执行")
                     publishEvent(context, sessionId, "risk_low", "✅ 风险评估通过")
@@ -159,6 +172,10 @@ class StandardQuerySkill {
                 publishEvent(context, sessionId, "generating_chart", "📊 生成" + getChartTypeName(chartType) + "...")
                 Map<String, Object> echartsConfig = generateEChartsConfig(chartType, execResult.data)
                 publishEvent(context, sessionId, "chart_generated", "✅ 图表生成完成")
+                
+                // ✅ 如果有中风险结果，构建优化建议
+                String optimizationSuggestion = mediumRiskResult != null ? buildOptimizationSuggestionForFrontend(mediumRiskResult) : null
+                
                 return createSuccessResultWithChart(
                     execResult.data, 
                     execResult.rowCount, 
@@ -166,11 +183,15 @@ class StandardQuerySkill {
                     sql, 
                     datasourceId,
                     chartType,
-                    echartsConfig
+                    echartsConfig,
+                    optimizationSuggestion
                 )
             }
             
-            return createSuccessResult(execResult.data, execResult.rowCount, execResult.executionTime, sql, datasourceId)
+            // ✅ 如果有中风险结果，构建优化建议
+            String optimizationSuggestion = mediumRiskResult != null ? buildOptimizationSuggestionForFrontend(mediumRiskResult) : null
+            
+            return createSuccessResult(execResult.data, execResult.rowCount, execResult.executionTime, sql, datasourceId, optimizationSuggestion)
             
         } catch (Exception e) {
             log.error("执行异常: {}", e.message, e)
@@ -196,10 +217,78 @@ class StandardQuerySkill {
     }
     
     /**
-     * 评估SQL风险（LLM自主判断 + EXPLAIN辅助）
+     * ✅ 为前端构建优化建议/风险原因
+     * 
+     * @param riskResult 风险评估结果
+     * @return 前端友好的优化建议文本
+     */
+    private String buildOptimizationSuggestionForFrontend(RiskAssessmentResult riskResult) {
+        if (riskResult == null) {
+            return null
+        }
+        
+        StringBuilder suggestion = new StringBuilder()
+        
+        if ("HIGH".equals(riskResult.getRiskLevel())) {
+            // 🔴 高风险：返回风险原因和优化后的 SQL（如果有）
+            suggestion.append("⚠️ 高风险SQL，已阻断执行\n\n")
+            suggestion.append("📋 风险原因：\n")
+            suggestion.append(riskResult.getReason()).append("\n\n")
+            
+            if (riskResult.getOptimizedSql() != null && !riskResult.getOptimizedSql().trim().isEmpty()) {
+                suggestion.append("💡 LLM 已尝试优化，生成新 SQL：\n")
+                suggestion.append(riskResult.getOptimizedSql()).append("\n\n")
+                suggestion.append("👉 请人工审核上述优化后的 SQL，确认安全后再执行。")
+            } else {
+                suggestion.append("👉 请人工审核原始 SQL，确认安全后再执行。")
+            }
+            
+        } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
+            // ⚠️ 中风险：返回 LLM 优化建议
+            suggestion.append("⚠️ 中风险SQL，继续执行但请注意以下优化建议：\n\n")
+            
+            if (riskResult.getLlmSuggestion() != null) {
+                OptimizationSuggestion llmSuggestion = riskResult.getLlmSuggestion()
+                
+                if (llmSuggestion.getBottleneck() != null && !llmSuggestion.getBottleneck().trim().isEmpty()) {
+                    suggestion.append("🔍 性能瓶颈：\n")
+                    suggestion.append(llmSuggestion.getBottleneck()).append("\n\n")
+                }
+                
+                if (llmSuggestion.getSuggestion() != null && !llmSuggestion.getSuggestion().trim().isEmpty()) {
+                    suggestion.append("💡 优化建议：\n")
+                    suggestion.append(llmSuggestion.getSuggestion()).append("\n\n")
+                }
+                
+                if (llmSuggestion.getExpectedImprovement() != null && !llmSuggestion.getExpectedImprovement().trim().isEmpty()) {
+                    suggestion.append("📈 预期效果：\n")
+                    suggestion.append(llmSuggestion.getExpectedImprovement())
+                }
+            } else {
+                // 如果没有 LLM 建议，使用 EXPLAIN 的风险信息
+                suggestion.append("📋 风险点：\n")
+                suggestion.append(riskResult.getReason())
+            }
+        }
+        
+        return suggestion.toString()
+    }
+    
+    /**
+     * 评估SQL风险（EXPLAIN优先 + LLM辅助优化）
+     * 
+     * 完整流程：
+     * 0. 快速判断 → 简单查询直接放行（不调用 EXPLAIN）
+     * 1. EXPLAIN 分析 → 获取客观风险等级
+     * 2. LOW → 直接执行
+     * 3. MEDIUM → 调用 LLM 获取优化建议（仅供参考，仍执行原 SQL）
+     * 4. HIGH → 调用 LLM 重新生成 SQL（告知原 SQL 和风险）→ 重新 EXPLAIN
+     *    - 如果优化后不是 HIGH → 使用新 SQL 执行
+     *    - 如果优化后仍是 HIGH → 只返回优化后的 SQL 给前端，标注高风险，需要人工介入，绝对不执行
      */
     private RiskAssessmentResult assessSQLRisk(String sql, String question, Long datasourceId, 
-                                                LLMService llmService, SQLRiskAnalyzer riskAnalyzer) {
+                                                LLMService llmService, SQLRiskAnalyzer riskAnalyzer,
+                                                NL2SQLTool nl2sqlTool, SkillContext context, String sessionId) {
         try {
             // ✅ 关键修复：如果 SQL 是澄清消息或错误消息，直接返回低风险
             if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_") || 
@@ -208,58 +297,171 @@ class StandardQuerySkill {
                 return new RiskAssessmentResult("LOW", "非有效SQL，无需风险评估")
             }
             
-            // Step 1: LLM先自行评估
-            log.info("Step 1: LLM初步风险评估")
-            String llmPrompt = buildRiskAssessmentPrompt(sql, question)
-            String llmResponse = llmService.generateAnswer(llmPrompt)
-            
-            log.debug("LLM初步评估响应: {}", llmResponse)
-            
-            // 解析LLM的评估结果
-            RiskAssessmentResult result = parseLLMRiskAssessment(llmResponse)
-            
-            log.info("LLM初步评估结果: riskLevel={}, reason={}", result.getRiskLevel(), result.getReason())
-            
-            // Step 2: 如果LLM无法确定或认为需要EXPLAIN，则调用风险分析工具
-            if ("UNCERTAIN".equals(result.getRiskLevel())) {
-                if (riskAnalyzer == null) {
-                    log.warn("⚠️ SQLRiskAnalyzer 未注入，跳过EXPLAIN分析")
-                    result.setRiskLevel("LOW")
-                    result.setReason("SQLRiskAnalyzer未配置，默认低风险")
-                    return result
-                }
-                
-                // ⚠️ 关键检查：如果SQL是澄清消息，不要调用EXPLAIN
-                if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_")) {
-                    log.info("SQL是澄清消息，跳过EXPLAIN分析")
-                    result.setRiskLevel("LOW")
-                    return result
-                }
-                
-                log.info("✅ LLM返回UNCERTAIN，开始调用EXPLAIN分析...")
-                SQLRiskAnalyzer.RiskAnalysisResult explainResult = riskAnalyzer.analyzeRisk(sql, datasourceId)
-                
-                log.info("EXPLAIN分析完成: riskLevel={}, risks={}", explainResult.getRiskLevel(), explainResult.getRisks()?.size() ?: 0)
-                
-                // 将EXPLAIN结果再次给LLM判断
-                log.info("Step 2: LLM结合EXPLAIN结果进行最终评估")
-                String refinedPrompt = buildRefinedRiskPrompt(sql, question, explainResult)
-                String refinedResponse = llmService.generateAnswer(refinedPrompt)
-                
-                log.debug("LLM最终评估响应: {}", refinedResponse)
-                result = parseLLMRiskAssessment(refinedResponse)
-                
-                log.info("✅ 最终风险评估结果: riskLevel={}", result.getRiskLevel())
-            } else {
-                log.info("LLM已给出确定性评估({})，跳过EXPLAIN分析", result.getRiskLevel())
+            if (riskAnalyzer == null) {
+                log.warn("⚠️ SQLRiskAnalyzer 未注入，跳过风险评估")
+                return new RiskAssessmentResult("LOW", "SQLRiskAnalyzer未配置，默认低风险")
             }
             
-            return result
+            // Step 0: 快速判断 - 简单查询直接放行（不调用 EXPLAIN）
+            if (isSimpleQuery(sql)) {
+                log.info("✅ 快速判断：简单查询，直接放行（跳过 EXPLAIN）")
+                return new RiskAssessmentResult("LOW", "简单查询，无需 EXPLAIN")
+            }
+            
+            // Step 1: 执行 EXPLAIN 分析（必做）
+            log.info("Step 1: 执行 EXPLAIN 分析")
+            SQLRiskAnalyzer.RiskAnalysisResult explainResult = riskAnalyzer.analyzeRisk(sql, datasourceId)
+            String riskLevel = explainResult.getRiskLevel()
+            
+            log.info("EXPLAIN 分析结果: riskLevel={}, risks={}", riskLevel, explainResult.getRisks()?.size() ?: 0)
+            
+            // Step 2: 根据风险等级处理
+            if ("LOW".equals(riskLevel)) {
+                // ✅ 低风险，直接执行
+                log.info("✅ EXPLAIN 评估为低风险，直接执行")
+                return new RiskAssessmentResult("LOW", "EXPLAIN 分析无风险")
+            } else if ("MEDIUM".equals(riskLevel)) {
+                // ⚠️ 中风险，调用 LLM 获取优化建议（仅供参考）
+                log.info("⚠️ EXPLAIN 评估为中风险，调用 LLM 获取优化建议")
+                
+                String suggestionPrompt = buildOptimizationSuggestionPrompt(sql, question, explainResult)
+                String llmResponse = llmService.generateAnswer(suggestionPrompt)
+                
+                OptimizationSuggestion suggestion = parseOptimizationSuggestion(llmResponse)
+                
+                RiskAssessmentResult result = new RiskAssessmentResult("MEDIUM", explainResult.getRisks().join("; "))
+                result.setLlmSuggestion(suggestion)
+                result.setOriginalSql(sql)
+                
+                log.info("✅ LLM 优化建议: {}", suggestion?.getSuggestion())
+                return result
+                
+            } else if ("HIGH".equals(riskLevel)) {
+                // 🔴 高风险，调用 LLM 重新生成 SQL
+                log.info("🔴 EXPLAIN 评估为高风险，调用 LLM 重新生成 SQL")
+                
+                String regeneratePrompt = buildRegenerateSQLPrompt(sql, question, explainResult)
+                String regeneratedSql = llmService.generateAnswer(regeneratePrompt)
+                
+                // 提取 SQL（LLM 可能返回 Markdown 或其他格式）
+                regeneratedSql = extractSQLFromResponse(regeneratedSql)
+                
+                log.info("LLM 重新生成的 SQL: {}", regeneratedSql)
+                
+                // 重新 EXPLAIN 验证优化效果
+                log.info("Step 2: 重新 EXPLAIN 验证优化后的 SQL")
+                SQLRiskAnalyzer.RiskAnalysisResult optimizedExplain = riskAnalyzer.analyzeRisk(regeneratedSql, datasourceId)
+                
+                log.info("优化后 EXPLAIN 结果: riskLevel={}, risks={}", optimizedExplain.getRiskLevel(), optimizedExplain.getRisks()?.size() ?: 0)
+                
+                // 判断优化后的风险等级
+                if ("HIGH".equals(optimizedExplain.getRiskLevel())) {
+                    // ⚠️ 优化后仍为高风险，只返回 SQL 给前端，标注高风险，需要人工介入，绝对不执行
+                    log.warn("⚠️ LLM 优化后仍为高风险，只返回 SQL 给前端，需要人工审核，绝对不执行")
+                    log.warn("   原始 SQL: {}", sql)
+                    log.warn("   优化后 SQL: {}", regeneratedSql)
+                    log.warn("   风险原因: {}", explainResult.getRisks().join("; "))
+                    publishEvent(context, sessionId, "risk_high_blocked", "⚠️ 高风险SQL，已阻断执行，请人工审核")
+                    
+                    RiskAssessmentResult result = new RiskAssessmentResult(
+                        "HIGH", 
+                        "LLM 优化后仍为高风险，需要人工介入审核。原始风险：" + explainResult.getRisks().join("; ")
+                    )
+                    result.setOriginalSql(sql)
+                    result.setOptimizedSql(regeneratedSql)  // 返回优化后的 SQL 供人工审核
+                    result.setOptimizationApplied(true)
+                    result.setRequiresManualReview(true)  // 标记需要人工审核
+                    
+                    return result
+                } else {
+                    // ✅ 优化成功，风险降低，使用新 SQL
+                    log.info("✅ LLM 优化成功，风险从 HIGH 降到 {}", optimizedExplain.getRiskLevel())
+                    
+                    RiskAssessmentResult result = new RiskAssessmentResult(
+                        optimizedExplain.getRiskLevel(), 
+                        optimizedExplain.getRisks().join("; ")
+                    )
+                    result.setOriginalSql(sql)
+                    result.setOptimizedSql(regeneratedSql)
+                    result.setOptimizationApplied(true)
+                    
+                    return result
+                }
+            } else {
+                // 未知风险等级，默认低风险
+                log.warn("⚠️ 未知风险等级: {}，默认低风险", riskLevel)
+                return new RiskAssessmentResult("LOW", "未知风险等级，默认继续执行")
+            }
             
         } catch (Exception e) {
             log.error("❌ 风险评估失败，默认低风险: {}", e.message, e)
             return new RiskAssessmentResult("LOW", "风险评估失败，默认继续执行")
         }
+    }
+    
+    /**
+     * 快速判断是否为简单查询（无需 EXPLAIN）
+     * 
+     * 规则：
+     * 1. 单表查询（无 JOIN）
+     * 2. WHERE 条件包含主键等值查询（id = ?）
+     * 3. 无子查询
+     * 4. 无聚合函数（COUNT/SUM/AVG 等）
+     * 5. 无 GROUP BY / ORDER BY / DISTINCT
+     * 6. 有 LIMIT 限制（可选，但推荐）
+     */
+    private boolean isSimpleQuery(String sql) {
+        if (sql == null || sql.isEmpty()) {
+            return false
+        }
+        
+        String upperSql = sql.toUpperCase().trim()
+        
+        // 只处理 SELECT 语句
+        if (!upperSql.startsWith("SELECT")) {
+            return false
+        }
+        
+        // 规则1: 无 JOIN
+        if (upperSql.contains(" JOIN ") || upperSql.contains("JOIN\n") || upperSql.contains("JOIN ")) {
+            return false
+        }
+        
+        // 规则2: 无子查询（检查是否有嵌套 SELECT）
+        int selectCount = 0
+        for (int i = 0; i < upperSql.length(); i++) {
+            if (upperSql.substring(i).startsWith("SELECT")) {
+                selectCount++
+            }
+        }
+        if (selectCount > 1) {
+            return false
+        }
+        
+        // 规则3: 无聚合函数
+        if (upperSql.contains("COUNT(") || 
+            upperSql.contains("SUM(") || 
+            upperSql.contains("AVG(") || 
+            upperSql.contains("MAX(") || 
+            upperSql.contains("MIN(") ||
+            upperSql.contains("GROUP BY")) {
+            return false
+        }
+        
+        // 规则4: 无 ORDER BY / DISTINCT
+        if (upperSql.contains("ORDER BY") || upperSql.contains("DISTINCT")) {
+            return false
+        }
+        
+        // 规则5: WHERE 条件包含主键等值查询（id = ? 或 id = 数字）
+        // 匹配模式：WHERE xxx_id = 数字 或 WHERE id = 数字
+        def primaryKeyPattern = ~/WHERE\s+\w*_?id\s*=\s*\d+/i
+        if (!(sql =~ primaryKeyPattern).find()) {
+            return false
+        }
+        
+        // ✅ 所有规则通过，判定为简单查询
+        return true
     }
     
     /**
@@ -396,6 +598,123 @@ ${sql}
     }
     
     /**
+     * 构建优化建议 Prompt（中风险）
+     */
+    private String buildOptimizationSuggestionPrompt(String sql, String question, SQLRiskAnalyzer.RiskAnalysisResult explainResult) {
+        StringBuilder sb = new StringBuilder()
+        sb.append("你是一个数据库优化专家。以下SQL存在中等风险，请提供优化建议。\n\n")
+        sb.append("用户问题：").append(question).append("\n\n")
+        sb.append("原始 SQL：\n").append(sql).append("\n\n")
+        sb.append("EXPLAIN 分析结果：\n")
+        sb.append("- 风险等级：").append(explainResult.getRiskLevel()).append("\n")
+        if (explainResult.getRisks() != null && !explainResult.getRisks().isEmpty()) {
+            sb.append("- 发现的风险点：\n")
+            for (String risk : explainResult.getRisks()) {
+                sb.append("  - ").append(risk).append("\n")
+            }
+        }
+        sb.append("\n请提供优化建议（不要重新生成 SQL，只给建议）：\n")
+        sb.append("1. 指出主要性能瓶颈\n")
+        sb.append("2. 给出具体的优化建议（如添加索引、改写 WHERE 条件等）\n")
+        sb.append("3. 说明预期优化效果\n\n")
+        sb.append("返回JSON格式：\n")
+        sb.append("{\n")
+        sb.append("  \"bottleneck\": \"主要性能瓶颈\",\n")
+        sb.append("  \"suggestion\": \"具体优化建议\",\n")
+        sb.append("  \"expected_improvement\": \"预期优化效果\"\n")
+        sb.append("}")
+        
+        return sb.toString()
+    }
+    
+    /**
+     * 解析 LLM 优化建议
+     */
+    private OptimizationSuggestion parseOptimizationSuggestion(String response) {
+        try {
+            int jsonStart = response.indexOf("{")
+            int jsonEnd = response.lastIndexOf("}")
+            if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                String jsonStr = response.substring(jsonStart, jsonEnd + 1)
+                ObjectMapper mapper = new ObjectMapper()
+                Map<String, Object> json = mapper.readValue(jsonStr, Map.class)
+                
+                OptimizationSuggestion suggestion = new OptimizationSuggestion()
+                suggestion.setBottleneck(json.getOrDefault("bottleneck", "") as String)
+                suggestion.setSuggestion(json.getOrDefault("suggestion", "") as String)
+                suggestion.setExpectedImprovement(json.getOrDefault("expected_improvement", "") as String)
+                return suggestion
+            }
+        } catch (Exception e) {
+            log.warn("解析LLM优化建议失败: {}", e.message)
+        }
+        
+        return null
+    }
+    
+    /**
+     * 构建重新生成 SQL 的 Prompt（高风险）
+     */
+    private String buildRegenerateSQLPrompt(String originalSql, String question, SQLRiskAnalyzer.RiskAnalysisResult explainResult) {
+        StringBuilder sb = new StringBuilder()
+        sb.append("你是一个数据库专家。之前生成的SQL存在高风险，请重新生成一个更优化的SQL。\n\n")
+        sb.append("用户问题：").append(question).append("\n\n")
+        sb.append("❌ 原始 SQL（有高风险）：\n").append(originalSql).append("\n\n")
+        sb.append("⚠️ EXPLAIN 分析发现的风险：\n")
+        if (explainResult.getRisks() != null && !explainResult.getRisks().isEmpty()) {
+            for (String risk : explainResult.getRisks()) {
+                sb.append("  - ").append(risk).append("\n")
+            }
+        }
+        if (explainResult.getSuggestions() != null && !explainResult.getSuggestions().isEmpty()) {
+            sb.append("\n💡 优化建议：\n")
+            for (String suggestion : explainResult.getSuggestions()) {
+                sb.append("  - ").append(suggestion).append("\n")
+            }
+        }
+        sb.append("\n🎯 任务：重新生成一个SQL，要求：\n")
+        sb.append("1. 避免上述风险（如全表扫描、缺少索引等）\n")
+        sb.append("2. 保持查询语义不变\n")
+        sb.append("3. 如果无法优化，请说明原因并返回原 SQL\n")
+        sb.append("4. **只输出 SQL 语句，不要包含其他内容**\n\n")
+        sb.append("新 SQL：")
+        
+        return sb.toString()
+    }
+    
+    /**
+     * 从 LLM 响应中提取 SQL
+     */
+    private String extractSQLFromResponse(String response) {
+        if (response == null || response.isEmpty()) {
+            return null
+        }
+        
+        // 去除 Markdown 代码块标记
+        String cleaned = response.trim()
+        cleaned = cleaned.replaceAll('```sql\\s*', '')
+        cleaned = cleaned.replaceAll('```\\s*$', '')
+        cleaned = cleaned.trim()
+        
+        // 如果包含多行，取第一行完整的 SQL
+        if (cleaned.contains("\n")) {
+            String[] lines = cleaned.split("\n")
+            for (String line : lines) {
+                String trimmed = line.trim()
+                if (trimmed.toUpperCase().startsWith("SELECT") || 
+                    trimmed.toUpperCase().startsWith("WITH") ||
+                    trimmed.toUpperCase().startsWith("INSERT") ||
+                    trimmed.toUpperCase().startsWith("UPDATE") ||
+                    trimmed.toUpperCase().startsWith("DELETE")) {
+                    return trimmed
+                }
+            }
+        }
+        
+        return cleaned
+    }
+    
+    /**
      * 执行SQL并支持自动修正
      */
     private def executeWithAutoFix(String sql, Long datasourceId, Long userId, String username, 
@@ -444,7 +763,8 @@ ${sql}
      */
     private Map<String, Object> createSuccessResultWithChart(List<Map<String, Object>> data, int rowCount, 
                                                               double executionTime, String sql, Long datasourceId,
-                                                              String chartType, Map<String, Object> echartsConfig) {
+                                                              String chartType, Map<String, Object> echartsConfig,
+                                                              String optimizationSuggestion) {
         // ✅ 根据数据特征智能生成追问建议
         List<Map<String, String>> followUpSuggestions = generateFollowUpSuggestions(data, rowCount, sql)
         
@@ -464,11 +784,17 @@ ${sql}
             result.followUpSuggestions = followUpSuggestions
         }
         
+        // ✅ 如果有优化建议，添加到返回结果中
+        if (optimizationSuggestion != null && !optimizationSuggestion.trim().isEmpty()) {
+            result.optimizationSuggestion = optimizationSuggestion
+        }
+        
         return result
     }
     
     private Map<String, Object> createSuccessResult(List<Map<String, Object>> data, int rowCount, 
-                                                     double executionTime, String sql, Long datasourceId) {
+                                                     double executionTime, String sql, Long datasourceId,
+                                                     String optimizationSuggestion) {
         // ✅ 根据数据特征智能生成追问建议
         List<Map<String, String>> followUpSuggestions = generateFollowUpSuggestions(data, rowCount, sql)
         
@@ -484,6 +810,11 @@ ${sql}
         // 只有当有追问建议时才添加
         if (followUpSuggestions && !followUpSuggestions.isEmpty()) {
             result.followUpSuggestions = followUpSuggestions
+        }
+        
+        // ✅ 如果有优化建议，添加到返回结果中
+        if (optimizationSuggestion != null && !optimizationSuggestion.trim().isEmpty()) {
+            result.optimizationSuggestion = optimizationSuggestion
         }
         
         return result
@@ -687,12 +1018,19 @@ ${sql}
         ]
     }
     
-    private Map<String, Object> createRiskBlockedResult(String reason, String sql) {
-        return [
+    private Map<String, Object> createRiskBlockedResult(String reason, String sql, String optimizationSuggestion) {
+        def result = [
             success: false,
             error: "⚠️ SQL风险评估为高风险，已阻断执行\n原因: ${reason}",
             sql: sql
         ]
+        
+        // ✅ 如果有优化建议，添加到返回结果中
+        if (optimizationSuggestion != null && !optimizationSuggestion.trim().isEmpty()) {
+            result.optimizationSuggestion = optimizationSuggestion
+        }
+        
+        return result
     }
     
     /**
@@ -722,6 +1060,10 @@ ${sql}
         String reason
         Boolean canSelfFix
         String fixSuggestion
+        String originalSql          // 原始 SQL
+        String optimizedSql         // 优化后的 SQL（高风险时）
+        Boolean optimizationApplied // 是否应用了优化
+        OptimizationSuggestion llmSuggestion // LLM 优化建议（中风险时）
         
         RiskAssessmentResult() {}
         
@@ -730,6 +1072,7 @@ ${sql}
             this.reason = reason
             this.canSelfFix = false
             this.fixSuggestion = ""
+            this.optimizationApplied = false
         }
         
         String getRiskLevel() { return riskLevel }
@@ -738,5 +1081,28 @@ ${sql}
         void setCanSelfFix(Boolean value) { this.canSelfFix = value }
         String getFixSuggestion() { return fixSuggestion }
         void setFixSuggestion(String value) { this.fixSuggestion = value }
+        String getOriginalSql() { return originalSql }
+        void setOriginalSql(String value) { this.originalSql = value }
+        String getOptimizedSql() { return optimizedSql }
+        void setOptimizedSql(String value) { this.optimizedSql = value }
+        Boolean getOptimizationApplied() { return optimizationApplied }
+        void setOptimizationApplied(Boolean value) { this.optimizationApplied = value }
+        OptimizationSuggestion getLlmSuggestion() { return llmSuggestion }
+        void setLlmSuggestion(OptimizationSuggestion value) { this.llmSuggestion = value }
+    }
+    
+    static class OptimizationSuggestion {
+        String bottleneck           // 性能瓶颈
+        String suggestion           // 优化建议
+        String expectedImprovement  // 预期优化效果
+        
+        OptimizationSuggestion() {}
+        
+        String getBottleneck() { return bottleneck }
+        void setBottleneck(String value) { this.bottleneck = value }
+        String getSuggestion() { return suggestion }
+        void setSuggestion(String value) { this.suggestion = value }
+        String getExpectedImprovement() { return expectedImprovement }
+        void setExpectedImprovement(String value) { this.expectedImprovement = value }
     }
 }

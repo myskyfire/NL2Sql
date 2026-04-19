@@ -42,6 +42,14 @@ spring:
       fail-on-unknown-properties: false
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
+  web:
+    resources:
+      cache:
+        period: 0  # ✅ 开发环境：不缓存静态资源
+      chain:
+        strategy:
+          content:
+            enabled: true  # ✅ 启用内容版本策略
 
 # LLM Configuration - 多提供者架构
 # 支持企业内部部署的多种LLM后端（Ollama、ChatGLM、Qwen、Baichuan等）
