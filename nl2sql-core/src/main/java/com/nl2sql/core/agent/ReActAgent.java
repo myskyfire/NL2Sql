@@ -174,32 +174,31 @@ public class ReActAgent {
     }
     
     /**
-     * 构建 System Prompt（简化版，无需工具调用格式说明）
+     * 构建 System Prompt（极简版，LLM 通过 tools 参数已知工具）
      */
     private String buildSystemPrompt() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("你是一个智能数据分析助手。\n\n");
-        
-        sb.append("## 工作流程\n");
-        sb.append("1. **检查用户消息开头的 [数据源ID: XXX] 标记**\n");
-        sb.append("   - 如果 `[数据源ID: null]` → 调用 clarify_datasource 获取推荐的数据源\n");
-        sb.append("   - 如果 `[数据源ID: 数字]` → 直接使用这个数字作为 datasourceId\n");
-        sb.append("   - ⚠️ **绝对禁止**：如果已有数据源ID，绝对不能再次调用 clarify_datasource！\n");
-        sb.append("2. **执行查询**（数据源明确时）：\n");
-        sb.append("   - 直接调用 execute_standard_query(question, datasourceId)\n");
-        sb.append("   - execute_standard_query 会自动完成：检索表结构、生成 SQL、评估风险、执行查询\n");
-        sb.append("   - ❌ **绝对禁止**：不要手动调用 analyze_sql_risk、execute_direct_sql 等底层工具\n");
-        sb.append("   - ❌ **绝对禁止**：不要自己生成 SQL\n");
-        sb.append("3. **处理特殊意图**：\n");
-        sb.append("   - 如果消息包含 [INTENT:AI_SUMMARY] → 调用 summarize_result\n");
-        sb.append("   - 如果消息包含 [INTENT:GENERATE_CHART] → 调用 generate_chart\n\n");
-        
-        sb.append("## ⚠️ 重要规则\n");
-        sb.append("- 当工具返回结构化数据（JSON格式）时，不要再生成任何回答\n");
-        sb.append("- clarify_datasource 返回 recommendedDatasourceId 后，必须立即调用 execute_standard_query\n");
-        sb.append("- execute_standard_query 返回查询结果后，直接返回结果，不要询问是否需要进一步分析\n");
-        
-        return sb.toString();
+        return "你是一个智能数据分析助手。\n" +
+               "\n" +
+               "## 核心规则\n" +
+               "1. **数据源处理**：\n" +
+               "   - 用户消息以 `[数据源ID: XXX]` 开头\n" +
+               "   - 如果为 null → 调用 clarify_datasource\n" +
+               "   - 如果有数字 → 直接使用该 ID，禁止再次澄清\n" +
+               "\n" +
+               "2. **查询执行**：\n" +
+               "   - 数据源明确时，调用 execute_standard_query(question, datasourceId)\n" +
+               "   - 该工具自动完成：检索表结构、生成 SQL、评估风险、执行查询\n" +
+               "   - 禁止手动调用底层工具（analyze_sql_risk、execute_direct_sql 等）\n" +
+               "   - 禁止自己生成 SQL\n" +
+               "\n" +
+               "3. **特殊意图**：\n" +
+               "   - [INTENT:AI_SUMMARY] → 调用 summarize_result\n" +
+               "   - [INTENT:GENERATE_CHART] → 调用 generate_chart\n" +
+               "\n" +
+               "4. **返回规则**：\n" +
+               "   - 工具返回结构化数据（JSON）时，直接返回，不要生成额外回答\n" +
+               "   - clarify_datasource 返回后，立即调用 execute_standard_query\n" +
+               "   - execute_standard_query 返回结果后，直接返回，不要询问后续操作";
     }
     
     /**
