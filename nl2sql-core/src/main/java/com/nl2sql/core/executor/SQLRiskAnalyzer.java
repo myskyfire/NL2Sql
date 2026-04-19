@@ -23,6 +23,7 @@ public class SQLRiskAnalyzer {
     private long cacheHours;
     
     private static final String TABLE_STATS_CACHE_KEY = "sql:tablestats:%s:%s"; // datasourceId:tableName
+    private static final String EXPLAIN_CACHE_KEY = "sql:explain:%s:%s"; // datasourceId:md5(sql)
     
     public SQLRiskAnalyzer(DataSourceManager dataSourceManager, RedisTemplate<String, Object> redisTemplate) {
         this.dataSourceManager = dataSourceManager;
@@ -44,6 +45,15 @@ public class SQLRiskAnalyzer {
         }
         
         try {
+            // ✅ 关键优化：尝试从缓存获取 EXPLAIN 结果
+            String explainCacheKey = String.format(EXPLAIN_CACHE_KEY, datasourceId, md5(sql));
+            RiskAnalysisResult cached = (RiskAnalysisResult) redisTemplate.opsForValue().get(explainCacheKey);
+            
+            if (cached != null) {
+                log.info("[SQLRiskAnalyzer] ⚡ EXPLAIN 缓存命中: datasourceId={}, sql={}", datasourceId, sql.substring(0, Math.min(50, sql.length())));
+                return cached;
+            }
+            
             // 获取对应数据源的 JdbcTemplate
             JdbcTemplate jdbcTemplate = dataSourceManager.getJdbcTemplate(datasourceId);
             
@@ -73,6 +83,10 @@ public class SQLRiskAnalyzer {
             result.setSuggestions(suggestions);
             
             log.info("SQL风险分析完成: datasourceId={}, 风险等级={}, 风险点={}", datasourceId, result.getRiskLevel(), risks.size());
+            
+            // ✅ 关键优化：缓存 EXPLAIN 结果（1小时）
+            redisTemplate.opsForValue().set(explainCacheKey, result, 1, TimeUnit.HOURS);
+            log.info("[SQLRiskAnalyzer] EXPLAIN 结果已缓存: key={}", explainCacheKey);
             
         } catch (Exception e) {
             log.error("SQL风险分析失败: datasourceId={}", datasourceId, e);
@@ -338,6 +352,24 @@ public class SQLRiskAnalyzer {
         String cacheKey = String.format(TABLE_STATS_CACHE_KEY, tableName);
         redisTemplate.delete(cacheKey);
         log.info("清除表统计缓存: {}", tableName);
+    }
+    
+    /**
+     * 计算字符串的 MD5 哈希值（用于生成缓存 key）
+     */
+    private String md5(String input) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            // 降级：使用 hashCode
+            return String.valueOf(Math.abs(input.hashCode()));
+        }
     }
     
     // ==================== 数据类 ====================
