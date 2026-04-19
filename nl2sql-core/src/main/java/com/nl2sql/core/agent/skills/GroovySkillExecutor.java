@@ -79,7 +79,7 @@ public class GroovySkillExecutor {
                         skillName = dir.replace("-", "_"); // standard-query -> standard_query
                     }
                     info.setName(skillName);
-                    info.setToolName("execute_" + skillName); // execute_standard_query
+                    info.setToolName(skillName); // ✅ 直接使用 SKILL.md 中的 name，不再添加前缀
                     info.setSkillPath(skillPath);
                     info.setDescription(parseDescription(skillPath));
                     info.setRequiredParams(parseRequiredParams(skillPath));  // ✅ 解析必需参数

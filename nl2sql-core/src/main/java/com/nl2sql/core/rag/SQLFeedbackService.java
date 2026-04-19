@@ -242,7 +242,7 @@ public class SQLFeedbackService {
                               ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
             
             jdbcTemplate.update(insertSql,
-                null,  // knowledgeId
+                0L,    // ✅ knowledgeId: 0 表示无关联知识库
                 null,  // userId
                 sessionId,
                 3,     // 默认3星

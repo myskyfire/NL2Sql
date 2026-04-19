@@ -98,6 +98,9 @@ public class ReActAgent {
                 // 调用 LLM（带 tools 参数）
                 Map<String, Object> llmResponse = llmService.generateWithTools(messages, 0.7, toolsDef);
                 
+                // 调试：打印完整响应
+                log.debug("[ReActAgent] LLM 完整响应: {}", objectMapper.writeValueAsString(llmResponse));
+                
                 // 解析响应
                 Map<String, Object> message = (Map<String, Object>) llmResponse.get("message");
                 if (message == null) {
@@ -107,6 +110,11 @@ public class ReActAgent {
                 
                 // 检查是否有 tool_calls
                 List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) message.get("tool_calls");
+                String content = (String) message.get("content");
+                
+                log.info("[ReActAgent] LLM 响应 - content: {}, tool_calls: {}", 
+                    content != null ? content.substring(0, Math.min(100, content.length())) : "null",
+                    toolCalls != null ? toolCalls.size() : 0);
                 
                 if (toolCalls != null && !toolCalls.isEmpty()) {
                     // LLM 想要调用工具
@@ -116,7 +124,16 @@ public class ReActAgent {
                     Map<String, Object> firstToolCall = toolCalls.get(0);
                     Map<String, Object> function = (Map<String, Object>) firstToolCall.get("function");
                     String toolName = (String) function.get("name");
-                    String argumentsJson = (String) function.get("arguments");
+                    
+                    // arguments 可能是 String 或 Map，需要统一处理
+                    Object argumentsObj = function.get("arguments");
+                    String argumentsJson;
+                    if (argumentsObj instanceof String) {
+                        argumentsJson = (String) argumentsObj;
+                    } else {
+                        // 如果是 Map/List，序列化为 JSON 字符串
+                        argumentsJson = objectMapper.writeValueAsString(argumentsObj);
+                    }
                     
                     log.info("[ReActAgent] 调用工具: {}, 参数: {}", toolName, argumentsJson);
                     
@@ -158,9 +175,8 @@ public class ReActAgent {
                     
                 } else {
                     // 没有 tool_calls，说明是最终答案
-                    String content = (String) message.get("content");
                     log.info("[ReActAgent] 最终答案: {}", content);
-                    return content != null ? content : "无法生成回答";
+                    return content != null && !content.trim().isEmpty() ? content : "无法生成回答";
                 }
                 
             } catch (Exception e) {
@@ -192,13 +208,20 @@ public class ReActAgent {
                "   - 禁止自己生成 SQL\n" +
                "\n" +
                "3. **特殊意图**：\n" +
-               "   - [INTENT:AI_SUMMARY] → 调用 summarize_result\n" +
-               "   - [INTENT:GENERATE_CHART] → 调用 generate_chart\n" +
+               "   - [INTENT:AI_SUMMARY] → 必须调用 summarize_result(lastQuery=\"...\", generatedSQL=\"...\")\n" +
+               "   - [INTENT:GENERATE_CHART] → 必须调用 generate_chart(chartType=\"bar/line/pie/area 或 null\", generatedSQL=\"...\")\n" +
+               "   - ⚠️ **重要**：当用户消息包含 [INTENT:XXX] 标记时，必须调用对应工具，不要返回空内容\n" +
                "\n" +
                "4. **返回规则**：\n" +
                "   - 工具返回结构化数据（JSON）时，直接返回，不要生成额外回答\n" +
                "   - clarify_datasource 返回后，立即调用 execute_standard_query\n" +
-               "   - execute_standard_query 返回结果后，直接返回，不要询问后续操作";
+               "   - execute_standard_query 返回结果后，直接返回，不要询问后续操作\n" +
+               "\n" +
+               "5. **重要**：\n" +
+               "   - 禁止输出 thinking/reasoning 内容\n" +
+               "   - 直接调用工具或返回最终答案\n" +
+               "   - 不要在 content 中解释你的思考过程\n" +
+               "   - **如果不知道如何回答，必须调用工具，不要返回空字符串**";
     }
     
     /**

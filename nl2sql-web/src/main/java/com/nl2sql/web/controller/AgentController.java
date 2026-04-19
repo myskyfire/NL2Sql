@@ -136,7 +136,22 @@ public class AgentController {
             if (request.getContext() != null && !request.getContext().isEmpty()) {
                 try {
                     com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    String contextJson = mapper.writeValueAsString(request.getContext());
+                    
+                    // ✅ 关键修复：如果 nl2sqlTool 中有最新的 SQL，覆盖 context 中的旧 SQL
+                    Map<String, Object> contextMap = new HashMap<>(request.getContext());
+                    if (nl2sqlTool != null) {
+                        String latestSQL = nl2sqlTool.getCurrentSQL();
+                        String latestQuery = nl2sqlTool.getCurrentQuery();
+                        if (latestSQL != null && !latestSQL.trim().isEmpty()) {
+                            log.info("[Agent对话] 使用最新 SQL 覆盖 context: {}", latestSQL);
+                            contextMap.put("generatedSQL", latestSQL);
+                            if (latestQuery != null) {
+                                contextMap.put("lastQuery", latestQuery);
+                            }
+                        }
+                    }
+                    
+                    String contextJson = mapper.writeValueAsString(contextMap);
                     fullMessage = fixedMessage + "\n\nContext: " + contextJson;
                     log.info("[Agent对话] 附加 Context: {}", contextJson);
                 } catch (Exception e) {

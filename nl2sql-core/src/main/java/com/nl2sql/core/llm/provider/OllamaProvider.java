@@ -155,6 +155,9 @@ public class OllamaProvider implements LLMProvider {
             requestBody.put("temperature", temperature);
             requestBody.put("stream", false);
             
+            // ✅ 禁用 thinking/reasoning 模式，强制直接返回 tool_calls
+            requestBody.put("think", false);
+            
             if (tools != null && !tools.isEmpty()) {
                 requestBody.put("tools", tools);
                 log.debug("[OllamaProvider] 启用 Tool Calling，工具数量: {}", tools.size());

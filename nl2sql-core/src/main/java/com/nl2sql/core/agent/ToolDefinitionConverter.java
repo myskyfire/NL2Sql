@@ -48,8 +48,14 @@ public class ToolDefinitionConverter {
         Map<String, Object> properties = new HashMap<>();
         List<String> required = new ArrayList<>();
         
+        // ⚠️ 处理 Groovy Skill 的双重前缀问题：execute_execute_standard_query -> execute_standard_query
+        String normalizedToolName = toolName;
+        if (toolName.startsWith("execute_execute_")) {
+            normalizedToolName = "execute_" + toolName.substring("execute_".length());
+        }
+        
         // 根据工具名推断参数
-        switch (toolName) {
+        switch (normalizedToolName) {
             case "execute_standard_query":
                 properties.put("question", createProperty("string", "用户的问题"));
                 properties.put("datasourceId", createProperty("integer", "数据源ID"));
@@ -62,13 +68,18 @@ public class ToolDefinitionConverter {
                 break;
                 
             case "summarize_result":
-                properties.put("context", createProperty("object", "上下文信息，包含 lastQuery 和 generatedSQL"));
-                required.add("context");
+                // ✅ 简化：将 context 展开为顶层参数，避免嵌套 object
+                properties.put("lastQuery", createProperty("string", "用户的原始查询问题，例如：统计每个地区的销售额"));
+                properties.put("generatedSQL", createProperty("string", "之前生成的 SQL 查询语句"));
+                required.add("lastQuery");
+                required.add("generatedSQL");
                 break;
                 
             case "generate_chart":
-                properties.put("context", createProperty("object", "上下文信息，包含 chartType 和 generatedSQL"));
-                required.add("context");
+                // ✅ 简化：将 context 展开为顶层参数
+                properties.put("chartType", createProperty("string", "图表类型：bar-柱状图/line-折线图/pie-饼图/area-面积图，如果为 null 则自动推荐"));
+                properties.put("generatedSQL", createProperty("string", "SQL查询语句，用于获取图表数据"));
+                required.add("generatedSQL");
                 break;
                 
             default:

@@ -56,6 +56,10 @@ public class NL2SQLTool {
     // ThreadLocal 存储当前会话ID
     private static final ThreadLocal<String> CURRENT_SESSION_ID = new ThreadLocal<>();
     
+    // ✅ ConcurrentHashMap 存储每个会话的 SQL（支持跨线程访问）
+    private static final java.util.concurrent.ConcurrentHashMap<String, String> SESSION_SQL_MAP = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<String, String> SESSION_QUERY_MAP = new java.util.concurrent.ConcurrentHashMap<>();
+    
     /**
      * 设置当前会话ID（由调用方设置）
      */
@@ -74,7 +78,61 @@ public class NL2SQLTool {
      * 清除当前会话ID
      */
     public void clearCurrentSessionId() {
+        String sessionId = CURRENT_SESSION_ID.get();
         CURRENT_SESSION_ID.remove();
+        // ✅ 关键修复：不清除 SQL 和 Query，保留用于后续的 AI 总结/图表生成
+        if (sessionId != null) {
+            log.debug("[NL2SQLTool] 已清除 sessionId: {}", sessionId);
+        }
+    }
+    
+    /**
+     * ✅ 手动清除所有上下文（仅在需要时调用）
+     */
+    public void clearAllContext() {
+        String sessionId = CURRENT_SESSION_ID.get();
+        CURRENT_SESSION_ID.remove();
+        if (sessionId != null) {
+            SESSION_SQL_MAP.remove(sessionId);
+            SESSION_QUERY_MAP.remove(sessionId);
+            log.debug("[NL2SQLTool] 已清除所有上下文: sessionId={}", sessionId);
+        }
+    }
+    
+    /**
+     * ✅ 保存当前 SQL 和查询问题（用于 AI 总结/图表生成）
+     */
+    public void saveCurrentContext(String sql, String query) {
+        String sessionId = CURRENT_SESSION_ID.get();
+        if (sessionId != null && !sessionId.trim().isEmpty()) {
+            SESSION_SQL_MAP.put(sessionId, sql);
+            SESSION_QUERY_MAP.put(sessionId, query);
+            log.debug("[NL2SQLTool] 已保存上下文: sessionId={}, sql={}, query={}", sessionId, sql, query);
+        } else {
+            log.warn("[NL2SQLTool] sessionId 为空，无法保存上下文");
+        }
+    }
+    
+    /**
+     * ✅ 获取当前 SQL
+     */
+    public String getCurrentSQL() {
+        String sessionId = CURRENT_SESSION_ID.get();
+        if (sessionId != null) {
+            return SESSION_SQL_MAP.get(sessionId);
+        }
+        return null;
+    }
+    
+    /**
+     * ✅ 获取当前查询问题
+     */
+    public String getCurrentQuery() {
+        String sessionId = CURRENT_SESSION_ID.get();
+        if (sessionId != null) {
+            return SESSION_QUERY_MAP.get(sessionId);
+        }
+        return null;
     }
     
     /**
@@ -487,6 +545,9 @@ public class NL2SQLTool {
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
             RagLearningContext.setCurrentQuestion(expandedQuery);
             RagLearningContext.setCurrentSql(sql);
+            
+            // ✅ 关键修复：保存当前 SQL 和查询问题到 ThreadLocal（用于 AI 总结/图表生成）
+            saveCurrentContext(sql, expandedQuery);
             
             return sql;
             

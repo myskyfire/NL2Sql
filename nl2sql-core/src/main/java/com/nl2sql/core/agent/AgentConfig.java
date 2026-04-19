@@ -239,14 +239,22 @@ public class AgentConfig {
         // 注册 AI 总结工具（处理 [INTENT:AI_SUMMARY] 意图）
         if (aiSummaryTool != null) {
             agent.registerTool("summarize_result", (args, dsId, userId, username, userMessage) -> {
-                // 从 context 中获取 SQL
-                Map<String, Object> context = (Map<String, Object>) args.get("context");
-                if (context == null) {
-                    return "{\"status\":\"error\",\"message\":\"缺少上下文数据\"}";
-                }
+                String lastQuery;
+                String generatedSQL;
                 
-                String lastQuery = (String) context.get("lastQuery");
-                String generatedSQL = (String) context.get("generatedSQL");
+                // ✅ 关键修复：优先从 NL2SQLTool 获取最新的 SQL
+                if (nl2sqlTool != null) {
+                    generatedSQL = nl2sqlTool.getCurrentSQL();
+                    lastQuery = nl2sqlTool.getCurrentQuery();
+                    log.info("[summarize_result] 从 NL2SQLTool 获取上下文: sql={}, query={}", generatedSQL, lastQuery);
+                } else {
+                    // 降级：从扁平参数中获取
+                    lastQuery = (String) args.get("lastQuery");
+                    generatedSQL = (String) args.get("generatedSQL");
+                    if (lastQuery == null || generatedSQL == null) {
+                        return "{\"status\":\"error\",\"message\":\"缺少 lastQuery 或 generatedSQL 参数\"}";
+                    }
+                }
                 
                 if (generatedSQL == null || generatedSQL.trim().isEmpty()) {
                     return "{\"status\":\"error\",\"message\":\"缺少 SQL 语句\"}";
@@ -302,15 +310,23 @@ public class AgentConfig {
         agent.registerTool("generate_chart", (args, dsId, userId, username, userMessage) -> {
             log.info("[generate_chart] 收到参数: args={}", args);
             
-            // 从 context 中获取图表类型和 SQL
-            Map<String, Object> context = (Map<String, Object>) args.get("context");
-            if (context == null) {
-                log.error("[generate_chart] context 为 null");
-                return "{\"status\":\"error\",\"message\":\"缺少上下文数据\"}";
-            }
+            String chartType;
+            String generatedSQL;
             
-            String chartType = (String) context.get("chartType");
-            String generatedSQL = (String) context.get("generatedSQL");
+            // ✅ 关键修复：优先从 NL2SQLTool 获取最新的 SQL
+            if (nl2sqlTool != null) {
+                generatedSQL = nl2sqlTool.getCurrentSQL();
+                chartType = (String) args.get("chartType");
+                log.info("[generate_chart] 从 NL2SQLTool 获取上下文: sql={}, chartType={}", generatedSQL, chartType);
+            } else {
+                // 降级：从扁平参数中获取
+                chartType = (String) args.get("chartType");
+                generatedSQL = (String) args.get("generatedSQL");
+                if (generatedSQL == null) {
+                    log.error("[generate_chart] generatedSQL 为空");
+                    return "{\"status\":\"error\",\"message\":\"缺少 generatedSQL 参数\"}";
+                }
+            }
             
             log.info("[generate_chart] chartType={}, generatedSQL={}", chartType, generatedSQL);
             

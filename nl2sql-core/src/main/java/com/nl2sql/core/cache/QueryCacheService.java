@@ -56,8 +56,15 @@ public class QueryCacheService {
             Object cached = redisTemplate.opsForValue().get(redisKey);
             
             if (cached != null) {
-                // 反序列化
-                String json = objectMapper.writeValueAsString(cached);
+                // ✅ Redis 中存储的是 JSON 字符串，直接反序列化
+                String json;
+                if (cached instanceof String) {
+                    json = (String) cached;
+                } else {
+                    // 兼容旧数据：如果是对象，先序列化
+                    json = objectMapper.writeValueAsString(cached);
+                }
+                
                 CachedResult result = objectMapper.readValue(json, CachedResult.class);
                 
                 log.info("缓存命中: sql={}, rows={}", 
