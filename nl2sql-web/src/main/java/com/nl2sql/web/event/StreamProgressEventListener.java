@@ -54,6 +54,9 @@ public class StreamProgressEventListener {
             // 根据事件步骤发送不同类型的事件
             switch (event.getStep()) {
                 case "generating_sql":
+                case "generating_final_sql":
+                case "validating_sql":
+                case "validation_completed":
                 case "sql_generated":
                 case "executing":
                 case "summarizing":

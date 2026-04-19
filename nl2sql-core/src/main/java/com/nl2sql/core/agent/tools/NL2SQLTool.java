@@ -53,6 +53,9 @@ public class NL2SQLTool {
     @Autowired(required = false)
     private ApplicationEventPublisher eventPublisher;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.cache.QueryCacheService queryCacheService;
+    
     // ThreadLocal 存储当前会话ID
     private static final ThreadLocal<String> CURRENT_SESSION_ID = new ThreadLocal<>();
     
@@ -164,6 +167,26 @@ public class NL2SQLTool {
     @Tool("根据用户的自然语言问题和数据源ID，生成对应的SQL查询语句。如果缺少必要的表信息，会返回澄清请求")
     public String generateSQL(String query, Long datasourceId) {
         try {
+            // ✅ 关键优化：尝试从缓存获取 SQL（避免 LLM 非确定性）
+            if (queryCacheService != null) {
+                try {
+                    com.nl2sql.core.cache.QueryCacheService.CachedResult cached = 
+                        queryCacheService.getFromCache(query); // 使用问题作为 key
+                    
+                    if (cached != null && cached.getData() != null && !cached.getData().isEmpty()) {
+                        // 从缓存的 data 中提取 SQL
+                        String cachedSQL = (String) cached.getData().get(0).get("sql");
+                        if (cachedSQL != null && !cachedSQL.trim().isEmpty()) {
+                            log.info("[NL2SQLTool] SQL 缓存命中: question={}", query);
+                            saveCurrentContext(cachedSQL, query);
+                            return cachedSQL;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("[NL2SQLTool] 缓存读取失败，继续生成 SQL", e);
+                }
+            }
+            
             log.info("[NL2SQLTool] 开始生成SQL: query={}, datasourceId={}", query, datasourceId);
             
             publishProgress("generating_sql", "🔍 正在分析问题...");
@@ -549,6 +572,27 @@ public class NL2SQLTool {
             // ✅ 关键修复：保存当前 SQL 和查询问题到 ThreadLocal（用于 AI 总结/图表生成）
             saveCurrentContext(sql, expandedQuery);
             
+            // ✅ 关键优化：缓存生成的 SQL（避免下次重新调用 LLM）
+            if (queryCacheService != null) {
+                try {
+                    Map<String, Object> cacheData = new HashMap<>();
+                    cacheData.put("sql", sql);
+                    cacheData.put("question", expandedQuery);
+                    cacheData.put("datasourceId", datasourceId);
+                    
+                    com.nl2sql.core.cache.QueryCacheService.CachedResult cacheResult = 
+                        new com.nl2sql.core.cache.QueryCacheService.CachedResult();
+                    cacheResult.setData(java.util.Collections.singletonList(cacheData));
+                    cacheResult.setRowCount(1);
+                    cacheResult.setExecutionTime(0);
+                    
+                    queryCacheService.putToCache(expandedQuery, cacheResult, 60); // 缓存 60 分钟
+                    log.info("[NL2SQLTool] SQL 已缓存: question={}", expandedQuery);
+                } catch (Exception e) {
+                    log.warn("[NL2SQLTool] SQL 缓存失败", e);
+                }
+            }
+            
             return sql;
             
         } catch (Exception e) {
@@ -759,7 +803,7 @@ public class NL2SQLTool {
                 continue;
             }
             
-            // 3. 如果是聚合或JOIN问题，生成警告并返回（不阻断执行）
+            // 3. 如果是聚合或JOIN问题，尝试修正
             if (!report.getAggregationIssues().isEmpty() || !report.getJoinIssues().isEmpty()) {
                 StringBuilder warning = new StringBuilder();
                 warning.append("⚠️ SQL潜在问题:\n");
@@ -772,8 +816,16 @@ public class NL2SQLTool {
                 }
                 
                 log.warn("[NL2SQLTool] {}", warning.toString());
-                // 不阻断执行，但记录警告
-                break;
+                
+                // ✅ 关键修复：如果是严重问题（如 GROUP BY 不匹配），尝试修正
+                if (attempt < maxRetries) {
+                    log.info("[NL2SQLTool] 尝试修正聚合/JOIN问题...");
+                    sql = attemptAggregationCorrection(sql, question, schemaInfo, relationshipInfo, warning.toString());
+                    continue; // 重新验证
+                } else {
+                    log.warn("[NL2SQLTool] 达到最大重试次数，返回原SQL（可能存在风险）");
+                    break;
+                }
             }
         }
         
@@ -814,6 +866,45 @@ public class NL2SQLTool {
         } catch (Exception e) {
             log.error("[NL2SQLTool] 语法修正失败", e);
             return failedSql; // 返回原SQL
+        }
+    }
+    
+    /**
+     * ✅ 尝试修正聚合/JOIN问题
+     */
+    private String attemptAggregationCorrection(String sql, String question, String schemaInfo, 
+                                                String relationshipInfo, String issues) {
+        try {
+            String correctionPrompt = String.format(
+                "你是一个MySQL SQL专家。以下SQL语句存在逻辑问题，请修正。\n\n" +
+                "用户问题：%s\n\n" +
+                "数据库表结构：\n%s\n\n" +
+                "%s" +
+                "有问题的SQL:\n%s\n\n" +
+                "检测到的问题:\n%s\n\n" +
+                "要求：\n" +
+                "1. 只输出修正后的SQL语句\n" +
+                "2. 不要包含```sql或其他标记\n" +
+                "3. **重要：SELECT 中的非聚合字段必须出现在 GROUP BY 中**\n" +
+                "   - 错误：SELECT o.created_at ... GROUP BY DATE_FORMAT(o.created_at, ...)\n" +
+                "   - 正确：SELECT DATE_FORMAT(o.created_at, '%%Y-%%m-%%d') AS '订单日期' ... GROUP BY DATE_FORMAT(o.created_at, '%%Y-%%m-%%d')\n" +
+                "4. 确保 SELECT 和 GROUP BY 使用相同的表达式",
+                question,
+                schemaInfo,
+                relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
+                sql,
+                issues
+            );
+            
+            String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
+            correctedSql = cleanSQL(correctedSql);
+            
+            log.info("[NL2SQLTool] 聚合/JOIN修正后SQL: {}", correctedSql);
+            return correctedSql;
+            
+        } catch (Exception e) {
+            log.error("[NL2SQLTool] 聚合/JOIN修正失败", e);
+            return sql; // 返回原SQL
         }
     }
     

@@ -1696,9 +1696,13 @@
             }
             
             try {
+                const token = localStorage.getItem('token');
                 const response = await fetch('/api/feedback/submit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({
                         question: question,
                         generatedSql: sql,
@@ -1738,9 +1742,13 @@
         // ✅ 新增：提交SQL反馈
         async function submitFeedback(containerId, rating, question, sql) {
             try {
+                const token = localStorage.getItem('token');
                 const response = await fetch('/api/feedback/submit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({
                         question: question,
                         generatedSql: sql,
@@ -1767,9 +1775,11 @@
                     console.log('[SQL反馈] 提交成功:', result.data);
                 } else {
                     console.error('[SQL反馈] 提交失败:', result.message);
+                    alert('提交失败: ' + result.message);
                 }
             } catch (error) {
                 console.error('[SQL反馈] 网络错误:', error);
+                alert('网络错误，请稍后重试');
             }
         }
         
