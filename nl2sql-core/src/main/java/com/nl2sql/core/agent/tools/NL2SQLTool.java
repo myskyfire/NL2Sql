@@ -208,6 +208,26 @@ public class NL2SQLTool {
             log.info("[NL2SQLTool] 初始检索到 {} 个表: {}", initialTables.size(), initialTables);
             publishProgress("tables_retrieved", "✅ 找到 " + initialTables.size() + " 个候选表");
             
+            // ✅ 关键优化：如果只有一个数据源且检索到的表 <= 5，跳过 LLM 表选择
+            Integer totalDatasourceCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT datasource_id) FROM column_metadata",
+                Integer.class
+            );
+            
+            if (totalDatasourceCount != null && totalDatasourceCount == 1 && initialTables.size() <= 5) {
+                log.info("[NL2SQLTool] ⚡ 单数据源模式，直接使用检索结果，跳过 LLM 表选择");
+                Set<String> allTables = new HashSet<>(initialTables);
+                publishProgress("tables_optimized", "✨ 自动选定 " + allTables.size() + " 张表");
+                
+                // 直接进入 SQL 生成阶段
+                String schemaInfo = buildTableSchemaInfo(new ArrayList<>(allTables), datasourceId);
+                String relationshipInfo = relationshipService.getRelationshipsForPrompt(
+                    datasourceId, new ArrayList<>(allTables));
+                
+                // 继续后续逻辑...
+                return generateSQLWithTables(expandedQuery, allTables, schemaInfo, relationshipInfo, datasourceId, query);
+            }
+            
             // 2. 迭代式表发现 + 回溯机制
             Set<String> allTables = new HashSet<>(initialTables);
             boolean needsClarification = false;
@@ -381,7 +401,23 @@ public class NL2SQLTool {
                 return "TABLE_SELECTION_NEEDED: " + tableList.toString();
             }
             
-            // 5. ⚠️ P0优化：RAG 检索相似问答对（中等复杂度查询）
+            // 5. 调用独立方法生成 SQL（支持单数据源快速路径和多数据源完整流程）
+            return generateSQLWithTables(expandedQuery, allTables, "", "", datasourceId, query);
+            
+        } catch (Exception e) {
+            log.error("[NL2SQLTool] 生成SQL失败", e);
+            return "错误：" + e.getMessage();
+        }
+    }
+    
+    /**
+     * ✅ 关键方法：基于已选定的表生成 SQL（支持单数据源快速路径和多数据源完整流程）
+     */
+    private String generateSQLWithTables(String expandedQuery, Set<String> allTables, 
+                                        String schemaInfo, String relationshipInfo,
+                                        Long datasourceId, String originalQuery) {
+        try {
+            // 1. RAG 检索相似问答对（中等复杂度查询）
             String ragEnhancement = "";
             if (ragService != null) {
                 try {
@@ -436,19 +472,23 @@ public class NL2SQLTool {
                     log.warn("[NL2SQLTool] RAG检索失败: {}", e.getMessage());
                 }
             }
-            // 6. ✅ 基于关联关系智能扩展表（补充必要的JOIN表）
+            
+            // 2. ✅ 基于关联关系智能扩展表（补充必要的JOIN表）
             Set<String> expandedTables = new HashSet<>(allTables);
             
             publishProgress("expanding_relationships", "🔗 分析表关联关系...");
             
             // 第一次：基于LLM选的表获取关联关系
-            String relationshipInfo = relationshipService.getRelationshipsForPrompt(
-                datasourceId, new ArrayList<>(allTables));
+            String fullRelationshipInfo = relationshipInfo;
+            if (fullRelationshipInfo.isEmpty()) {
+                fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                    datasourceId, new ArrayList<>(allTables));
+            }
             
             // 从关联关系中提取所有涉及的表名，并添加到expandedTables
-            if (!relationshipInfo.isEmpty()) {
+            if (!fullRelationshipInfo.isEmpty()) {
                 java.util.regex.Pattern tablePattern = java.util.regex.Pattern.compile("\\b(\\w+)\\.\\w+\\s*->\\s*(\\w+)\\.\\w+");
-                java.util.regex.Matcher matcher = tablePattern.matcher(relationshipInfo);
+                java.util.regex.Matcher matcher = tablePattern.matcher(fullRelationshipInfo);
                 while (matcher.find()) {
                     String sourceTable = matcher.group(1).toLowerCase();
                     String targetTable = matcher.group(2).toLowerCase();
@@ -466,17 +506,19 @@ public class NL2SQLTool {
             }
             
             // ⚠️ 关键：基于扩展后的表重新获取完整的关联关系
-            String fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
-                datasourceId, new ArrayList<>(expandedTables));
+            if (expandedTables.size() > allTables.size()) {
+                fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                    datasourceId, new ArrayList<>(expandedTables));
+            }
             
             log.info("[NL2SQLTool] 最终用于SQL生成的表: {}", expandedTables);
             log.info("[NL2SQLTool] 最终关联关系数量: {}", 
                 fullRelationshipInfo.isEmpty() ? 0 : fullRelationshipInfo.split("\n").length);
             
-            String schemaInfo = buildTableSchemaInfo(new ArrayList<>(expandedTables), datasourceId);
+            String finalSchemaInfo = buildTableSchemaInfo(new ArrayList<>(expandedTables), datasourceId);
             
             log.info("[NL2SQLTool] ========== SchemaInfo(前500字符) ==========");
-            log.info("[NL2SQLTool] {}", schemaInfo);
+            log.info("[NL2SQLTool] {}", finalSchemaInfo);
             log.info("[NL2SQLTool] ================================================");
             
             String joinHint = fullRelationshipInfo.isEmpty() ? "" : 
@@ -549,7 +591,7 @@ public class NL2SQLTool {
                 "   - 当前场景已有明确的关联关系，请不要返回CLARIFY_RELATIONSHIP\n" +
                 "\nSQL：",
                 expandedTables.size(), availableTablesList,
-                schemaInfo, fullRelationshipInfo.isEmpty() ? "" : fullRelationshipInfo + "\n\n", ragEnhancement, expandedQuery
+                finalSchemaInfo, fullRelationshipInfo.isEmpty() ? "" : fullRelationshipInfo + "\n\n", ragEnhancement, expandedQuery
             );
             
             String sql = modelRouter.smartGenerateSQL(sqlPrompt, expandedQuery);
@@ -562,7 +604,7 @@ public class NL2SQLTool {
             
             // ⚠️ P0优化：SQL 验证与 Self-Correction
             publishProgress("validating_sql", "🔍 验证SQL正确性...");
-            sql = validateAndCorrectSQL(sql, expandedQuery, datasourceId, schemaInfo, relationshipInfo, 3);
+            sql = validateAndCorrectSQL(sql, expandedQuery, datasourceId, finalSchemaInfo, fullRelationshipInfo, 3);
             publishProgress("validation_completed", "✅ SQL验证通过");
             
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
@@ -586,8 +628,9 @@ public class NL2SQLTool {
                     cacheResult.setRowCount(1);
                     cacheResult.setExecutionTime(0);
                     
-                    queryCacheService.putToCache(expandedQuery, cacheResult, 60); // 缓存 60 分钟
-                    log.info("[NL2SQLTool] SQL 已缓存: question={}", expandedQuery);
+                    // ✅ 关键修复：使用原始 query 作为 key（而非 expandedQuery）
+                    queryCacheService.putToCache(originalQuery, cacheResult, 60); // 缓存 60 分钟
+                    log.info("[NL2SQLTool] SQL 已缓存: question={}", originalQuery);
                 } catch (Exception e) {
                     log.warn("[NL2SQLTool] SQL 缓存失败", e);
                 }

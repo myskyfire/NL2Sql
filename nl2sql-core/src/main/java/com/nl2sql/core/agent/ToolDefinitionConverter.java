@@ -31,8 +31,6 @@ public class ToolDefinitionConverter {
             
             toolDef.put("function", function);
             openAITools.add(toolDef);
-            
-            log.debug("[ToolConverter] 转换工具: {} -> {}", toolName, executor.getDescription());
         }
         
         return openAITools;
