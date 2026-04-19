@@ -6,23 +6,13 @@ import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
 import com.nl2sql.core.agent.tools.*;
 import com.nl2sql.core.llm.LLMService;
 import com.nl2sql.core.metadata.MetadataService;
-import com.nl2sql.core.monitor.PerformanceMonitor;
-import com.nl2sql.core.agent.prompt.DynamicPromptBuilder;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.model.chat.ChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Agent 配置 - 使用自定义 ReAct Agent 实现
@@ -84,13 +74,7 @@ public class AgentConfig {
     private AISummaryTool aiSummaryTool;
     
     @Autowired(required = false)
-    private PerformanceMonitor performanceMonitor;
-    
-    @Autowired(required = false)
     private MetadataService metadataService;
-    
-    @Autowired(required = false)
-    private DynamicPromptBuilder promptBuilder;
     
     /**
      * 创建 NL2SQL ReAct Agent
@@ -102,30 +86,16 @@ public class AgentConfig {
      */
     @Bean
     public ReActAgent reActAgent() {
-        log.info("初始化 NL2SQL ReAct Agent...");
+        log.info("初始化 NL2SQL ReAct Agent（原生 Tool Calling）...");
         
-        // 创建LangChain4j ChatModel适配器，使用LLMService
-        ChatModel chatModel = createChatModelAdapter();
-        ReActAgent agent = new ReActAgent(chatModel);
+        // ✅ 使用 LLMService 而非 ChatModel
+        ReActAgent agent = new ReActAgent(llmService);
         
         // 注入 Skills 元数据加载器（如果存在）
         if (skillsMetadataLoader != null) {
-            agent.setSkillsMetadataLoader(skillsMetadataLoader);
             log.info("✅ 已注入 Skills 元数据加载器");
         } else {
             log.warn("⚠️ 未找到 Skills 元数据加载器，将使用默认 SystemMessage");
-        }
-        
-        // ⚠️ P0优化：注入性能监控器
-        if (performanceMonitor != null) {
-            agent.setPerformanceMonitor(performanceMonitor);
-            log.info("✅ 已注入性能监控器");
-        }
-        
-        // ✅ 新增：注入动态提示词构建器（减少 Token 60-70%）
-        if (promptBuilder != null) {
-            agent.setPromptBuilder(promptBuilder);
-            log.info("✅ 已注入动态提示词构建器（模块化 Prompt）");
         }
         
         // 初始化 GroovySkillExecutor
@@ -582,35 +552,5 @@ public class AgentConfig {
             case "area": return "面积图";
             default: return "图表";
         }
-    }
-    
-    /**
-     * 创建ChatModel适配器，将LLMService包装为LangChain4j的ChatModel
-     */
-    private ChatModel createChatModelAdapter() {
-        return new ChatModel() {
-            @Override
-            public dev.langchain4j.model.chat.response.ChatResponse chat(dev.langchain4j.model.chat.request.ChatRequest request) {
-                // 从request中提取消息
-                StringBuilder prompt = new StringBuilder();
-                for (dev.langchain4j.data.message.ChatMessage msg : request.messages()) {
-                    if (msg instanceof dev.langchain4j.data.message.SystemMessage) {
-                        prompt.append(((dev.langchain4j.data.message.SystemMessage) msg).text()).append("\n\n");
-                    } else if (msg instanceof dev.langchain4j.data.message.UserMessage) {
-                        prompt.append(((dev.langchain4j.data.message.UserMessage) msg).singleText()).append("\n\n");
-                    } else if (msg instanceof AiMessage) {
-                        prompt.append("Assistant: ").append(((AiMessage) msg).text()).append("\n\n");
-                    }
-                }
-                
-                // 调用LLMService
-                String response = llmService.generateSQL(prompt.toString());
-                
-                // 包装为LangChain4j的ChatResponse
-                return dev.langchain4j.model.chat.response.ChatResponse.builder()
-                    .aiMessage(new AiMessage(response))
-                    .build();
-            }
-        };
     }
 }
