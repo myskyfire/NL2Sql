@@ -140,6 +140,52 @@ public class OllamaProvider implements LLMProvider {
         }
     }
     
+    /**
+     * 生成文本并支持原生 Tool Calling
+     * @param messages 消息列表
+     * @param temperature 温度参数
+     * @param tools 工具定义列表（OpenAI 兼容格式）
+     * @return Chat API 完整响应（包含 tool_calls）
+     */
+    public Map<String, Object> generateWithTools(List<Map<String, Object>> messages, double temperature, List<Map<String, Object>> tools) {
+        try {
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", modelName);
+            requestBody.put("messages", messages);
+            requestBody.put("temperature", temperature);
+            requestBody.put("stream", false);
+            
+            if (tools != null && !tools.isEmpty()) {
+                requestBody.put("tools", tools);
+                log.debug("[OllamaProvider] 启用 Tool Calling，工具数量: {}", tools.size());
+            }
+            
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+            
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/api/chat"))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(timeout))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, 
+                HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Ollama API返回错误: " + response.body());
+            }
+            
+            // 解析完整响应
+            Map<String, Object> responseMap = objectMapper.readValue(response.body(), Map.class);
+            return responseMap;
+            
+        } catch (Exception e) {
+            log.error("[OllamaProvider] Tool Calling 失败", e);
+            throw new RuntimeException("Ollama Tool Calling 失败: " + e.getMessage(), e);
+        }
+    }
+    
     @Override
     public Map<String, Object> getConfig() {
         Map<String, Object> config = new HashMap<>();

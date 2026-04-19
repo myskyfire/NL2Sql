@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
+import java.util.List;
+import java.util.Map;
 
 /**
  * LLM服务 - 统一的LLM调用接口
@@ -154,6 +156,31 @@ public class LLMService {
         } catch (Exception e) {
             log.error("[LLMService] 答案生成失败", e);
             return "抱歉，无法生成回答: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 使用原生 Tool Calling 生成响应
+     * @param messages 消息列表
+     * @param temperature 温度参数
+     * @param tools 工具定义列表
+     * @return 完整响应（包含 tool_calls 或 content）
+     */
+    public Map<String, Object> generateWithTools(List<Map<String, Object>> messages, double temperature, List<Map<String, Object>> tools) {
+        try {
+            log.debug("[LLMService] 调用原生 Tool Calling，工具数量: {}", tools != null ? tools.size() : 0);
+            
+            // ✅ 使用推理模型（qwen3:8b）
+            if (ollamaReasoningProvider != null) {
+                return ollamaReasoningProvider.generateWithTools(messages, temperature, tools);
+            }
+            
+            // 降级：如果 Ollama Provider 不支持，抛出异常
+            throw new UnsupportedOperationException("当前 Provider 不支持原生 Tool Calling");
+            
+        } catch (Exception e) {
+            log.error("[LLMService] Tool Calling 失败", e);
+            throw new RuntimeException("Tool Calling 失败: " + e.getMessage(), e);
         }
     }
     
