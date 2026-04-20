@@ -1,0 +1,81 @@
+refactor: 按OpenClaw标准重构WorkflowEngine
+
+## 核心改动
+
+### 1. WorkflowEngine.java - 支持OpenClaw语法
+
+**新增字段**：
+- `action`: call_tool/call_skill/respond（标准化）
+- `input`: 替代params（与OpenClaw一致）
+- `output_var`: 步骤结果变量名
+- `id`: 步骤唯一标识（兼容name）
+
+**向后兼容**：
+- tool → 自动转换为 action: call_tool
+- params → 自动映射为 input
+- name → 作为id的fallback
+
+### 2. SKILL.md示例更新
+
+**sql-validate-execute**:
+```yaml
+# 旧语法
+- name: validate
+  tool: validate_sql
+  params:
+    sql: "{{sql}}"
+
+# 新语法（OpenClaw标准）
+- id: validate
+  action: call_tool
+  tool: validate_sql
+  input:
+    sql: "{{sql}}"
+  output_var: validation_result
+```
+
+**sql-performance-analysis**:
+- 4个Tool调用全部改用新语法
+- 每个步骤明确output_var
+- 条件判断使用validation_result
+
+### 3. 执行逻辑优化
+
+**变量传递**：
+- 步骤结果保存到output_var指定的变量
+- 后续步骤通过{{variable}}引用
+- 默认使用stepId作为变量名
+
+**Action类型**：
+- call_tool: 调用原子Tool
+- call_skill: 调用其他Skill
+- respond: 返回最终结果
+
+## 文件变更
+
+修改：
+- nl2sql-core/.../skills/WorkflowEngine.java
+- nl2sql-web/.../skills/sql-validate-execute/SKILL.md
+- nl2sql-web/.../skills/sql-performance-analysis/SKILL.md
+
+## 影响点分析
+
+### 根因
+原workflow语法不符合OpenClaw标准，无法复用其生态工具。
+
+### 修复方案
+1. 解析器支持action/input/output_var/id字段
+2. 执行引擎根据action类型分发
+3. 输出变量通过output_var控制
+
+### 可能影响点
+- ✅ **向后兼容**：旧语法（tool/params/name）仍可用
+- ✅ **功能不变**：执行逻辑完全等价
+- ⚠️ **需要测试**：新语法的workflow是否正常执行
+- ❓ **性能影响**：无明显影响（仅字段映射）
+
+### 建议测试
+1. sql-validate-execute Skill执行
+2. sql-performance-analysis Skill执行
+3. 验证output_var变量传递正确性
+4. 验证condition条件分支生效

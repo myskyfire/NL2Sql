@@ -1,6 +1,9 @@
 package com.nl2sql.core.llm;
 
+import com.nl2sql.core.llm.extension.IndustryConceptExtension;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -17,16 +20,77 @@ public class SynonymService {
     // 业务术语映射表
     private final Map<String, String> businessTermMap = new ConcurrentHashMap<>();
     
+    @Autowired(required = false)
+    private JdbcTemplate jdbcTemplate;
+    
+    @Autowired(required = false)
+    private IndustryConceptDictionary industryConceptDictionary;
+    
+    @Autowired(required = false)
+    private IndustryConceptExtension conceptExtension;
+    
     @PostConstruct
     public void init() {
-        loadDefaultSynonyms();
+        // ✅ 优化1：从数据库加载同义词（优先）
+        loadSynonymsFromDatabase();
+        
+        // 如果数据库为空，加载默认硬编码同义词（兜底）
+        if (synonymMap.isEmpty()) {
+            log.warn("[SynonymService] 数据库无同义词数据，加载默认硬编码同义词");
+            loadDefaultSynonyms();
+        }
+        
+        // 加载业务术语
         loadBusinessTerms();
-        log.info("同义词词典初始化完成: {}个同义词组, {}个业务术语", 
+        
+        log.info("[SynonymService] 同义词词典初始化完成: {}个同义词组, {}个业务术语", 
             synonymMap.size(), businessTermMap.size());
     }
     
     /**
-     * 加载默认同义词
+     * ✅ 优化1：从数据库加载同义词（优先）
+     */
+    private void loadSynonymsFromDatabase() {
+        if (jdbcTemplate == null) {
+            log.warn("[SynonymService] JdbcTemplate未配置，跳过数据库加载");
+            return;
+        }
+        
+        try {
+            // 从 industry_concept 表加载所有已审核的概念
+            List<Map<String, Object>> concepts = jdbcTemplate.queryForList(
+                "SELECT concept_key, concept_aliases FROM industry_concept WHERE status = 'approved'"
+            );
+            
+            for (Map<String, Object> concept : concepts) {
+                String conceptKey = (String) concept.get("concept_key");
+                String aliasesJson = (String) concept.get("concept_aliases");
+                
+                if (conceptKey != null && aliasesJson != null) {
+                    try {
+                        // 解析JSON数组
+                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                        List<String> aliases = mapper.readValue(aliasesJson, List.class);
+                        
+                        if (aliases != null && !aliases.isEmpty()) {
+                            synonymMap.put(conceptKey, aliases);
+                            log.debug("[SynonymService] 从数据库加载: {} -> {}", conceptKey, aliases);
+                        }
+                    } catch (Exception e) {
+                        log.warn("[SynonymService] 解析别名JSON失败: {}", aliasesJson, e);
+                    }
+                }
+            }
+            
+            log.info("[SynonymService] 从数据库加载 {} 个同义词组", synonymMap.size());
+            
+        } catch (Exception e) {
+            log.error("[SynonymService] 从数据库加载同义词失败", e);
+        }
+    }
+    
+    /**
+     * 加载默认同义词（兜底）
      */
     private void loadDefaultSynonyms() {
         // 订单相关
@@ -95,38 +159,139 @@ public class SynonymService {
      * 扩展查询中的同义词
      * 
      * @param query 原始查询
+     * @param datasourceId 数据源ID（用于获取行业代码）
      * @return 扩展后的查询
      */
-    public String expandSynonyms(String query) {
+    public String expandSynonyms(String query, Long datasourceId) {
         if (query == null || query.trim().isEmpty()) {
             return query;
         }
         
         String expanded = query;
         
-        // 遍历同义词映射
+        // ✅ 步骤1：应用硬编码/数据库同义词
         for (Map.Entry<String, List<String>> entry : synonymMap.entrySet()) {
             String standardTerm = entry.getKey();
             List<String> synonyms = entry.getValue();
             
-            // 检查是否包含同义词
             for (String synonym : synonyms) {
                 if (expanded.toLowerCase().contains(synonym.toLowerCase())) {
-                    // 替换为标准化术语
                     expanded = expanded.replaceAll(
                         "(?i)" + synonym, 
                         standardTerm
                     );
-                    log.debug("同义词替换: {} -> {}", synonym, standardTerm);
+                    log.debug("[SynonymService] 同义词替换: {} -> {}", synonym, standardTerm);
                 }
             }
         }
         
-        if (!expanded.equals(query)) {
-            log.info("同义词扩展: {} -> {}", query, expanded);
+        // ✅ 优化3：调用行业扩展点获取额外同义词
+        if (conceptExtension != null && industryConceptDictionary != null && datasourceId != null) {
+            try {
+                // 获取当前数据源的行业代码
+                String industryCode = getIndustryCodeByDatasource(datasourceId);
+                
+                if (industryCode != null) {
+                    // 遍历所有概念，尝试匹配用户问题中的术语
+                    for (Map.Entry<String, List<String>> entry : synonymMap.entrySet()) {
+                        String conceptKey = entry.getKey();
+                        List<String> extraSynonyms = conceptExtension.suggestSynonyms(conceptKey, industryCode);
+                        
+                        if (extraSynonyms != null && !extraSynonyms.isEmpty()) {
+                            for (String extraSynonym : extraSynonyms) {
+                                if (expanded.toLowerCase().contains(extraSynonym.toLowerCase())) {
+                                    expanded = expanded.replaceAll(
+                                        "(?i)" + extraSynonym,
+                                        conceptKey
+                                    );
+                                    log.debug("[SynonymService] 扩展点同义词: {} -> {}", extraSynonym, conceptKey);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[SynonymService] 行业扩展点调用失败", e);
+            }
         }
         
-        return expanded;
+        // ✅ 优化2：启用业务术语解析
+        String resolved = resolveBusinessTerms(expanded);
+        
+        if (!resolved.equals(query)) {
+            log.info("[SynonymService] 查询扩展完成: {} -> {}", query, resolved);
+        }
+        
+        return resolved;
+    }
+    
+    /**
+     * 兼容旧版本API（无datasourceId）
+     */
+    public String expandSynonyms(String query) {
+        return expandSynonyms(query, null);
+    }
+    
+    /**
+     * 根据数据源ID获取行业代码
+     */
+    private String getIndustryCodeByDatasource(Long datasourceId) {
+        if (jdbcTemplate == null) {
+            return null;
+        }
+        
+        try {
+            // 先查 datasource_industry_mapping 表
+            String industryCode = jdbcTemplate.queryForObject(
+                "SELECT industry_code FROM datasource_industry_mapping WHERE datasource_id = ? ORDER BY priority ASC LIMIT 1",
+                String.class, datasourceId
+            );
+            
+            if (industryCode != null) {
+                return industryCode;
+            }
+            
+            // fallback：从 business_category 推断
+            String businessCategory = jdbcTemplate.queryForObject(
+                "SELECT business_category FROM datasource_config WHERE id = ?",
+                String.class, datasourceId
+            );
+            
+            if (businessCategory != null) {
+                // 使用简单的关键词匹配（因为 IndustryConceptDictionary 没有公开该方法）
+                return matchIndustryByKeyword(businessCategory);
+            }
+            
+        } catch (Exception e) {
+            log.debug("[SynonymService] 获取行业代码失败", e);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 根据业务分类关键词匹配行业代码
+     */
+    private String matchIndustryByKeyword(String businessCategory) {
+        if (businessCategory == null) {
+            return null;
+        }
+        
+        String category = businessCategory.toLowerCase();
+        
+        if (category.contains("电商") || category.contains("零售") || category.contains("ecommerce")) {
+            return "ecommerce";
+        } else if (category.contains("金融") || category.contains("银行") || category.contains("finance")) {
+            return "finance";
+        } else if (category.contains("医疗") || category.contains("医院") || category.contains("medical")) {
+            return "medical";
+        } else if (category.contains("教育") || category.contains("培训") || category.contains("education")) {
+            return "education";
+        } else if (category.contains("制造") || category.contains("生产") || category.contains("manufacturing")) {
+            return "manufacturing";
+        }
+        
+        return null; // 无法匹配
     }
     
     /**

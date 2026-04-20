@@ -1,0 +1,65 @@
+feat: 实现声明式Workflow引擎，SKILL.md支持Tool编排DSL
+
+## 核心改造
+
+### 1. 新增 WorkflowEngine（声明式工作流引擎）
+- 解析 SKILL.md 中的 workflow YAML 配置
+- 自动执行 Tool/Skill 调用链
+- 支持条件分支（condition）
+- 支持变量传递（{{variable}}模板语法）
+- 支持嵌套输出（output）
+
+### 2. 修改 GroovySkillExecutor
+- 优先检查是否有 workflow 配置
+- 有workflow时使用声明式引擎执行
+- 无workflow时fallback到Groovy脚本执行
+- 混合模式：简单流程用YAML，复杂逻辑用Groovy
+
+### 3. 更新示例 Skill
+- sql-validate-execute: 添加完整workflow配置
+  * validate → execute 两步串联
+  * 条件判断：validate.valid == true
+  
+- sql-performance-analysis: 添加多Tool协同workflow
+  * validate → explain → check_index → estimate_cost
+  * 综合分析返回结果
+
+## Workflow DSL 语法
+
+```yaml
+workflow:
+  steps:
+    - name: step1
+      tool: tool_name
+      params:
+        param1: "{{input_param}}"
+    
+    - name: step2
+      tool: another_tool
+      params:
+        param1: "{{step1.result}}"
+      condition: "{{step1.success == true}}"
+    
+    - name: return_result
+      output:
+        status: "success"
+        data: "{{step2}}"
+```
+
+## 架构优势
+
+✅ **声明式配置**：Tool编排在SKILL.md中定义，清晰可见
+✅ **低代码**：简单流程无需写Groovy脚本
+✅ **可维护**：YAML比代码更易理解和修改
+✅ **灵活性**：支持Groovy脚本作为fallback处理复杂逻辑
+✅ **向后兼容**：现有Skill无需修改，自动使用新引擎
+
+## 文件变更
+
+新增：
+- nl2sql-core/.../skills/WorkflowEngine.java (390行)
+
+修改：
+- nl2sql-core/.../skills/GroovySkillExecutor.java
+- nl2sql-web/.../skills/sql-validate-execute/SKILL.md
+- nl2sql-web/.../skills/sql-performance-analysis/SKILL.md

@@ -1,6 +1,7 @@
 package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
+import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.service.DataSourceConfigService;
 import com.nl2sql.metadata.service.MetadataCollectorService;
@@ -26,6 +27,9 @@ public class AdminMetadataController {
     
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired(required = false)
+    private MetadataCacheService metadataCacheService;
     
     public AdminMetadataController(DataSourceConfigService dataSourceConfigService,
                                    MetadataCollectorService metadataCollectorService,
@@ -124,6 +128,12 @@ public class AdminMetadataController {
             
             // 清除缓存
             metadataQueryService.clearCache(datasourceId);
+            
+            // ✅ 关键：清除 Caffeine 元数据缓存（Schema + 关联关系）
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[AdminMetadata] 元数据已同步，清除所有 Caffeine 缓存");
+            }
             
             return Result.success(response);
         } catch (Exception e) {

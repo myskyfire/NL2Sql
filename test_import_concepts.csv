@@ -1,0 +1,11 @@
+concept_type,concept_key,aliases,description
+metric,revenue,"销售额,收入,GMV,营业额",销售总金额
+metric,profit,"利润,净利润,盈利",销售收入减去成本
+metric,order_count,"订单数,订单量,下单数",订单总数量
+entity,customer,"客户,顾客,用户",购买商品或服务的个人或企业
+dimension,region,"地区,区域,省份",地理区域维度
+dimension,time_period,"时间段,时期,时间范围",时间区间维度
+metric,conversion_rate,"转化率,成交率",访客转化为客户的比例
+metric,avg_order_value,"客单价,平均订单金额",平均每笔订单的金额
+dimension,product_category,"产品分类,商品类别",产品的分类维度
+metric,customer_acquisition_cost,"获客成本,拉新成本",获取一个新客户的平均成本

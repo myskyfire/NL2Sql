@@ -1,0 +1,82 @@
+[
+  {
+    "id": 1,
+    "question": "查询最近10条订单",
+    "expected_keywords": ["SELECT", "FROM", "orders", "ORDER BY", "LIMIT 10"],
+    "forbidden_keywords": ["DELETE", "DROP", "UPDATE"],
+    "expected_columns": ["id", "order_no", "user_id", "total_amount", "created_at"],
+    "description": "简单查询测试 - 验证基本SELECT语句生成"
+  },
+  {
+    "id": 2,
+    "question": "统计每个用户的订单数量",
+    "expected_keywords": ["SELECT", "COUNT", "GROUP BY", "user_id"],
+    "forbidden_keywords": [],
+    "expected_columns": ["user_id", "COUNT"],
+    "description": "聚合查询测试 - 验证GROUP BY正确使用"
+  },
+  {
+    "id": 3,
+    "question": "查询上个月销售额前3的产品",
+    "expected_keywords": ["SELECT", "SUM", "ORDER BY", "DESC", "LIMIT 3"],
+    "forbidden_keywords": [],
+    "expected_columns": ["product_name", "sales_amount"],
+    "description": "复杂聚合+排序测试 - 验证多条件组合"
+  },
+  {
+    "id": 4,
+    "question": "查询用户张三的所有订单",
+    "expected_keywords": ["SELECT", "FROM", "WHERE", "JOIN"],
+    "forbidden_keywords": [],
+    "expected_columns": ["orders.id", "users.real_name"],
+    "description": "多表关联测试 - 验证JOIN语法正确性"
+  },
+  {
+    "id": 5,
+    "question": "分析各地区的销售趋势",
+    "expected_keywords": ["SELECT", "GROUP BY", "region"],
+    "forbidden_keywords": [],
+    "expected_columns": ["region", "sales_amount"],
+    "description": "分组统计测试 - 验证维度分析能力"
+  },
+  {
+    "id": 6,
+    "question": "找出消费金额超过1000元的VIP用户",
+    "expected_keywords": ["SELECT", "WHERE", "HAVING", "SUM"],
+    "forbidden_keywords": [],
+    "expected_columns": ["user_id", "real_name", "total_amount"],
+    "description": "条件过滤测试 - 验证HAVING子句使用"
+  },
+  {
+    "id": 7,
+    "question": "查询今天的新增用户数",
+    "expected_keywords": ["SELECT", "COUNT", "WHERE", "CURDATE()"],
+    "forbidden_keywords": [],
+    "expected_columns": ["COUNT"],
+    "description": "时间函数测试 - 验证日期处理逻辑"
+  },
+  {
+    "id": 8,
+    "question": "列出所有没有订单的用户",
+    "expected_keywords": ["SELECT", "LEFT JOIN", "IS NULL"],
+    "forbidden_keywords": [],
+    "expected_columns": ["users.id", "users.real_name"],
+    "description": "空值查询测试 - 验证LEFT JOIN + IS NULL模式"
+  },
+  {
+    "id": 9,
+    "question": "计算每个产品的平均评分和评价数量",
+    "expected_keywords": ["SELECT", "AVG", "COUNT", "GROUP BY"],
+    "forbidden_keywords": [],
+    "expected_columns": ["product_name", "AVG", "COUNT"],
+    "description": "多聚合函数测试 - 验证多个聚合函数同时使用"
+  },
+  {
+    "id": 10,
+    "question": "查询销售额最高的前5个分类",
+    "expected_keywords": ["SELECT", "SUM", "ORDER BY", "DESC", "LIMIT 5"],
+    "forbidden_keywords": [],
+    "expected_columns": ["category_name", "total_sales"],
+    "description": "Top-N查询测试 - 验证排序和限制"
+  }
+]

@@ -288,6 +288,8 @@
                 
                 if (result.code === 200 && result.data) {
                     renderLogs(result.data);
+                    // ✅ 数据加载完成后通知父窗口调整高度
+                    notifyParentResize();
                 } else {
                     document.getElementById('logsTableBody').innerHTML = 
                         '<tr><td colspan="7" style="text-align: center; color: #f44336;">加载失败</td></tr>';
@@ -347,6 +349,18 @@
                 minute: '2-digit',
                 second: '2-digit'
             });
+        }
+        
+        // ✅ 通知父窗口调整iframe高度
+        function notifyParentResize() {
+            setTimeout(() => {
+                // 触发自定义事件，让父窗口的MutationObserver检测到变化
+                const event = new CustomEvent('contentChanged');
+                window.dispatchEvent(event);
+                
+                // 同时手动修改body属性触发MutationObserver
+                document.body.setAttribute('data-updated', Date.now().toString());
+            }, 200);
         }
     </script>
 </body>

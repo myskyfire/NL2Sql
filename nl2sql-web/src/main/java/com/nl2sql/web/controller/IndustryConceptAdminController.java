@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * 行业概念管理后台 API
@@ -64,6 +65,24 @@ public class IndustryConceptAdminController {
         List<Map<String, Object>> concepts = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         
         return Map.of("success", true, "data", concepts, "count", concepts.size());
+    }
+    
+    /**
+     * ✅ 新增：获取单个概念详情
+     */
+    @GetMapping("/concepts/{id}")
+    public Map<String, Object> getConcept(@PathVariable Long id) {
+        try {
+            Map<String, Object> concept = jdbcTemplate.queryForMap(
+                "SELECT * FROM industry_concept WHERE id = ?",
+                id
+            );
+            
+            return Map.of("success", true, "data", concept);
+        } catch (Exception e) {
+            log.error("[IndustryConceptAdmin] 获取概念详情失败", e);
+            return Map.of("success", false, "error", e.getMessage());
+        }
     }
     
     /**
@@ -131,6 +150,38 @@ public class IndustryConceptAdminController {
     public Map<String, Object> deleteConcept(@PathVariable Long id) {
         jdbcTemplate.update("DELETE FROM industry_concept WHERE id = ?", id);
         return Map.of("success", true, "message", "概念删除成功");
+    }
+    
+    /**
+     * ✅ 新增：批量审核概念
+     */
+    @PostMapping("/concepts/batch-approve")
+    public Map<String, Object> batchApprove(@RequestBody Map<String, Object> request) {
+        try {
+            List<Long> ids = (List<Long>) request.get("ids");
+            String action = (String) request.get("action"); // approve/reject
+            
+            if (ids == null || ids.isEmpty()) {
+                return Map.of("success", false, "error", "请选择要审核的概念");
+            }
+            
+            String newStatus = "approve".equals(action) ? "approved" : "rejected";
+            String placeholders = String.join(",", ids.stream().map(id -> "?").toArray(String[]::new));
+            
+            int updated = jdbcTemplate.update(
+                "UPDATE industry_concept SET status = ? WHERE id IN (" + placeholders + ")",
+                Stream.concat(Stream.of(newStatus), ids.stream()).toArray()
+            );
+            
+            log.info("[IndustryConceptAdmin] 批量审核: {} 条概念, 操作: {}", updated, action);
+            
+            return Map.of("success", true, "message", String.format("已%s %d 条概念", 
+                "approve".equals(action) ? "通过" : "拒绝", updated));
+            
+        } catch (Exception e) {
+            log.error("[IndustryConceptAdmin] 批量审核失败", e);
+            return Map.of("success", false, "error", e.getMessage());
+        }
     }
     
     /**

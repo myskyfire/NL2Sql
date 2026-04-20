@@ -3,6 +3,7 @@ package com.nl2sql.core.agent.tools;
 import com.nl2sql.common.event.StreamProgressEvent;
 import com.nl2sql.common.util.MarkdownUtils;
 import com.nl2sql.core.agent.validation.SQLValidationService;
+import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.llm.IndustryConceptDictionary;
 import com.nl2sql.core.llm.ModelRouterService;
 import com.nl2sql.core.llm.SynonymService;
@@ -55,6 +56,9 @@ public class NL2SQLTool {
     
     @Autowired(required = false)
     private com.nl2sql.core.cache.QueryCacheService queryCacheService;
+    
+    @Autowired
+    private MetadataCacheService metadataCacheService;
     
     // ThreadLocal 存储当前会话ID
     private static final ThreadLocal<String> CURRENT_SESSION_ID = new ThreadLocal<>();
@@ -192,7 +196,7 @@ public class NL2SQLTool {
             publishProgress("generating_sql", "🔍 正在分析问题...");
             
             // 0. 同义词扩展（增强语义理解）
-            String expandedQuery = synonymService.expandSynonyms(query);
+            String expandedQuery = synonymService.expandSynonyms(query, datasourceId);
             if (!expandedQuery.equals(query)) {
                 log.info("[NL2SQLTool] 查询扩展: {} -> {}", query, expandedQuery);
                 publishProgress("synonym_expansion", "💡 语义扩展完成");
@@ -663,35 +667,70 @@ public class NL2SQLTool {
             return "";
         }
         
-        // ✅ 优化：批量查询所有表的字段信息（避免N次数据库查询）
-        String placeholders = tables.stream()
-            .map(t -> "?")
-            .collect(java.util.stream.Collectors.joining(", "));
+        // ✅ 关键优化：先尝试从缓存获取所有表的schema
+        Map<String, List<Map<String, Object>>> cachedSchemas = metadataCacheService.getSchemas(datasourceId, tables);
         
-        String batchColSql = String.format(
-            "SELECT table_name, column_name, data_type, column_comment, is_primary_key " +
-            "FROM column_metadata WHERE datasource_id = ? AND table_name IN (%s) " +
-            "ORDER BY table_name, ordinal_position",
-            placeholders
-        );
+        // 分离已缓存和未缓存的表
+        List<String> uncachedTables = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> allColumnsByTable = new java.util.HashMap<>();
         
-        Object[] params = new Object[tables.size() + 1];
-        params[0] = datasourceId;
-        for (int i = 0; i < tables.size(); i++) {
-            params[i + 1] = tables.get(i);
+        for (String tableName : tables) {
+            if (cachedSchemas.containsKey(tableName)) {
+                allColumnsByTable.put(tableName, cachedSchemas.get(tableName));
+            } else {
+                uncachedTables.add(tableName);
+            }
         }
         
-        List<Map<String, Object>> allColumns = jdbcTemplate.queryForList(batchColSql, params);
+        // 如果有未缓存的表，批量查询
+        if (!uncachedTables.isEmpty()) {
+            log.debug("[NL2SQLTool] Schema缓存部分未命中，需查询 {} 个表: {}", uncachedTables.size(), uncachedTables);
+            
+            String placeholders = uncachedTables.stream()
+                .map(t -> "?")
+                .collect(java.util.stream.Collectors.joining(", "));
+            
+            String batchColSql = String.format(
+                "SELECT table_name, column_name, data_type, column_comment, is_primary_key " +
+                "FROM column_metadata WHERE datasource_id = ? AND table_name IN (%s) " +
+                "ORDER BY table_name, ordinal_position",
+                placeholders
+            );
+            
+            Object[] params = new Object[uncachedTables.size() + 1];
+            params[0] = datasourceId;
+            for (int i = 0; i < uncachedTables.size(); i++) {
+                params[i + 1] = uncachedTables.get(i);
+            }
+            
+            List<Map<String, Object>> allColumns = jdbcTemplate.queryForList(batchColSql, params);
+            
+            // 按表名分组并缓存
+            Map<String, List<Map<String, Object>>> uncachedByTable = allColumns.stream()
+                .collect(java.util.stream.Collectors.groupingBy(col -> (String) col.get("table_name")));
+            
+            for (Map.Entry<String, List<Map<String, Object>>> entry : uncachedByTable.entrySet()) {
+                String tableName = entry.getKey();
+                List<Map<String, Object>> columns = entry.getValue();
+                
+                // 存入缓存
+                metadataCacheService.putSchema(datasourceId, tableName, columns);
+                
+                // 合并到结果集
+                allColumnsByTable.put(tableName, columns);
+            }
+            
+            log.debug("[NL2SQLTool] 已缓存 {} 个表的Schema", uncachedByTable.size());
+        } else {
+            log.debug("[NL2SQLTool] Schema缓存全部命中");
+        }
         
-        // 按表名分组
-        Map<String, List<Map<String, Object>>> columnsByTable = allColumns.stream()
-            .collect(java.util.stream.Collectors.groupingBy(col -> (String) col.get("table_name")));
-        
+        // 构建返回字符串
         StringBuilder sb = new StringBuilder();
         for (String tableName : tables) {
             sb.append(String.format("\n表名: %s\n", tableName));
             
-            List<Map<String, Object>> columns = columnsByTable.getOrDefault(tableName, java.util.Collections.emptyList());
+            List<Map<String, Object>> columns = allColumnsByTable.getOrDefault(tableName, java.util.Collections.emptyList());
             
             if (columns.isEmpty()) {
                 sb.append("  [警告] 该表没有字段元数据\n");
@@ -827,6 +866,26 @@ public class NL2SQLTool {
     private String validateAndCorrectSQL(String sql, String question, Long datasourceId, 
                                          String schemaInfo, String relationshipInfo, int maxRetries) {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            // ✅ 新增：Schema白名单校验（防止大模型幻觉列名）
+            Set<String> allowedColumns = extractColumnWhitelist(sql, datasourceId);
+            if (!allowedColumns.isEmpty()) {
+                List<String> whitelistIssues = sqlValidationService.validateColumnWhitelist(sql, allowedColumns);
+                if (!whitelistIssues.isEmpty()) {
+                    log.warn("[NL2SQLTool] ⚠️ 检测到幻觉列名 (attempt={}): {}", attempt, whitelistIssues);
+                    
+                    // 如果是最后一次尝试，记录警告但继续执行
+                    if (attempt >= maxRetries) {
+                        log.warn("[NL2SQLTool] 达到最大重试次数，保留原SQL（可能存在幻觉列名）");
+                        break;
+                    }
+                    
+                    // 触发重新生成
+                    log.info("[NL2SQLTool] 尝试修正幻觉列名...");
+                    sql = attemptHallucinationCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues);
+                    continue; // 重新验证
+                }
+            }
+            
             // 1. 综合验证
             SQLValidationService.ValidationReport report = sqlValidationService.comprehensiveValidate(sql);
             
@@ -873,6 +932,152 @@ public class NL2SQLTool {
         }
         
         return sql;
+    }
+    
+    /**
+     * ✅ 新增：从 SQL 中提取表名，并查询对应的列名白名单（带缓存）
+     */
+    private Set<String> extractColumnWhitelist(String sql, Long datasourceId) {
+        try {
+            // 1. 使用 JSqlParser 提取 SQL 中使用的表名
+            net.sf.jsqlparser.statement.Statement statement = 
+                net.sf.jsqlparser.parser.CCJSqlParserUtil.parse(sql);
+            
+            if (!(statement instanceof net.sf.jsqlparser.statement.select.Select)) {
+                return Collections.emptySet(); // 非 SELECT 语句
+            }
+            
+            net.sf.jsqlparser.statement.select.Select selectStmt = 
+                (net.sf.jsqlparser.statement.select.Select) statement;
+            net.sf.jsqlparser.statement.select.SelectBody selectBody = selectStmt.getSelectBody();
+            
+            if (!(selectBody instanceof net.sf.jsqlparser.statement.select.PlainSelect)) {
+                return Collections.emptySet();
+            }
+            
+            net.sf.jsqlparser.statement.select.PlainSelect plainSelect = 
+                (net.sf.jsqlparser.statement.select.PlainSelect) selectBody;
+            
+            // 2. 提取所有表名（FROM + JOIN）
+            Set<String> tableNames = new HashSet<>();
+            
+            // FROM 表
+            if (plainSelect.getFromItem() != null) {
+                String fromTable = plainSelect.getFromItem().toString().toLowerCase();
+                // 去除别名
+                if (fromTable.contains(" ")) {
+                    fromTable = fromTable.split("\\s+")[0];
+                }
+                tableNames.add(fromTable);
+            }
+            
+            // JOIN 表
+            if (plainSelect.getJoins() != null) {
+                for (net.sf.jsqlparser.statement.select.Join join : plainSelect.getJoins()) {
+                    if (join.getRightItem() != null) {
+                        String joinTable = join.getRightItem().toString().toLowerCase();
+                        if (joinTable.contains(" ")) {
+                            joinTable = joinTable.split("\\s+")[0];
+                        }
+                        tableNames.add(joinTable);
+                    }
+                }
+            }
+            
+            if (tableNames.isEmpty()) {
+                return Collections.emptySet();
+            }
+            
+            log.debug("[NL2SQLTool] 从 SQL 中提取到表名: {}", tableNames);
+            
+            // ✅ 关键优化：先查缓存
+            Set<String> cachedColumns = metadataCacheService.getColumnWhitelist(datasourceId, tableNames);
+            if (cachedColumns != null) {
+                log.debug("[NL2SQLTool] 列名白名单缓存命中: {} 个列", cachedColumns.size());
+                return cachedColumns;
+            }
+            
+            // 3. 缓存未命中，批量查询这些表的所有列名
+            String placeholders = tableNames.stream()
+                .map(t -> "?")
+                .collect(java.util.stream.Collectors.joining(", "));
+            
+            String querySql = String.format(
+                "SELECT DISTINCT column_name FROM column_metadata WHERE datasource_id = ? AND table_name IN (%s)",
+                placeholders
+            );
+            
+            Object[] params = new Object[tableNames.size() + 1];
+            params[0] = datasourceId;
+            int i = 1;
+            for (String tableName : tableNames) {
+                params[i++] = tableName;
+            }
+            
+            List<Map<String, Object>> columns = jdbcTemplate.queryForList(querySql, params);
+            
+            Set<String> allowedColumns = new HashSet<>();
+            for (Map<String, Object> col : columns) {
+                String columnName = (String) col.get("column_name");
+                if (columnName != null) {
+                    allowedColumns.add(columnName.toLowerCase());
+                }
+            }
+            
+            // ✅ 存入缓存
+            metadataCacheService.putColumnWhitelist(datasourceId, tableNames, allowedColumns);
+            
+            log.debug("[NL2SQLTool] 提取到 {} 个允许的列名（已缓存）", allowedColumns.size());
+            
+            return allowedColumns;
+            
+        } catch (Exception e) {
+            log.warn("[NL2SQLTool] 提取列名白名单失败: {}", e.getMessage());
+            return Collections.emptySet();
+        }
+    }
+    
+    /**
+     * ✅ 新增：尝试修正幻觉列名
+     */
+    private String attemptHallucinationCorrection(String sql, String question, String schemaInfo, 
+                                                  String relationshipInfo, List<String> issues) {
+        try {
+            StringBuilder issueDesc = new StringBuilder();
+            for (String issue : issues) {
+                issueDesc.append("- ").append(issue).append("\n");
+            }
+            
+            String correctionPrompt = String.format(
+                "你是一个MySQL SQL专家。以下SQL语句包含不存在的列名（大模型幻觉），请修正。\n\n" +
+                "用户问题：%s\n\n" +
+                "数据库表结构：\n%s\n\n" +
+                "%s" +
+                "有问题的SQL:\n%s\n\n" +
+                "检测到的问题:\n%s\n\n" +
+                "要求：\n" +
+                "1. 只输出修正后的SQL语句\n" +
+                "2. 不要包含```sql或其他标记\n" +
+                "3. **严格基于上述表结构中的列名**，不要臆造不存在的列\n" +
+                "4. 如果不确定列名，可以使用表中已有的其他相关字段\n" +
+                "5. 保持原有查询意图不变",
+                question,
+                schemaInfo,
+                relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
+                sql,
+                issueDesc.toString()
+            );
+            
+            String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
+            correctedSql = cleanSQL(correctedSql);
+            
+            log.info("[NL2SQLTool] 幻觉列名修正后SQL: {}", correctedSql);
+            return correctedSql;
+            
+        } catch (Exception e) {
+            log.error("[NL2SQLTool] 幻觉列名修正失败", e);
+            return sql; // 返回原SQL
+        }
     }
     
     /**

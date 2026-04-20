@@ -228,6 +228,79 @@ public class SQLValidationService {
         return report;
     }
     
+    /**
+     * ✅ 新增：校验 SQL 中的列名是否在 Schema 白名单内
+     * 
+     * 目的：防止大模型幻觉生成不存在的列名
+     * 
+     * @param sql SQL 语句
+     * @param allowedColumns 允许的列名集合（表名.列名 或 列名）
+     * @return 问题列表（空列表表示合法）
+     */
+    public List<String> validateColumnWhitelist(String sql, Set<String> allowedColumns) {
+        List<String> issues = new ArrayList<>();
+        
+        if (allowedColumns == null || allowedColumns.isEmpty()) {
+            log.debug("[SQLValidation] 未提供 Schema 白名单，跳过列名校验");
+            return issues;
+        }
+        
+        try {
+            Statement statement = CCJSqlParserUtil.parse(sql);
+            
+            if (!(statement instanceof Select)) {
+                return issues; // 非 SELECT 语句无需检查
+            }
+            
+            Select select = (Select) statement;
+            SelectBody selectBody = select.getSelectBody();
+            
+            if (!(selectBody instanceof PlainSelect)) {
+                return issues; // 暂不支持复杂查询
+            }
+            
+            PlainSelect plainSelect = (PlainSelect) selectBody;
+            
+            // 提取 SELECT 中的所有列
+            Set<String> usedColumns = extractAllColumns(plainSelect);
+            
+            // 将允许的列名转换为小写以便比较
+            Set<String> allowedLower = allowedColumns.stream()
+                .map(String::toLowerCase)
+                .collect(Collectors.toSet());
+            
+            // 检查每个使用的列是否在白名单中
+            for (String column : usedColumns) {
+                String columnLower = column.toLowerCase();
+                
+                // 支持两种匹配方式：
+                // 1. 完全匹配："user_id" in ["user_id", "orders.user_id"]
+                // 2. 带表名前缀匹配："orders.user_id" in ["user_id", "orders.user_id"]
+                boolean isAllowed = allowedLower.contains(columnLower) ||
+                                   allowedLower.stream().anyMatch(allowed -> 
+                                       allowed.endsWith("." + columnLower) ||
+                                       columnLower.endsWith("." + allowed));
+                
+                if (!isAllowed) {
+                    issues.add(String.format(
+                        "❌ 列名 '%s' 不在 Schema 白名单中，可能是大模型幻觉",
+                        column
+                    ));
+                }
+            }
+            
+            if (!issues.isEmpty()) {
+                log.warn("[SQLValidation] 发现 {} 个非法列名: {}", issues.size(), issues);
+            }
+            
+        } catch (Exception e) {
+            log.warn("[SQLValidation] 列名白名单校验失败: {}", e.getMessage());
+            // 不阻断执行，仅记录警告
+        }
+        
+        return issues;
+    }
+    
     // ==================== 辅助方法 ====================
     
     /**
@@ -328,6 +401,62 @@ public class SQLValidationService {
         String whereStr = where.toString().toUpperCase();
         // 简单启发式：检查是否有 "=" 且涉及不同表的字段
         return whereStr.contains("=") && whereStr.contains(".");
+    }
+    
+    /**
+     * ✅ 新增：提取 SQL 中使用的所有列名
+     */
+    private Set<String> extractAllColumns(PlainSelect select) {
+        Set<String> columns = new HashSet<>();
+        
+        // 1. 提取 SELECT 中的列
+        if (select.getSelectItems() != null) {
+            for (SelectItem item : select.getSelectItems()) {
+                if (item instanceof SelectExpressionItem) {
+                    SelectExpressionItem sei = (SelectExpressionItem) item;
+                    Expression expr = sei.getExpression();
+                    
+                    if (expr instanceof Column) {
+                        Column col = (Column) expr;
+                        String columnName = col.getColumnName();
+                        if (col.getTable() != null) {
+                            columnName = col.getTable().getName() + "." + columnName;
+                        }
+                        columns.add(columnName);
+                    }
+                }
+            }
+        }
+        
+        // 2. 提取 WHERE 中的列（简化版，只处理简单情况）
+        if (select.getWhere() != null) {
+            String whereStr = select.getWhere().toString();
+            // 简单正则提取表名.列名格式
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\.([a-zA-Z_][a-zA-Z0-9_]*)\\b"
+            );
+            java.util.regex.Matcher matcher = pattern.matcher(whereStr);
+            while (matcher.find()) {
+                columns.add(matcher.group(1) + "." + matcher.group(2));
+            }
+        }
+        
+        // 3. 提取 ORDER BY 中的列
+        if (select.getOrderByElements() != null) {
+            for (OrderByElement orderBy : select.getOrderByElements()) {
+                Expression expr = orderBy.getExpression();
+                if (expr instanceof Column) {
+                    Column col = (Column) expr;
+                    String columnName = col.getColumnName();
+                    if (col.getTable() != null) {
+                        columnName = col.getTable().getName() + "." + columnName;
+                    }
+                    columns.add(columnName);
+                }
+            }
+        }
+        
+        return columns;
     }
     
     /**

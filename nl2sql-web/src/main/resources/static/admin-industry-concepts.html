@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>行业概念管理 - NL2SQL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto 40px; /* ✅ 底部留足空间 */
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px 32px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .toolbar {
+            padding: 20px 32px;
+            border-bottom: 1px solid #e8e8e8;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .toolbar-right {
+            margin-left: auto;
+            display: flex;
+            gap: 12px;
+        }
+        
+        .batch-actions {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f0f7ff;
+            border-radius: 4px;
+            border: 1px solid #d6e4ff;
+        }
+        
+        .batch-actions.active {
+            display: flex;
+        }
+        
+        .batch-actions span {
+            font-size: 14px;
+            color: #1890ff;
+            font-weight: 500;
+        }
+        
+        select, input, button {
+            padding: 8px 16px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #40a9ff;
+        }
+        
+        button.secondary {
+            background: white;
+            color: #1890ff;
+            border: 1px solid #1890ff;
+        }
+        
+        button.secondary:hover {
+            background: #e6f7ff;
+        }
+        
+        button.danger {
+            background: #ff4d4f;
+        }
+        
+        button.danger:hover {
+            background: #ff7875;
+        }
+        
+        .content {
+            padding: 24px 32px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: #f5f7fa;
+            padding: 16px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        
+        .stat-card .label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        
+        th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        tr:hover {
+            background: #f5f7fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge.entity {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+        
+        .badge.metric {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        
+        .badge.dimension {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        
+        .badge.approved {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        
+        .badge.pending {
+            background: #fffbe6;
+            color: #faad14;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .actions button {
+            padding: 4px 12px;
+            font-size: 12px;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e8e8e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h2 {
+            font-size: 18px;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+        }
+        
+        .modal-close:hover {
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .modal-body {
+            padding: 24px;
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .form-hint {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e8e8e8;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 行业概念管理</h1>
+            <p>配置行业术语、指标定义和同义词映射，提升NL2SQL的语义理解能力</p>
+        </div>
+        
+        <div class="toolbar">
+            <select id="industrySelect">
+                <option value="">选择行业...</option>
+            </select>
+            
+            <select id="typeFilter">
+                <option value="">全部类型</option>
+                <option value="entity">实体</option>
+                <option value="metric">指标</option>
+                <option value="dimension">维度</option>
+            </select>
+            
+            <select id="statusFilter">
+                <option value="">全部状态</option>
+                <option value="approved">已通过</option>
+                <option value="pending">待审核</option>
+            </select>
+            
+            <button onclick="loadConcepts()">🔍 查询</button>
+            <button class="secondary" onclick="showAddModal()">➕ 添加概念</button>
+            <button class="secondary" onclick="showImportModal()">📥 批量导入</button>
+            <button class="secondary" onclick="refreshTemplates()">🔄 刷新行业</button>
+            
+            <div class="toolbar-right">
+                <div class="batch-actions" id="batchActions">
+                    <span id="selectedCount">已选择 0 项</span>
+                    <button onclick="batchApprove()" style="background: #52c41a;">✅ 批量通过</button>
+                    <button onclick="batchReject()" style="background: #ff4d4f;">❌ 批量拒绝</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="stats" id="statsContainer">
+                <div class="stat-card">
+                    <div class="number" id="totalCount">0</div>
+                    <div class="label">概念总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="entityCount">0</div>
+                    <div class="label">实体数量</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="metricCount">0</div>
+                    <div class="label">指标数量</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="dimensionCount">0</div>
+                    <div class="label">维度数量</div>
+                </div>
+            </div>
+            
+            <table id="conceptTable">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                        <th>ID</th>
+                        <th>概念键</th>
+                        <th>类型</th>
+                        <th>别名</th>
+                        <th>描述</th>
+                        <th>使用次数</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="conceptTableBody">
+                    <tr>
+                        <td colspan="10" class="empty-state">
+                            <div>请选择行业后点击查询</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- 添加/编辑模态框 -->
+    <div class="modal" id="conceptModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">添加概念</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="conceptForm">
+                    <input type="hidden" id="conceptId">
+                    
+                    <div class="form-group">
+                        <label>行业 *</label>
+                        <select id="formIndustry" required>
+                            <option value="">请选择行业</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>概念类型 *</label>
+                        <select id="formType" required>
+                            <option value="entity">实体（如：订单、用户）</option>
+                            <option value="metric">指标（如：销售额、利润）</option>
+                            <option value="dimension">维度（如：地区、时间）</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>概念键（英文标识）*</label>
+                        <input type="text" id="formKey" placeholder="如：revenue, order_count" required>
+                        <div class="form-hint">用于内部识别的唯一标识，建议使用英文</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>中文别名 *</label>
+                        <input type="text" id="formAliases" placeholder="如：销售额,收入,GMV（用逗号分隔）" required>
+                        <div class="form-hint">用户可能使用的各种说法，用逗号分隔</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>描述</label>
+                        <textarea id="formDescription" placeholder="详细描述这个概念的含义..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary" onclick="closeModal()">取消</button>
+                <button onclick="saveConcept()">保存</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 批量导入模态框 -->
+    <div class="modal" id="importModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📥 批量导入概念</h2>
+                <button class="modal-close" onclick="closeImportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>选择行业 *</label>
+                    <select id="importIndustry" required>
+                        <option value="">请选择行业</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>上传CSV文件 *</label>
+                    <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="padding: 8px;">
+                    <div class="form-hint">
+                        支持CSV或Excel格式，编码UTF-8<br>
+                        文件格式：concept_type,concept_key,aliases,description<br>
+                        示例：metric,revenue,"销售额,收入,GMV","销售总金额"
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>导入选项</label>
+                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <input type="checkbox" id="skipDuplicates" checked>
+                        <span>跳过重复概念（根据 concept_key 判断）</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <input type="checkbox" id="autoApprove">
+                        <span>自动审核通过（否则为待审核状态）</span>
+                    </label>
+                </div>
+                
+                <div id="importPreview" style="margin-top: 16px; display: none;">
+                    <h4 style="margin-bottom: 8px;">预览（前5条）：</h4>
+                    <table style="width: 100%; font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th>类型</th>
+                                <th>概念键</th>
+                                <th>别名</th>
+                                <th>描述</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary" onclick="closeImportModal()">取消</button>
+                <button class="secondary" onclick="previewImport()">👁️ 预览</button>
+                <button onclick="executeImport()">✅ 开始导入</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentIndustry = '';
+        let templates = [];
+        
+        // 初始化
+        async function init() {
+            await loadTemplates();
+        }
+        
+        // 加载行业模板
+        async function loadTemplates() {
+            try {
+                const response = await fetch('/api/admin/industry-concepts/templates');
+                const data = await response.json();
+                
+                if (data.success) {
+                    templates = data.data;
+                    populateIndustrySelect(templates);
+                }
+            } catch (error) {
+                console.error('加载行业模板失败:', error);
+                alert('加载行业列表失败');
+            }
+        }
+        
+        // 填充行业下拉框
+        function populateIndustrySelect(templates) {
+            const selects = [document.getElementById('industrySelect'), document.getElementById('formIndustry')];
+            
+            selects.forEach(select => {
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">选择行业...</option>';
+                
+                templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.industry_code;
+                    option.textContent = `${template.industry_name} (${template.industry_code})`;
+                    select.appendChild(option);
+                });
+                
+                if (currentValue) {
+                    select.value = currentValue;
+                }
+            });
+        }
+        
+        // 刷新行业模板
+        function refreshTemplates() {
+            loadTemplates();
+            alert('行业列表已刷新');
+        }
+        
+        // 加载概念列表
+        async function loadConcepts() {
+            const industry = document.getElementById('industrySelect').value;
+            const type = document.getElementById('typeFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            
+            if (!industry) {
+                alert('请先选择行业');
+                return;
+            }
+            
+            currentIndustry = industry;
+            
+            try {
+                let url = `/api/admin/industry-concepts/${industry}/concepts?`;
+                if (type) url += `type=${type}&`;
+                if (status) url += `status=${status}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderConcepts(data.data);
+                    updateStats(data.data);
+                }
+            } catch (error) {
+                console.error('加载概念失败:', error);
+                alert('加载概念列表失败');
+            }
+        }
+        
+        // 渲染概念表格
+        function renderConcepts(concepts) {
+            const tbody = document.getElementById('conceptTableBody');
+            
+            if (concepts.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="empty-state">
+                            <div>暂无数据</div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = concepts.map(concept => {
+                const aliases = parseAliases(concept.concept_aliases);
+                const isPending = concept.status === 'pending';
+                return `
+                    <tr>
+                        <td><input type="checkbox" class="concept-checkbox" data-id="${concept.id}" ${isPending ? '' : 'disabled'} onchange="updateBatchActions()"></td>
+                        <td>${concept.id}</td>
+                        <td><strong>${concept.concept_key}</strong></td>
+                        <td><span class="badge ${concept.concept_type}">${getTypeLabel(concept.concept_type)}</span></td>
+                        <td>${aliases.join(', ')}</td>
+                        <td title="${concept.description || ''}">${truncate(concept.description, 50)}</td>
+                        <td>${concept.usage_count || 0}</td>
+                        <td><span class="badge ${concept.status}">${getStatusLabel(concept.status)}</span></td>
+                        <td>${formatDate(concept.created_at)}</td>
+                        <td class="actions">
+                            ${isPending ? `
+                                <button onclick="approveConcept(${concept.id})" style="background: #52c41a;">通过</button>
+                                <button onclick="rejectConcept(${concept.id})" style="background: #ff4d4f;">拒绝</button>
+                            ` : ''}
+                            <button onclick="editConcept(${concept.id})">编辑</button>
+                            <button class="danger" onclick="deleteConcept(${concept.id})">删除</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // 更新统计信息
+        function updateStats(concepts) {
+            document.getElementById('totalCount').textContent = concepts.length;
+            document.getElementById('entityCount').textContent = concepts.filter(c => c.concept_type === 'entity').length;
+            document.getElementById('metricCount').textContent = concepts.filter(c => c.concept_type === 'metric').length;
+            document.getElementById('dimensionCount').textContent = concepts.filter(c => c.concept_type === 'dimension').length;
+        }
+        
+        // 显示添加模态框
+        function showAddModal() {
+            document.getElementById('modalTitle').textContent = '添加概念';
+            document.getElementById('conceptForm').reset();
+            document.getElementById('conceptId').value = '';
+            document.getElementById('formIndustry').value = currentIndustry;
+            document.getElementById('conceptModal').classList.add('active');
+        }
+        
+        // 编辑概念
+        async function editConcept(id) {
+            try {
+                const response = await fetch(`/api/admin/industry-concepts/concepts/${id}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const concept = data.data;
+                    
+                    document.getElementById('modalTitle').textContent = '编辑概念';
+                    document.getElementById('conceptId').value = concept.id;
+                    document.getElementById('formIndustry').value = concept.industry_code;
+                    document.getElementById('formType').value = concept.concept_type;
+                    document.getElementById('formKey').value = concept.concept_key;
+                    
+                    const aliases = parseAliases(concept.concept_aliases);
+                    document.getElementById('formAliases').value = aliases.join(', ');
+                    document.getElementById('formDescription').value = concept.description || '';
+                    
+                    document.getElementById('conceptModal').classList.add('active');
+                } else {
+                    alert('获取概念详情失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('获取概念详情失败:', error);
+                alert('获取概念详情失败');
+            }
+        }
+        
+        // 删除概念
+        async function deleteConcept(id) {
+            if (!confirm('确定要删除这个概念吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/industry-concepts/concepts/${id}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('删除成功');
+                    loadConcepts();
+                } else {
+                    alert('删除失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('删除概念失败:', error);
+                alert('删除失败');
+            }
+        }
+        
+        // 保存概念
+        async function saveConcept() {
+            const form = document.getElementById('conceptForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            
+            const industry = document.getElementById('formIndustry').value;
+            const type = document.getElementById('formType').value;
+            const key = document.getElementById('formKey').value;
+            const aliasesText = document.getElementById('formAliases').value;
+            const description = document.getElementById('formDescription').value;
+            
+            const aliases = aliasesText.split(/[,，]/).map(a => a.trim()).filter(a => a);
+            
+            const conceptId = document.getElementById('conceptId').value;
+            const isEdit = !!conceptId;
+            
+            try {
+                let url, method;
+                if (isEdit) {
+                    url = `/api/admin/industry-concepts/concepts/${conceptId}`;
+                    method = 'PUT';
+                } else {
+                    url = `/api/admin/industry-concepts/${industry}/concepts`;
+                    method = 'POST';
+                }
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        conceptType: type,
+                        conceptKey: key,
+                        aliases: aliases,
+                        description: description
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(isEdit ? '更新成功' : '添加成功');
+                    closeModal();
+                    loadConcepts();
+                } else {
+                    alert('保存失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('保存概念失败:', error);
+                alert('保存失败');
+            }
+        }
+        
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('conceptModal').classList.remove('active');
+        }
+        
+        // ==================== 批量导入功能 ====================
+        
+        let importData = [];
+        
+        // 显示导入模态框
+        function showImportModal() {
+            document.getElementById('importIndustry').value = currentIndustry;
+            document.getElementById('importFile').value = '';
+            document.getElementById('importPreview').style.display = 'none';
+            importData = [];
+            document.getElementById('importModal').classList.add('active');
+        }
+        
+        // 关闭导入模态框
+        function closeImportModal() {
+            document.getElementById('importModal').classList.remove('active');
+        }
+        
+        // 预览导入数据
+        function previewImport() {
+            const fileInput = document.getElementById('importFile');
+            const industry = document.getElementById('importIndustry').value;
+            
+            if (!industry) {
+                alert('请选择行业');
+                return;
+            }
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('请选择文件');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const content = e.target.result;
+                parseCSV(content);
+            };
+            
+            reader.readAsText(file, 'UTF-8');
+        }
+        
+        // 解析CSV
+        function parseCSV(content) {
+            const lines = content.split('\n').filter(line => line.trim());
+            
+            if (lines.length < 2) {
+                alert('文件格式错误，至少需要表头和一行数据');
+                return;
+            }
+            
+            // 跳过表头
+            importData = [];
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                // 简单CSV解析（不支持引号内的逗号）
+                const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+                
+                if (parts.length >= 3) {
+                    importData.push({
+                        conceptType: parts[0],
+                        conceptKey: parts[1],
+                        aliases: parts[2],
+                        description: parts[3] || ''
+                    });
+                }
+            }
+            
+            // 显示预览
+            const previewDiv = document.getElementById('importPreview');
+            const tbody = document.getElementById('previewTableBody');
+            
+            tbody.innerHTML = importData.slice(0, 5).map(item => `
+                <tr>
+                    <td>${getTypeLabel(item.conceptType)}</td>
+                    <td>${item.conceptKey}</td>
+                    <td>${item.aliases}</td>
+                    <td>${truncate(item.description, 30)}</td>
+                </tr>
+            `).join('');
+            
+            if (importData.length > 5) {
+                tbody.innerHTML += `<tr><td colspan="4" style="text-align:center;color:#999;">...还有 ${importData.length - 5} 条</td></tr>`;
+            }
+            
+            previewDiv.style.display = 'block';
+            alert(`解析成功！共 ${importData.length} 条数据`);
+        }
+        
+        // 执行导入
+        async function executeImport() {
+            if (importData.length === 0) {
+                alert('请先预览数据');
+                return;
+            }
+            
+            const industry = document.getElementById('importIndustry').value;
+            const skipDuplicates = document.getElementById('skipDuplicates').checked;
+            const autoApprove = document.getElementById('autoApprove').checked;
+            
+            if (!confirm(`确定要导入 ${importData.length} 条概念吗？`)) {
+                return;
+            }
+            
+            try {
+                let successCount = 0;
+                let skipCount = 0;
+                let failCount = 0;
+                
+                for (const item of importData) {
+                    try {
+                        const response = await fetch(`/api/admin/industry-concepts/${industry}/concepts`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                conceptType: item.conceptType,
+                                conceptKey: item.conceptKey,
+                                aliases: item.aliases.split(/[,，]/).map(a => a.trim()).filter(a => a),
+                                description: item.description,
+                                status: autoApprove ? 'approved' : 'pending'
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            successCount++;
+                        } else if (data.error && data.error.includes('Duplicate')) {
+                            skipCount++;
+                        } else {
+                            failCount++;
+                            console.warn('导入失败:', item.conceptKey, data.error);
+                        }
+                    } catch (error) {
+                        failCount++;
+                        console.error('导入异常:', error);
+                    }
+                }
+                
+                alert(`导入完成！\n成功: ${successCount}\n跳过: ${skipCount}\n失败: ${failCount}`);
+                closeImportModal();
+                loadConcepts();
+                
+            } catch (error) {
+                console.error('批量导入失败:', error);
+                alert('批量导入失败: ' + error.message);
+            }
+        }
+        
+        // ==================== 审核功能 ====================
+        
+        // 全选/取消全选
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.concept-checkbox:not([disabled])');
+            checkboxes.forEach(cb => cb.checked = selectAll.checked);
+            updateBatchActions();
+        }
+        
+        // 更新批量操作栏状态
+        function updateBatchActions() {
+            const checkedBoxes = document.querySelectorAll('.concept-checkbox:checked');
+            const batchActions = document.getElementById('batchActions');
+            const selectedCount = document.getElementById('selectedCount');
+            
+            if (checkedBoxes.length > 0) {
+                batchActions.classList.add('active');
+                selectedCount.textContent = `已选择 ${checkedBoxes.length} 项`;
+            } else {
+                batchActions.classList.remove('active');
+            }
+        }
+        
+        // 单个概念通过
+        async function approveConcept(id) {
+            if (!confirm('确定要通过这个概念吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/industry-concepts/concepts/batch-approve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ids: [id],
+                        action: 'approve'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    loadConcepts();
+                } else {
+                    alert('操作失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('审核失败:', error);
+                alert('操作失败');
+            }
+        }
+        
+        // 单个概念拒绝
+        async function rejectConcept(id) {
+            if (!confirm('确定要拒绝这个概念吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/industry-concepts/concepts/batch-approve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ids: [id],
+                        action: 'reject'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    loadConcepts();
+                } else {
+                    alert('操作失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('审核失败:', error);
+                alert('操作失败');
+            }
+        }
+        
+        // 批量通过
+        async function batchApprove() {
+            const checkedBoxes = document.querySelectorAll('.concept-checkbox:checked');
+            if (checkedBoxes.length === 0) {
+                alert('请先选择要审核的概念');
+                return;
+            }
+            
+            if (!confirm(`确定要通过选中的 ${checkedBoxes.length} 条概念吗？`)) {
+                return;
+            }
+            
+            const ids = Array.from(checkedBoxes).map(cb => parseInt(cb.dataset.id));
+            
+            try {
+                const response = await fetch('/api/admin/industry-concepts/concepts/batch-approve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ids: ids,
+                        action: 'approve'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('selectAll').checked = false;
+                    updateBatchActions();
+                    loadConcepts();
+                } else {
+                    alert('操作失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('批量审核失败:', error);
+                alert('操作失败');
+            }
+        }
+        
+        // 批量拒绝
+        async function batchReject() {
+            const checkedBoxes = document.querySelectorAll('.concept-checkbox:checked');
+            if (checkedBoxes.length === 0) {
+                alert('请先选择要审核的概念');
+                return;
+            }
+            
+            if (!confirm(`确定要拒绝选中的 ${checkedBoxes.length} 条概念吗？`)) {
+                return;
+            }
+            
+            const ids = Array.from(checkedBoxes).map(cb => parseInt(cb.dataset.id));
+            
+            try {
+                const response = await fetch('/api/admin/industry-concepts/concepts/batch-approve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ids: ids,
+                        action: 'reject'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('selectAll').checked = false;
+                    updateBatchActions();
+                    loadConcepts();
+                } else {
+                    alert('操作失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('批量审核失败:', error);
+                alert('操作失败');
+            }
+        }
+        
+        // 辅助函数
+        function parseAliases(aliasesJson) {
+            try {
+                return JSON.parse(aliasesJson);
+            } catch {
+                return [aliasesJson];
+            }
+        }
+        
+        function getTypeLabel(type) {
+            const labels = {
+                'entity': '实体',
+                'metric': '指标',
+                'dimension': '维度'
+            };
+            return labels[type] || type;
+        }
+        
+        function getStatusLabel(status) {
+            const labels = {
+                'approved': '已通过',
+                'pending': '待审核',
+                'rejected': '已拒绝'
+            };
+            return labels[status] || status;
+        }
+        
+        function truncate(text, maxLength) {
+            if (!text) return '-';
+            return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString('zh-CN');
+        }
+        
+        // 启动
+        init();
+    </script>
+</body>
+</html>

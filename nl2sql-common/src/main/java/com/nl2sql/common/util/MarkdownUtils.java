@@ -44,13 +44,26 @@ public class MarkdownUtils {
      * 清理SQL语句中的Markdown标记和前缀
      * 
      * @param sql 可能包含Markdown的SQL语句
-     * @return 清理后的SQL
+     * @return 清理后的SQL，如果无效则返回安全默认值
      */
     public static String cleanSQL(String sql) {
-        if (sql == null) return null;
+        if (sql == null || sql.trim().isEmpty()) {
+            log.warn("[SQL清洗] 输入为空，返回安全默认查询");
+            return "SELECT 'no_result_found' AS info"; // ✅ 防御性处理：避免NULL
+        }
+        
+        String original = sql;
         
         // 去除Markdown代码块
         sql = extractFromMarkdown(sql);
+        
+        // ✅ 关键修复：检测大模型可能输出的 NULL 字符串
+        if (sql.toUpperCase().trim().equals("NULL") || 
+            sql.toUpperCase().trim().equals("NONE") ||
+            sql.toUpperCase().trim().equals("N/A")) {
+            log.warn("[SQL清洗] 检测到LLM输出NULL/None，转换为安全默认查询: {}", original);
+            return "SELECT 'no_result_found' AS info";
+        }
         
         // ✅ 清理 LLM 生成的 "sql " 前缀（统一处理，兼容大小写）
         String lowerSql = sql.toLowerCase();
@@ -75,6 +88,13 @@ public class MarkdownUtils {
         // 去除中文别名
         sql = sql.replaceAll("AS\\s+[\u4e00-\u9fa5]+", "");
         
+        // ✅ 最终验证：如果清洗后仍然为空，返回安全默认值
+        if (sql.trim().isEmpty()) {
+            log.warn("[SQL清洗] 清洗后为空，返回安全默认查询. 原始输入: {}", original);
+            return "SELECT 'no_result_found' AS info";
+        }
+        
+        log.debug("[SQL清洗] 清洗完成: {} -> {}", original, sql);
         return sql;
     }
 }

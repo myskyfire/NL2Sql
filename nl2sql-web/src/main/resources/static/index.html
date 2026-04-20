@@ -237,8 +237,7 @@
         /* 页面容器 */
         .pages-container {
             flex: 1;
-            overflow-y: auto; /* ✅ 允许滚动 */
-            overflow-x: hidden;
+            overflow: hidden; /* ✅ 隐藏溢出，由.page控制滚动 */
             padding: 0;
             background: #f5f7fa;
             position: relative;
@@ -247,13 +246,27 @@
         .page {
             display: none !important; /* ✅ 强制隐藏，不占用空间 */
             width: 100%;
-            min-height: auto;
-            height: auto;
+            height: 100%; /* ✅ 占满父容器 */
+            overflow-y: auto; /* ✅ 允许滚动 */
+            overflow-x: hidden;
         }
         
         .page.active {
             display: block !important; /* ✅ 只显示当前激活的页面 */
             animation: fadeIn 0.3s;
+        }
+        
+        /* ✅ 元数据页面特殊处理 - 需要独立滚动 */
+        #page-metadata.page.active {
+            position: absolute !important; /* ✅ 脱离文档流 */
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            z-index: 1;
         }
         
         @keyframes fadeIn {
@@ -296,12 +309,12 @@
         /* iframe容器 */
         .iframe-container {
             width: 100%;
-            min-height: calc(100vh - 60px); /* ✅ 最小高度占满视口 */
-            height: auto; /* ✅ 自动高度，根据内容调整 */
+            height: calc(100vh - 60px); /* ✅ 固定高度占满视口 */
             border: none;
             border-radius: 0;
             background: white;
             display: block;
+            overflow: hidden; /* ✅ 不显示iframe边框滚动条 */
         }
         
         /* 欢迎页面 */
@@ -446,6 +459,10 @@
                 <span class="menu-icon">🎯</span>
                 <span>Prompt学习</span>
             </div>
+            <div class="menu-item admin-only hidden" onclick="showPage('industry-concepts', this)" title="管理行业术语、指标定义和同义词映射">
+                <span class="menu-icon">📚</span>
+                <span>行业概念管理</span>
+            </div>
             
             <!-- ✅ 拖拽条 -->
             <div class="sidebar-resizer" id="sidebarResizer"></div>
@@ -546,6 +563,12 @@
                             <h3>Prompt学习管理</h3>
                             <p>管理Prompt版本、A/B测试和优化建议，持续提升AI能力</p>
                         </div>
+                        
+                        <div class="welcome-card admin-only hidden" onclick="showPage('industry-concepts')">
+                            <div class="welcome-icon">📚</div>
+                            <h3>行业概念管理</h3>
+                            <p>管理行业术语、指标定义和同义词映射，提升NL2SQL语义理解</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -572,7 +595,7 @@
             
             <!-- 元数据查看页面 -->
             <div id="page-metadata" class="page">
-                <div style="padding: 30px;"> <!-- ✅ 为元数据页面添加内边距 -->
+                <div style="padding: 30px;">
                     <div class="card">
                         <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
                             <label style="font-weight: 600; color: #333;">选择数据源：</label>
@@ -628,6 +651,11 @@
             <!-- Prompt学习管理页面 -->
             <div id="page-prompt-learning" class="page">
                 <iframe id="iframe-prompt-learning" class="iframe-container" src="/admin-prompt-learning.html" onload="fixIframeStyle(this)"></iframe>
+            </div>
+            
+            <!-- 行业概念管理页面 -->
+            <div id="page-industry-concepts" class="page">
+                <iframe id="iframe-industry-concepts" class="iframe-container" src="/admin-industry-concepts.html" onload="fixIframeStyle(this)"></iframe>
             </div>
         </div>
     </div>
@@ -723,18 +751,18 @@
                         body {
                             background: white !important;
                             margin: 0 !important;
-                            padding: 0 !important;
-                            height: auto !important;  /* ✅ 自动高度 */
-                            overflow-y: visible !important;  /* ✅ 不内部滚动，由父容器滚动 */
+                            padding: 0 0 60px 0 !important; /* ✅ 底部留60px空间防止截断 */
+                            min-height: 100% !important; /* ✅ 最小高度100% */
+                            overflow-y: auto !important;  /* ✅ 允许内部滚动 */
                             overflow-x: hidden !important;
                         }
                         html {
-                            height: auto !important;
+                            height: 100% !important;
                             overflow: visible !important;
                         }
                         /* 隐藏子页面的独立 header（表关联管理页面除外） */
                         ${isRelationshipPage ? '' : '.chat-header, .header { display: none !important; }'}
-                        /* 调整容器 */
+                        /* 调整容器 - 保留底部边距 */
                         .chat-container, .container, .main-container, .app-container, .query-container {
                             height: auto !important;
                             min-height: auto !important;
@@ -743,7 +771,7 @@
                             box-shadow: none !important;
                             width: 100% !important;
                             max-width: none !important;
-                            margin: 0 !important;
+                            margin: 0 !important; /* ✅ 重置所有边距，由body padding控制 */
                             padding: 0 !important;
                             display: block !important;
                             overflow: visible !important;
@@ -827,49 +855,19 @@
                             height: 100% !important;
                             background: rgba(0,0,0,0.5) !important;
                             z-index: 9999 !important;
+                            align-items: center !important; /* ✅ 垂直居中 */
+                            justify-content: center !important; /* ✅ 水平居中 */
                         }
                         .modal-content, .modal > .modal-content {
                             max-height: 80vh !important;
                             overflow-y: auto !important;
+                            position: relative !important; /* ✅ 确保内容正常显示 */
+                            z-index: 10000 !important; /* ✅ 高于遮罩层 */
                         }
                     `;
                     iframeDoc.head.appendChild(style);
                     
-                    // ✅ 动态调整 iframe 高度以适应内容
-                    const adjustHeight = () => {
-                        try {
-                            const docHeight = Math.max(
-                                iframeDoc.body.scrollHeight,
-                                iframeDoc.documentElement.scrollHeight,
-                                iframeDoc.body.offsetHeight
-                            );
-                            
-                            // ✅ 额外增加 50px 余量
-                            const newHeight = Math.max(docHeight + 50, window.innerHeight - 60);
-                            
-                            if (iframe.style.height !== newHeight + 'px') {
-                                iframe.style.height = newHeight + 'px';
-                            }
-                        } catch (e) {
-                            console.warn('⚠️ 无法调整 iframe 高度:', e.message);
-                        }
-                    };
-                    
-                    // ✅ 监听 DOM 变化，动态调整高度
-                    const observer = new MutationObserver(() => {
-                        setTimeout(adjustHeight, 100);
-                    });
-                    
-                    observer.observe(iframeDoc.body, {
-                        childList: true,
-                        subtree: true,
-                        attributes: true
-                    });
-                    
-                    // 初始调整 + 延迟调整
-                    adjustHeight();
-                    setTimeout(adjustHeight, 500);
-                    setTimeout(adjustHeight, 1500);
+                    // ✅ iframe固定高度，内部body允许滚动，无需动态调整
                     
                     console.log('✅ iframe 样式已修复:', iframe.src);
                 } catch (e) {
@@ -967,6 +965,14 @@
             
             // ✅ 添加或切换到对应页签
             addOrSwitchTab(pageName);
+            
+            // ✅ 重新应用iframe样式（确保滚动正常）
+            if (targetPage) {
+                const iframe = targetPage.querySelector('iframe');
+                if (iframe && iframe.contentDocument) {
+                    setTimeout(() => fixIframeStyle(iframe), 100);
+                }
+            }
             
             // 加载页面数据
             if (pageName === 'home') {

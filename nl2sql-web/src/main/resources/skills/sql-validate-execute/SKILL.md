@@ -5,6 +5,34 @@ version: 1.0.0
 author: NL2SQL Team
 requiredParams: [sql, datasourceId]
 script: SQLValidateAndExecuteSkill.groovy
+workflow:
+  version: 1.0
+  steps:
+    - id: validate
+      action: call_tool
+      tool: validate_sql
+      input:
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: validation_result
+    
+    - id: execute
+      action: call_tool
+      tool: execute_sql
+      condition: "{{validation_result.valid == true}}"
+      input:
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: execution_result
+    
+    - id: respond
+      action: respond
+      output:
+        status: "success"
+        validation: "{{validation_result}}"
+        execution: "{{execution_result}}"
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
 ---
 
 # SQL验证与执行 Skill

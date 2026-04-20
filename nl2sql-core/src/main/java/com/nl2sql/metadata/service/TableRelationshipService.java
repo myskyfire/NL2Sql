@@ -1,8 +1,11 @@
 package com.nl2sql.metadata.service;
 
+import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.llm.MultiModelService;
 import com.nl2sql.metadata.entity.TableRelationship;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -18,6 +21,15 @@ public class TableRelationshipService {
     
     private final JdbcTemplate jdbcTemplate;
     private final MultiModelService multiModelService;
+    
+    @Autowired(required = false)
+    private MetadataCacheService metadataCacheService;
+    
+    @Value("${llm.ollama.base-url:http://localhost:11434}")
+    private String ollamaBaseUrl;
+    
+    @Value("${llm.ollama.code-model:qwen2.5-coder:7b-instruct-q4_0}")
+    private String ollamaCodeModel;
     
     public TableRelationshipService(JdbcTemplate jdbcTemplate, MultiModelService multiModelService) {
         this.jdbcTemplate = jdbcTemplate;
@@ -137,6 +149,118 @@ public class TableRelationshipService {
         try {
             log.info("开始自动推断关联关系: datasourceId={}", datasourceId);
             
+            List<Map<String, Object>> detectedRelationships = new ArrayList<>();
+            
+            // ✅ 优先：查询数据库真实外键约束
+            List<Map<String, Object>> realForeignKeys = queryRealForeignKeys(datasourceId);
+            if (!realForeignKeys.isEmpty()) {
+                log.info("发现 {} 个真实外键约束", realForeignKeys.size());
+                detectedRelationships.addAll(realForeignKeys);
+            }
+            
+            // 其次：基于字段名模式匹配推断
+            List<Map<String, Object>> patternBasedRels = detectByPattern(datasourceId);
+            log.info("规则引擎推断完成，发现 {} 条关联关系（真实外键{} + 模式匹配{}）", 
+                detectedRelationships.size() + patternBasedRels.size(),
+                realForeignKeys.size(),
+                patternBasedRels.size());
+            
+            detectedRelationships.addAll(patternBasedRels);
+            return detectedRelationships;
+            
+        } catch (Exception e) {
+            log.error("规则引擎推断失败", e);
+            throw new RuntimeException("推断失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * ✅ 新增：查询数据库真实外键约束
+     */
+    private List<Map<String, Object>> queryRealForeignKeys(Long datasourceId) {
+        List<Map<String, Object>> relationships = new ArrayList<>();
+        
+        try {
+            // 获取数据源配置以查询information_schema
+            String schemaName = jdbcTemplate.queryForObject(
+                "SELECT database_name FROM datasource_config WHERE id = ?",
+                String.class, datasourceId
+            );
+            
+            if (schemaName == null || schemaName.trim().isEmpty()) {
+                log.warn("无法获取数据源 {} 的schema名称", datasourceId);
+                return relationships;
+            }
+            
+            // 查询MySQL真实外键（包含字段类型）
+            String fkSql = """
+                SELECT 
+                    kcu.TABLE_NAME AS source_table,
+                    kcu.COLUMN_NAME AS source_column,
+                    kcu.REFERENCED_TABLE_NAME AS target_table,
+                    kcu.REFERENCED_COLUMN_NAME AS target_column,
+                    c1.DATA_TYPE AS source_type,
+                    c2.DATA_TYPE AS target_type
+                FROM information_schema.KEY_COLUMN_USAGE kcu
+                JOIN information_schema.COLUMNS c1 
+                    ON kcu.TABLE_SCHEMA = c1.TABLE_SCHEMA 
+                    AND kcu.TABLE_NAME = c1.TABLE_NAME 
+                    AND kcu.COLUMN_NAME = c1.COLUMN_NAME
+                JOIN information_schema.COLUMNS c2 
+                    ON kcu.REFERENCED_TABLE_SCHEMA = c2.TABLE_SCHEMA 
+                    AND kcu.REFERENCED_TABLE_NAME = c2.TABLE_NAME 
+                    AND kcu.REFERENCED_COLUMN_NAME = c2.COLUMN_NAME
+                WHERE kcu.TABLE_SCHEMA = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+                ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
+                """;
+            
+            List<Map<String, Object>> fkRows = jdbcTemplate.queryForList(fkSql, schemaName);
+            
+            for (Map<String, Object> row : fkRows) {
+                String sourceType = (String) row.get("source_type");
+                String targetType = (String) row.get("target_type");
+                
+                // ✅ 关键校验：字段类型必须一致
+                if (!isCompatibleType(sourceType, targetType)) {
+                    log.warn("跳过类型不匹配的外键: {}.{}({}) -> {}.{}({})", 
+                        row.get("source_table"), row.get("source_column"), sourceType,
+                        row.get("target_table"), row.get("target_column"), targetType);
+                    continue;
+                }
+                
+                Map<String, Object> rel = new HashMap<>();
+                rel.put("sourceTable", row.get("source_table"));
+                rel.put("sourceColumn", row.get("source_column"));
+                rel.put("targetTable", row.get("target_table"));
+                rel.put("targetColumn", row.get("target_column"));
+                rel.put("relationshipType", "MANY_TO_ONE");
+                rel.put("confidence", 1.0); // 真实外键，置信度100%
+                rel.put("description", String.format("数据库外键约束: %s.%s(%s) -> %s.%s(%s)",
+                    row.get("source_table"), row.get("source_column"), sourceType,
+                    row.get("target_table"), row.get("target_column"), targetType));
+                rel.put("method", "real_foreign_key"); // 标记来源
+                
+                relationships.add(rel);
+                log.debug("发现真实外键: {}.{} -> {}.{}", 
+                    row.get("source_table"), row.get("source_column"),
+                    row.get("target_table"), row.get("target_column"));
+            }
+            
+        } catch (Exception e) {
+            log.warn("查询真实外键失败（可能不支持或无权限）: {}", e.getMessage());
+        }
+        
+        return relationships;
+    }
+    
+    /**
+     * ✅ 提取：基于字段名模式匹配推断关联关系
+     */
+    private List<Map<String, Object>> detectByPattern(Long datasourceId) {
+        List<Map<String, Object>> detectedRelationships = new ArrayList<>();
+        
+        try {
             // 获取所有表名
             List<String> tables = jdbcTemplate.queryForList(
                 "SELECT DISTINCT table_name FROM column_metadata WHERE datasource_id = ?",
@@ -144,12 +268,11 @@ public class TableRelationshipService {
             );
             
             if (tables.isEmpty()) {
-                throw new IllegalArgumentException("未找到任何表");
+                log.warn("未找到任何表");
+                return detectedRelationships;
             }
             
-            log.info("共 {} 个表，开始分析...", tables.size());
-            
-            List<Map<String, Object>> detectedRelationships = new ArrayList<>();
+            log.info("共 {} 个表，开始模式匹配分析...", tables.size());
             
             // 基于字段名模式匹配推断关联关系
             for (String sourceTable : tables) {
@@ -183,6 +306,17 @@ public class TableRelationshipService {
                                 );
                                 
                                 if (pkCount != null && pkCount > 0) {
+                                    // ✅ 关键校验：字段类型必须一致
+                                    String sourceDataType = (String) sourceCol.get("data_type");
+                                    String targetDataType = getTargetColumnDataType(datasourceId, targetTable, "id");
+                                    
+                                    if (!isCompatibleType(sourceDataType, targetDataType)) {
+                                        log.debug("跳过类型不匹配的关联: {}.{}({}) -> {}.id({})", 
+                                            sourceTable, sourceColumn, sourceDataType,
+                                            targetTable, targetDataType);
+                                        continue;
+                                    }
+                                    
                                     Map<String, Object> relationship = new HashMap<>();
                                     relationship.put("sourceTable", sourceTable);
                                     relationship.put("sourceColumn", sourceColumn);
@@ -312,6 +446,262 @@ public class TableRelationshipService {
                 return Collections.emptyList();
             }
             
+            log.info("[TableRelationship] 开始LLM推断关联关系，共 {} 个表", tables.size());
+            
+            // ✅ 关键优化：如果表太多，使用两阶段策略避免超时和遗漏
+            int maxTablesForLLM = 8; // LLM最多处理8个表
+            if (tables.size() > maxTablesForLLM) {
+                log.info("[TableRelationship] 表数量较多({})，使用两阶段策略：规则引擎全覆盖 + LLM重点分析", tables.size());
+                return twoPhaseAnalysis(datasourceId, tables, maxTablesForLLM);
+            }
+            
+            // 表数量较少，直接分析
+            return analyzeSingleBatch(datasourceId, tables);
+            
+        } catch (Exception e) {
+            log.error("LLM自动发现关联关系失败", e);
+            return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * ✅ 新增：两阶段分析策略（避免跨批次遗漏）
+     * 
+     * 阶段1：规则引擎快速扫描所有表（无遗漏）
+     * 阶段2：LLM深度分析高价值表组合（高质量）
+     */
+    private List<TableRelationship> twoPhaseAnalysis(Long datasourceId, 
+                                                      List<Map<String, Object>> allTables,
+                                                      int maxLLMTables) {
+        List<TableRelationship> allRelationships = new ArrayList<>();
+        Set<String> addedKeys = new HashSet<>(); // 去重
+        
+        // ========== 阶段1：规则引擎全覆盖 ==========
+        log.info("[TableRelationship] 阶段1：规则引擎扫描所有表...");
+        try {
+            List<Map<String, Object>> ruleResults = autoDetectRelationships(datasourceId);
+            for (Map<String, Object> rel : ruleResults) {
+                TableRelationship tr = convertToTableRelationship(rel, datasourceId);
+                if (tr != null) {
+                    String key = generateKey(tr);
+                    if (!addedKeys.contains(key)) {
+                        allRelationships.add(tr);
+                        addedKeys.add(key);
+                    }
+                }
+            }
+            log.info("[TableRelationship] 阶段1完成，规则引擎发现 {} 条关联", ruleResults.size());
+        } catch (Exception e) {
+            log.warn("[TableRelationship] 阶段1规则引擎失败: {}", e.getMessage());
+        }
+        
+        // ========== 阶段2：LLM重点分析 ==========
+        log.info("[TableRelationship] 阶段2：LLM深度分析高价值表组合...");
+        try {
+            // 选择最有价值的表组合进行LLM分析
+            List<Map<String, Object>> priorityTables = selectPriorityTables(allTables, maxLLMTables);
+            
+            if (!priorityTables.isEmpty()) {
+                List<TableRelationship> llmRels = analyzeSingleBatch(datasourceId, priorityTables);
+                
+                // 只添加规则引擎未发现的关联
+                int newCount = 0;
+                for (TableRelationship rel : llmRels) {
+                    String key = generateKey(rel);
+                    if (!addedKeys.contains(key)) {
+                        allRelationships.add(rel);
+                        addedKeys.add(key);
+                        newCount++;
+                    }
+                }
+                
+                log.info("[TableRelationship] 阶段2完成，LLM新增 {} 条关联（总计{}条）", 
+                    newCount, allRelationships.size());
+            }
+        } catch (Exception e) {
+            log.warn("[TableRelationship] 阶段2 LLM分析失败: {}", e.getMessage());
+        }
+        
+        log.info("[TableRelationship] 两阶段分析完成，共 {} 条关联关系", allRelationships.size());
+        return allRelationships;
+    }
+    
+    /**
+     * ✅ 新增：选择高优先级表进行LLM分析
+     * 
+     * 策略：选择规则引擎未覆盖的表（无xxx_id字段的表）
+     * 原因：规则引擎已捕获所有xxx_id模式，LLM应专注语义关联
+     */
+    private List<Map<String, Object>> selectPriorityTables(List<Map<String, Object>> allTables, int maxCount) {
+        if (allTables.size() <= maxCount) {
+            return allTables; // 表数量少，全部分析
+        }
+        
+        log.info("[TableRelationship] 开始筛选需要LLM分析的表...");
+        
+        // 计算每个表的"规则引擎覆盖率"
+        Map<String, Boolean> hasForeignKeyPattern = new HashMap<>();
+        
+        for (Map<String, Object> table : allTables) {
+            String tableName = (String) table.get("table_name");
+            
+            try {
+                // 检查是否有 xxx_id 字段
+                List<Map<String, Object>> fkColumns = jdbcTemplate.queryForList(
+                    "SELECT column_name FROM column_metadata WHERE table_name = ? AND column_name LIKE '%_id'",
+                    tableName
+                );
+                hasForeignKeyPattern.put(tableName, !fkColumns.isEmpty());
+            } catch (Exception e) {
+                log.debug("查询表 {} 的外键字段失败", tableName);
+                hasForeignKeyPattern.put(tableName, false);
+            }
+        }
+        
+        // 优先选择没有xxx_id字段的表（规则引擎无法覆盖）
+        List<Map<String, Object>> noFkTables = allTables.stream()
+            .filter(t -> !hasForeignKeyPattern.getOrDefault((String) t.get("table_name"), false))
+            .collect(Collectors.toList());
+        
+        // 如果无外键字段的表不足maxCount，补充有注释的表
+        if (noFkTables.size() < maxCount) {
+            List<Map<String, Object>> withCommentTables = allTables.stream()
+                .filter(t -> {
+                    String comment = (String) t.get("table_comment");
+                    return comment != null && !comment.trim().isEmpty();
+                })
+                .filter(t -> !noFkTables.contains(t)) // 排除已选的
+                .collect(Collectors.toList());
+            
+            noFkTables.addAll(withCommentTables.subList(0, 
+                Math.min(withCommentTables.size(), maxCount - noFkTables.size())));
+        }
+        
+        // 仍然不足，随机补充
+        if (noFkTables.size() < maxCount) {
+            List<Map<String, Object>> remaining = allTables.stream()
+                .filter(t -> !noFkTables.contains(t))
+                .collect(Collectors.toList());
+            
+            noFkTables.addAll(remaining.subList(0, 
+                Math.min(remaining.size(), maxCount - noFkTables.size())));
+        }
+        
+        List<Map<String, Object>> result = noFkTables.subList(0, Math.min(maxCount, noFkTables.size()));
+        
+        log.info("[TableRelationship] 选择了 {} 个表进行LLM分析（规则引擎未覆盖的表）: {}", 
+            result.size(), 
+            result.stream().map(t -> (String) t.get("table_name")).collect(Collectors.joining(", ")));
+        
+        return result;
+    }
+    
+    /**
+     * ✅ 新增：将Map转换为TableRelationship
+     */
+    private TableRelationship convertToTableRelationship(Map<String, Object> rel, Long datasourceId) {
+        try {
+            TableRelationship tr = new TableRelationship();
+            tr.setDatasourceId(datasourceId);
+            tr.setSourceTable((String) rel.get("sourceTable"));
+            tr.setSourceColumn((String) rel.get("sourceColumn"));
+            tr.setTargetTable((String) rel.get("targetTable"));
+            tr.setTargetColumn((String) rel.get("targetColumn"));
+            tr.setRelationshipType((String) rel.get("relationshipType"));
+            tr.setConfidence(((Number) rel.get("confidence")).floatValue());
+            tr.setDescription((String) rel.get("description"));
+            tr.setIsActive(1);
+            return tr;
+        } catch (Exception e) {
+            log.warn("转换关联关系失败: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * ✅ 新增：生成关联关系的唯一Key
+     */
+    private String generateKey(TableRelationship rel) {
+        return String.format("%s.%s->%s.%s",
+            rel.getSourceTable(),
+            rel.getSourceColumn(),
+            rel.getTargetTable(),
+            rel.getTargetColumn()
+        );
+    }
+    
+    /**
+     * ✅ 新增：获取目标表指定字段的数据类型
+     */
+    private String getTargetColumnDataType(Long datasourceId, String tableName, String columnName) {
+        try {
+            return jdbcTemplate.queryForObject(
+                "SELECT data_type FROM column_metadata WHERE datasource_id = ? AND table_name = ? AND column_name = ?",
+                String.class, datasourceId, tableName, columnName
+            );
+        } catch (Exception e) {
+            log.debug("查询字段类型失败: {}.{}", tableName, columnName);
+            return null;
+        }
+    }
+    
+    /**
+     * ✅ 新增：判断两个字段类型是否兼容
+     * 
+     * 兼容规则：
+     * 1. 完全相同：int = int
+     * 2. 数值类型互转：int ↔ bigint, decimal ↔ float
+     * 3. 字符串类型互转：varchar ↔ text ↔ char
+     * 4. 日期类型互转：date ↔ datetime ↔ timestamp
+     */
+    private boolean isCompatibleType(String type1, String type2) {
+        if (type1 == null || type2 == null) {
+            return false; // 类型未知，保守处理
+        }
+        
+        String t1 = type1.toLowerCase();
+        String t2 = type2.toLowerCase();
+        
+        // 完全相同
+        if (t1.equals(t2)) {
+            return true;
+        }
+        
+        // 数值类型组
+        Set<String> integerTypes = Set.of("int", "integer", "bigint", "smallint", "tinyint", "mediumint");
+        Set<String> decimalTypes = Set.of("decimal", "numeric", "float", "double");
+        
+        if ((integerTypes.contains(t1) && integerTypes.contains(t2)) ||
+            (decimalTypes.contains(t1) && decimalTypes.contains(t2))) {
+            return true;
+        }
+        
+        // 字符串类型组
+        Set<String> stringTypes = Set.of("varchar", "char", "text", "tinytext", "mediumtext", "longtext");
+        if (stringTypes.contains(t1) && stringTypes.contains(t2)) {
+            return true;
+        }
+        
+        // 日期时间类型组
+        Set<String> dateTypes = Set.of("date", "datetime", "timestamp", "time", "year");
+        if (dateTypes.contains(t1) && dateTypes.contains(t2)) {
+            return true;
+        }
+        
+        // 布尔类型
+        if ((t1.equals("boolean") || t1.equals("bool") || t1.equals("tinyint")) &&
+            (t2.equals("boolean") || t2.equals("bool") || t2.equals("tinyint"))) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✅ 新增：分析单批表的关联关系
+     */
+    private List<TableRelationship> analyzeSingleBatch(Long datasourceId, List<Map<String, Object>> tables) {
+        try {
             // ✅ 优化：批量查询所有表的字段信息
             List<String> tableNames = tables.stream()
                 .map(t -> (String) t.get("table_name"))
@@ -383,15 +773,37 @@ public class TableRelationshipService {
                 schemaDesc.toString()
             );
             
-            String response = multiModelService.generateAnswer(prompt);
+            // ✅ 关键：使用带长超时的LLM调用（60秒）
+            String response = callLLMWithTimeout(prompt, 60);
             log.info("LLM返回关联关系: {}", response);
             
             // 解析JSON响应
             return parseLLMResponse(response, datasourceId);
             
         } catch (Exception e) {
-            log.error("LLM自动发现关联关系失败", e);
+            log.error("LLM分析单批关联关系失败", e);
             return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * ✅ 新增：带自定义超时的LLM调用
+     */
+    private String callLLMWithTimeout(String prompt, int timeoutSeconds) {
+        try {
+            // 直接使用 OllamaProvider 并设置更长超时
+            com.nl2sql.core.llm.provider.OllamaProvider ollamaProvider = 
+                new com.nl2sql.core.llm.provider.OllamaProvider(
+                    ollamaBaseUrl,
+                    ollamaCodeModel,
+                    timeoutSeconds
+                );
+            
+            return ollamaProvider.generate(prompt, 0.3);
+            
+        } catch (Exception e) {
+            log.error("[TableRelationship] LLM调用超时({}s)", timeoutSeconds, e);
+            throw new RuntimeException("LLM调用超时: " + e.getMessage(), e);
         }
     }
     
@@ -468,6 +880,12 @@ public class TableRelationshipService {
                 );
             }
             
+            // ✅ 关键：清除关联关系缓存（因为数据已变更）
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[TableRelationship] 关联关系已变更，清除所有缓存");
+            }
+            
             return true;
         } catch (Exception e) {
             log.error("保存关联关系失败", e);
@@ -481,6 +899,13 @@ public class TableRelationshipService {
     public boolean deleteRelationship(Long id) {
         try {
             jdbcTemplate.update("DELETE FROM table_relationships WHERE id = ?", id);
+            
+            // ✅ 关键：清除关联关系缓存
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[TableRelationship] 关联关系已删除，清除所有缓存");
+            }
+            
             return true;
         } catch (Exception e) {
             log.error("删除关联关系失败", e);
@@ -494,6 +919,13 @@ public class TableRelationshipService {
     public boolean toggleRelationship(Long id, boolean active) {
         try {
             jdbcTemplate.update("UPDATE table_relationships SET is_active = ? WHERE id = ?", active ? 1 : 0, id);
+            
+            // ✅ 关键：清除关联关系缓存
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[TableRelationship] 关联关系状态已变更，清除所有缓存");
+            }
+            
             return true;
         } catch (Exception e) {
             log.error("切换关联关系状态失败", e);
@@ -856,6 +1288,15 @@ public class TableRelationshipService {
             return "";
         }
         
+        // ✅ 关键优化：先查缓存
+        if (metadataCacheService != null) {
+            String cached = metadataCacheService.getRelationships(datasourceId, tables);
+            if (cached != null) {
+                log.debug("[TableRelationship] 关联关系缓存命中");
+                return cached;
+            }
+        }
+        
         try {
             String tableList = tables.stream()
                 .map(t -> "'" + t.replace("'", "''") + "'")
@@ -910,6 +1351,12 @@ public class TableRelationshipService {
             }
             
             String result = sb.toString();
+            
+            // ✅ 存入缓存
+            if (metadataCacheService != null) {
+                metadataCacheService.putRelationships(datasourceId, tables, result);
+            }
+            
             log.info("[TableRelationship] 返回的关联关系信息:\n{}", result);
             return result;
         } catch (Exception e) {

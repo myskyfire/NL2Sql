@@ -41,6 +41,11 @@ public class MetadataCacheService {
      */
     private Cache<String, List<String>> vectorRetrievalCache;
     
+    /**
+     * ✅ 新增：列名白名单缓存：key = "columns:{datasourceId}:{tablesHash}"
+     */
+    private Cache<String, java.util.Set<String>> columnWhitelistCache;
+    
     @PostConstruct
     public void init() {
         // 初始化 Caffeine 缓存
@@ -59,6 +64,13 @@ public class MetadataCacheService {
         vectorRetrievalCache = Caffeine.newBuilder()
             .maximumSize(2000)
             .expireAfterWrite(30, TimeUnit.MINUTES)
+            .recordStats()
+            .build();
+        
+        // ✅ 新增：列名白名单缓存（TTL 2小时，最大500条）
+        columnWhitelistCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(2, TimeUnit.HOURS)
             .recordStats()
             .build();
         
@@ -149,6 +161,27 @@ public class MetadataCacheService {
         String key = String.format("vector:%s", queryHash);
         vectorRetrievalCache.put(key, tables);
         log.debug("[MetadataCache] Vector检索缓存: {}", key);
+    }
+    
+    // ==================== Column Whitelist 缓存 ====================
+    
+    /**
+     * ✅ 新增：获取列名白名单缓存
+     */
+    public java.util.Set<String> getColumnWhitelist(Long datasourceId, java.util.Set<String> tableNames) {
+        String tablesHash = String.valueOf(tableNames.hashCode());
+        String key = String.format("columns:%d:%s", datasourceId, tablesHash);
+        return columnWhitelistCache.getIfPresent(key);
+    }
+    
+    /**
+     * ✅ 新增：设置列名白名单缓存
+     */
+    public void putColumnWhitelist(Long datasourceId, java.util.Set<String> tableNames, java.util.Set<String> columns) {
+        String tablesHash = String.valueOf(tableNames.hashCode());
+        String key = String.format("columns:%d:%s", datasourceId, tablesHash);
+        columnWhitelistCache.put(key, columns);
+        log.debug("[MetadataCache] 列名白名单缓存: {} ({}个列)", key, columns.size());
     }
     
     // ==================== 统计信息 ====================

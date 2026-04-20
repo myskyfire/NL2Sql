@@ -1,0 +1,11 @@
+fix: 补充SKILL.md缺失的requiredParams和script字段
+
+修复两个新建Skill的元数据配置：
+- sql-validate-execute/SKILL.md
+- sql-performance-analysis/SKILL.md
+
+添加缺失字段：
+- requiredParams: [sql, datasourceId]
+- script: {SkillName}.groovy
+
+确保Skill引擎能正确加载和解析。

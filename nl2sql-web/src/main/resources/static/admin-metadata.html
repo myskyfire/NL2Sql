@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>元数据查看</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Microsoft YaHei', Arial, sans-serif; 
+            background: #f5f7fa;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        select, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .metadata-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .metadata-item h4 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .metadata-item p {
+            color: #666;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h2 style="margin-bottom: 20px; color: #333;">📋 元数据查看</h2>
+            <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
+                <label style="font-weight: 600; color: #333;">选择数据源：</label>
+                <select id="datasourceSelect" onchange="onDatasourceChange()">
+                    <option value="">-- 请选择数据源 --</option>
+                </select>
+                <button onclick="loadMetadataByDatasource()" id="queryBtn" disabled>
+                    🔍 查询
+                </button>
+            </div>
+            <div id="metadataList">
+                <p style="color: #999; text-align: center; padding: 40px;">请选择数据源后点击查询</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('token');
+        
+        // 加载数据源列表
+        async function loadDatasourceList() {
+            try {
+                const response = await fetch('/api/admin/datasource/list', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    const select = document.getElementById('datasourceSelect');
+                    select.innerHTML = '<option value="">-- 请选择数据源 --</option>';
+                    
+                    result.data.forEach(ds => {
+                        const option = document.createElement('option');
+                        option.value = ds.id;
+                        option.textContent = ds.name;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载数据源失败:', error);
+            }
+        }
+        
+        function onDatasourceChange() {
+            const select = document.getElementById('datasourceSelect');
+            const queryBtn = document.getElementById('queryBtn');
+            queryBtn.disabled = !select.value;
+        }
+        
+        async function loadMetadataByDatasource() {
+            const datasourceId = document.getElementById('datasourceSelect').value;
+            if (!datasourceId) {
+                alert('请选择数据源');
+                return;
+            }
+            
+            const metadataList = document.getElementById('metadataList');
+            metadataList.innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">加载中...</p>';
+            
+            try {
+                const response = await fetch(`/api/admin/metadata/list?datasourceId=${datasourceId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data && result.data.tables) {
+                    const tables = Object.values(result.data.tables);
+                    
+                    if (tables.length === 0) {
+                        metadataList.innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">暂无元数据</p>';
+                        return;
+                    }
+                    
+                    metadataList.innerHTML = tables.map(table => `
+                        <div class="metadata-item">
+                            <h4>${table.tableName}</h4>
+                            <p>${table.tableComment || '无描述'}</p>
+                            <p style="margin-top: 8px; color: #999; font-size: 12px;">
+                                数据源: ${table.datasourceName} | 
+                                字段数: ${(table.columns || []).length}
+                            </p>
+                        </div>
+                    `).join('');
+                } else {
+                    metadataList.innerHTML = `<p style="color: red; text-align: center; padding: 40px;">${result.message || '加载失败'}</p>`;
+                }
+            } catch (error) {
+                console.error('加载元数据失败:', error);
+                metadataList.innerHTML = '<p style="color: red; text-align: center; padding: 40px;">网络错误: ' + error.message + '</p>';
+            }
+        }
+        
+        // 页面加载时初始化
+        window.onload = function() {
+            loadDatasourceList();
+        };
+    </script>
+</body>
+</html>

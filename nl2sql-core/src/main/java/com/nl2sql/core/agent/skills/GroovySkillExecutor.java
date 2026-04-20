@@ -4,7 +4,9 @@ import groovy.lang.GroovyClassLoader;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -26,7 +28,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-public class GroovySkillExecutor {
+public class GroovySkillExecutor implements ApplicationContextAware {
     
     private static final String SKILLS_BASE_PATH = "skills/";
     
@@ -50,12 +52,32 @@ public class GroovySkillExecutor {
     
     private ApplicationContext applicationContext;
     
-    public void setApplicationContext(ApplicationContext context) {
+    /**
+     * ✅ Workflow 引擎（声明式工作流执行器）
+     */
+    private com.nl2sql.core.agent.skills.WorkflowEngine workflowEngine;
+    
+    @Override
+    public void setApplicationContext(ApplicationContext context) throws BeansException {
         this.applicationContext = context;
+        // 延迟初始化，避免循环依赖
+        try {
+            this.workflowEngine = applicationContext.getBean(com.nl2sql.core.agent.skills.WorkflowEngine.class);
+            log.info("[GroovySkillExecutor] WorkflowEngine 初始化成功");
+        } catch (Exception e) {
+            log.warn("[GroovySkillExecutor] WorkflowEngine 未找到，将使用纯 Groovy 模式: {}", e.getMessage());
+            this.workflowEngine = null;
+        }
+        // 立即扫描 Skills
+        scanSkillsInternal();
     }
     
     @PostConstruct
-    public void scanSkills() {
+    public void init() {
+        log.info("[GroovySkillExecutor] GroovySkillExecutor Bean 创建完成，等待 ApplicationContext 注入...");
+    }
+    
+    private void scanSkillsInternal() {
         log.info("[GroovySkillExecutor] 开始扫描 Groovy Skills...");
         
         // 如果配置文件中没有指定扫描目录，则使用默认值
@@ -113,6 +135,12 @@ public class GroovySkillExecutor {
      */
     public Object executeSkill(String skillPath, SkillContext context) {
         try {
+            // ✅ 优先检查是否有 workflow 配置
+            if (workflowEngine != null && hasWorkflow(skillPath)) {
+                log.info("[GroovySkillExecutor] 检测到 Workflow 配置，使用声明式引擎执行: {}", skillPath);
+                return workflowEngine.executeWorkflow(skillPath, context);
+            }
+            
             // 从 SKILL.md 中解析 script 字段
             String scriptRelativePath = parseScriptField(skillPath);
             if (scriptRelativePath == null || scriptRelativePath.trim().isEmpty()) {
@@ -368,6 +396,52 @@ public class GroovySkillExecutor {
         }
         
         return params;
+    }
+    
+    /**
+     * ✅ 从 SKILL.md 中解析 workflow 字段（YAML格式）
+     * 如果存在workflow，返回true，表示应该使用声明式工作流引擎执行
+     */
+    public boolean hasWorkflow(String skillPath) {
+        try {
+            String skillMdPath = skillPath.endsWith("/") ? skillPath + "SKILL.md" : skillPath + "/SKILL.md";
+            var resource = new ClassPathResource(skillMdPath, getClass().getClassLoader());
+            
+            if (!resource.exists()) {
+                return false;
+            }
+            
+            try (var reader = new BufferedReader(
+                    new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+                
+                String line;
+                boolean inFrontmatter = false;
+                int lineCount = 0;
+                
+                while ((line = reader.readLine()) != null) {
+                    lineCount++;
+                    
+                    if (line.trim().equals("---")) {
+                        if (lineCount == 1) {
+                            inFrontmatter = true;
+                            continue;
+                        } else if (inFrontmatter) {
+                            break;
+                        }
+                    }
+                    
+                    if (inFrontmatter && line.startsWith("workflow:")) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+            
+        } catch (Exception e) {
+            log.error("[GroovySkillExecutor] 检查 workflow 字段失败: {}", skillPath, e);
+            return false;
+        }
     }
     
     /**

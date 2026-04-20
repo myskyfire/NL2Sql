@@ -5,6 +5,55 @@ version: 1.0.0
 author: NL2SQL Team
 requiredParams: [sql, datasourceId]
 script: SQLPerformanceAnalysisSkill.groovy
+workflow:
+  version: 1.0
+  steps:
+    - id: validate
+      action: call_tool
+      tool: validate_sql
+      input:
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: validation_result
+    
+    - id: explain
+      action: call_tool
+      tool: analyze_query_plan
+      condition: "{{validation_result.valid == true}}"
+      input:
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: explain_result
+    
+    - id: check_index
+      action: call_tool
+      tool: check_index
+      condition: "{{validation_result.valid == true}}"
+      input:
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: index_result
+    
+    - id: estimate_cost
+      action: call_tool
+      tool: estimate_cost
+      condition: "{{validation_result.valid == true}}"
+      input:
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: cost_result
+    
+    - id: respond
+      action: respond
+      output:
+        status: "success"
+        sql: "{{sql}}"
+        datasourceId: "{{datasourceId}}"
+        analysis:
+          validation: "{{validation_result}}"
+          explainPlan: "{{explain_result}}"
+          indexCheck: "{{index_result}}"
+          costEstimate: "{{cost_result}}"
 ---
 
 # SQL性能分析 Skill
