@@ -395,7 +395,7 @@
 <body>
     <!-- 顶部导航 -->
     <div class="navbar">
-        <h1>🚀 DataMind AI 企业版</h1>
+        <h1>🚀 DataMind AI (数智洞察) 企业版</h1>
         <div class="nav-user">
             <span id="currentUser">加载中...</span>
             <button class="logout-btn" onclick="openChangePassword()">🔐 修改密码</button>
@@ -407,6 +407,7 @@
     <div class="main-container">
         <!-- 侧边栏菜单 -->
         <div class="sidebar" id="sidebar">
+            <!-- 核心查询功能 -->
             <div class="menu-item active" onclick="showPage('agent-chat', this)" title="真正的智能体交互，支持多轮对话、自动追问、图表推荐和数据分析">
                 <span class="menu-icon">🤖</span>
                 <span>AI Agent 对话</span>
@@ -415,42 +416,26 @@
                 <span class="menu-icon">⚡</span>
                 <span>流式对话</span>
             </div>
-            <div class="menu-item" onclick="showPage('relationship-management', this)" title="配置和管理数据库表之间的关联关系，提升SQL生成准确性">
-                <span class="menu-icon">🔗</span>
-                <span>表关联管理</span>
-            </div>
             <div class="menu-item" onclick="showPage('query', this)" title="用中文直接提问，AI自动生成SQL并执行，支持多轮对话和上下文理解">
                 <span class="menu-icon">💬</span>
                 <span>DataMind 查询</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('table-permission', this)" title="管理用户对数据库表的访问权限，支持按用户和按表双向查询">
-                <span class="menu-icon">🔐</span>
-                <span>表授权管理</span>
-            </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('execution-logs', this)" title="查看所有SQL执行记录，包括执行时间、性能分析和慢查询监控">
-                <span class="menu-icon">📊</span>
-                <span>执行日志</span>
-            </div>
+            
+            <!-- 基础配置（管理员） -->
             <div class="menu-item admin-only hidden" onclick="showPage('datasource', this)" title="配置和管理数据库连接，同步元数据到本地库">
                 <span class="menu-icon">🗄️</span>
                 <span>数据源管理</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('manual-sql', this)" title="直接编写和执行SQL语句，支持权限校验和安全检查">
-                <span class="menu-icon">⚡</span>
-                <span>手动执行SQL</span>
+            <div class="menu-item admin-only hidden" onclick="showPage('relationship-management', this)" title="配置和管理数据库表之间的关联关系，提升SQL生成准确性">
+                <span class="menu-icon">🔗</span>
+                <span>表关联管理</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('template', this)" title="管理和复用常用查询模板，提升查询效率">
-                <span class="menu-icon">📝</span>
-                <span>查询模板</span>
-            </div>
-            <div class="menu-item" onclick="showPage('metadata', this)" title="查看数据库表结构、字段信息、索引详情等元数据">
+            <div class="menu-item admin-only hidden" onclick="showPage('metadata', this)" title="查看数据库表结构、字段信息、索引详情等元数据">
                 <span class="menu-icon">📋</span>
                 <span>元数据查看</span>
             </div>
-            <div class="menu-item admin-only hidden" onclick="showPage('user-management', this)" title="创建和管理系统用户">
-                <span class="menu-icon">👥</span>
-                <span>用户管理</span>
-            </div>
+            
+            <!-- AI增强配置（管理员） -->
             <div class="menu-item admin-only hidden" onclick="showPage('rag-management', this)" title="导入和管理QA对，优化SQL生成质量，支持批量导入和智能检索">
                 <span class="menu-icon">🧠</span>
                 <span>RAG知识库</span>
@@ -462,6 +447,30 @@
             <div class="menu-item admin-only hidden" onclick="showPage('industry-concepts', this)" title="管理行业术语、指标定义和同义词映射">
                 <span class="menu-icon">📚</span>
                 <span>行业概念管理</span>
+            </div>
+            
+            <!-- 权限与审计（管理员） -->
+            <div class="menu-item admin-only hidden" onclick="showPage('user-management', this)" title="创建和管理系统用户">
+                <span class="menu-icon">👥</span>
+                <span>用户管理</span>
+            </div>
+            <div class="menu-item admin-only hidden" onclick="showPage('table-permission', this)" title="管理用户对数据库表的访问权限，支持按用户和按表双向查询">
+                <span class="menu-icon">🔐</span>
+                <span>表授权管理</span>
+            </div>
+            <div class="menu-item admin-only hidden" onclick="showPage('execution-logs', this)" title="查看所有SQL执行记录，包括执行时间、性能分析和慢查询监控">
+                <span class="menu-icon">📊</span>
+                <span>执行日志</span>
+            </div>
+            
+            <!-- 工具类 -->
+            <div class="menu-item admin-only hidden" onclick="showPage('manual-sql', this)" title="直接编写和执行SQL语句，支持权限校验和安全检查">
+                <span class="menu-icon">⚡</span>
+                <span>手动执行SQL</span>
+            </div>
+            <div class="menu-item admin-only hidden" onclick="showPage('template', this)" title="管理和复用常用查询模板，提升查询效率">
+                <span class="menu-icon">📝</span>
+                <span>查询模板</span>
             </div>
             
             <!-- ✅ 拖拽条 -->
@@ -503,8 +512,8 @@
                             <h3>流式对话</h3>
                             <p>实时显示SQL生成过程，SSE流式推送，体验更流畅的交互</p>
                         </div>
-                        
-                        <div class="welcome-card" onclick="showPage('relationship-management')">
+
+                        <div class="welcome-card admin-only hidden" onclick="showPage('relationship-management')">
                             <div class="welcome-icon">🔗</div>
                             <h3>表关联关系管理</h3>
                             <p>配置和管理数据库表之间的关联关系，提升SQL生成准确性</p>
@@ -534,7 +543,7 @@
                             <p>配置和管理数据库连接，同步元数据到本地库</p>
                         </div>
                         
-                        <div class="welcome-card" onclick="showPage('metadata')">
+                        <div class="welcome-card admin-only hidden" onclick="showPage('metadata')">
                             <div class="welcome-icon">📋</div>
                             <h3>元数据浏览</h3>
                             <p>查看数据库表结构、字段信息、索引详情等元数据</p>
@@ -580,17 +589,17 @@
             
             <!-- 表授权管理页面 -->
             <div id="page-table-permission" class="page">
-                <iframe id="iframe-table-permission" class="iframe-container" src="/admin-table-permission.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-table-permission" class="iframe-container" data-src="/admin-table-permission.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 执行日志页面 -->
             <div id="page-execution-logs" class="page">
-                <iframe id="iframe-execution-logs" class="iframe-container" src="/admin-execution-logs.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-execution-logs" class="iframe-container" data-src="/admin-execution-logs.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 数据源管理页面 -->
             <div id="page-datasource" class="page">
-                <iframe id="iframe-datasource" class="iframe-container" src="/admin-datasource.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-datasource" class="iframe-container" data-src="/admin-datasource.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 元数据查看页面 -->
@@ -615,17 +624,17 @@
             
             <!-- 手动执行SQL页面 -->
             <div id="page-manual-sql" class="page">
-                <iframe id="iframe-manual-sql" class="iframe-container" src="/admin-manual-sql.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-manual-sql" class="iframe-container" data-src="/admin-manual-sql.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 查询模板管理页面 -->
             <div id="page-template" class="page">
-                <iframe id="iframe-template" class="iframe-container" src="/admin-template.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-template" class="iframe-container" data-src="/admin-template.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 用户管理页面 -->
             <div id="page-user-management" class="page">
-                <iframe id="iframe-user-management" class="iframe-container" src="/admin-user-management.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-user-management" class="iframe-container" data-src="/admin-user-management.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- AI Agent 对话页面 -->
@@ -645,17 +654,17 @@
             
             <!-- RAG知识库管理页面 -->
             <div id="page-rag-management" class="page">
-                <iframe id="iframe-rag-management" class="iframe-container" src="/admin-rag-management.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-rag-management" class="iframe-container" data-src="/admin-rag-management.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- Prompt学习管理页面 -->
             <div id="page-prompt-learning" class="page">
-                <iframe id="iframe-prompt-learning" class="iframe-container" src="/admin-prompt-learning.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-prompt-learning" class="iframe-container" data-src="/admin-prompt-learning.html" onload="fixIframeStyle(this)"></iframe>
             </div>
             
             <!-- 行业概念管理页面 -->
             <div id="page-industry-concepts" class="page">
-                <iframe id="iframe-industry-concepts" class="iframe-container" src="/admin-industry-concepts.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-industry-concepts" class="iframe-container" data-src="/admin-industry-concepts.html" onload="fixIframeStyle(this)"></iframe>
             </div>
         </div>
     </div>
@@ -685,11 +694,42 @@
     </div>
     
     <script>
-        let token = localStorage.getItem('token');
-        let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+        // ✅ 立即检查登录状态（在最前面）
+        const token = localStorage.getItem('token');
+        const userInfoStr = localStorage.getItem('userInfo');
+        
+        if (!token || !userInfoStr) {
+            console.warn('⚠️ 未登录，立即跳转到登录页');
+            window.location.replace('/login.html');
+            throw new Error('未登录'); // 阻止后续代码执行
+        }
+        
+        let userInfo;
+        try {
+            userInfo = JSON.parse(userInfoStr);
+        } catch (e) {
+            console.error('❌ userInfo解析失败');
+            window.location.replace('/login.html');
+            throw new Error('userInfo无效');
+        }
+        
+        if (!userInfo.username) {
+            console.warn('⚠️ 用户信息不完整，跳转到登录页');
+            localStorage.removeItem('token');
+            localStorage.removeItem('userInfo');
+            window.location.replace('/login.html');
+            throw new Error('用户信息缺失');
+        }
         
         // ✅ 全局 Fetch 封装 - 自动处理 Token 过期
         async function authenticatedFetch(url, options = {}) {
+            // ✅ 检查登录状态
+            if (!token || !userInfo || !userInfo.username) {
+                console.warn('⚠️ 未登录，阻止 API 请求:', url);
+                window.location.href = '/login.html';
+                return null;
+            }
+            
             // 默认配置
             const defaultOptions = {
                 headers: {
@@ -886,62 +926,77 @@
             return div.innerHTML;
         }
         
-        // 检查登录状态
-        if (!token) {
-            window.location.href = '/login.html';
-        }
-        
         // 显示用户信息
-        document.getElementById('currentUser').textContent = 
-            `${userInfo.realName || userInfo.username} (${userInfo.role === 'admin' ? '管理员' : '用户'})`;
-        
-        // 如果是管理员，显示管理员菜单
-        if (userInfo.role === 'admin') {
-            document.querySelectorAll('.admin-only').forEach(el => {
-                el.classList.remove('hidden');
+            document.getElementById('currentUser').textContent = 
+                `${userInfo.realName || userInfo.username} (${userInfo.role === 'admin' ? '管理员' : '用户'})`;
+            
+            // 如果是管理员，显示管理员菜单
+            if (userInfo.role === 'admin') {
+                document.querySelectorAll('.admin-only').forEach(el => {
+                    el.classList.remove('hidden');
+                });
+            }
+            
+            // ✅ 侧边栏拖拽调整宽度
+            const sidebar = document.getElementById('sidebar');
+            const resizer = document.getElementById('sidebarResizer');
+            let isResizing = false;
+            let startX = 0;
+            let startWidth = 0;
+            
+            resizer.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = parseInt(document.defaultView.getComputedStyle(sidebar).width, 10);
+                resizer.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none'; // 禁止选中文本
+                e.preventDefault();
             });
-        }
-        
-        // ✅ 侧边栏拖拽调整宽度
-        const sidebar = document.getElementById('sidebar');
-        const resizer = document.getElementById('sidebarResizer');
-        let isResizing = false;
-        let startX = 0;
-        let startWidth = 0;
-        
-        resizer.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startWidth = parseInt(document.defaultView.getComputedStyle(sidebar).width, 10);
-            resizer.classList.add('active');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none'; // 禁止选中文本
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
             
-            const newWidth = startWidth + (e.clientX - startX);
-            const minWidth = 150;
-            const maxWidth = 400;
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                const newWidth = startWidth + (e.clientX - startX);
+                const minWidth = 150;
+                const maxWidth = 400;
+                
+                if (newWidth >= minWidth && newWidth <= maxWidth) {
+                    sidebar.style.width = newWidth + 'px';
+                }
+            });
             
-            if (newWidth >= minWidth && newWidth <= maxWidth) {
-                sidebar.style.width = newWidth + 'px';
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizer.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+            
+            // ✅ 管理员页面列表
+            const adminPages = [
+                'datasource', 'relationship-management', 'metadata',
+                'rag-management', 'prompt-learning', 'industry-concepts',
+                'user-management', 'table-permission', 'execution-logs',
+                'manual-sql', 'template'
+            ];
+            
+            // ✅ 检查是否为管理员页面
+            function isAdminPage(pageName) {
+                return adminPages.includes(pageName);
             }
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                resizer.classList.remove('active');
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            }
-        });
         
         // 切换页面
         function showPage(pageName, clickedElement) {
+            // ✅ 权限检查：非管理员不能访问管理员页面
+            if (isAdminPage(pageName) && userInfo.role !== 'admin') {
+                console.warn('⚠️ 非管理员尝试访问管理员页面:', pageName);
+                alert('需要管理员权限');
+                return;
+            }
+            
             // 隐藏所有页面
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
@@ -1038,6 +1093,15 @@
         }
         
         function switchTab(pageName) {
+            // ✅ 权限检查：非管理员不能访问管理员页面
+            if (isAdminPage(pageName) && userInfo.role !== 'admin') {
+                console.warn('⚠️ 非管理员尝试通过页签访问管理员页面:', pageName);
+                alert('需要管理员权限');
+                // 关闭该页签
+                closeTab(pageName);
+                return;
+            }
+            
             // 隐藏所有页面
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
@@ -1488,6 +1552,12 @@
         
         // 页面加载时初始化
         window.onload = function() {
+            // ✅ 双重检查：防止未登录用户执行任何逻辑
+            if (!token || !userInfo || !userInfo.username) {
+                console.warn('⚠️ 未登录，不执行初始化');
+                return;
+            }
+            
             loadStats();
             adjustMenuSpacing(); // ✅ 调整菜单间距
             

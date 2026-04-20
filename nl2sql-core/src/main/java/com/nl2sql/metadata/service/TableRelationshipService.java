@@ -234,7 +234,7 @@ public class TableRelationshipService {
                 rel.put("sourceColumn", row.get("source_column"));
                 rel.put("targetTable", row.get("target_table"));
                 rel.put("targetColumn", row.get("target_column"));
-                rel.put("relationshipType", "MANY_TO_ONE");
+                rel.put("relationshipType", null); // ✅ 废弃字段，统一为NULL
                 rel.put("confidence", 1.0); // 真实外键，置信度100%
                 rel.put("description", String.format("数据库外键约束: %s.%s(%s) -> %s.%s(%s)",
                     row.get("source_table"), row.get("source_column"), sourceType,
@@ -322,7 +322,7 @@ public class TableRelationshipService {
                                     relationship.put("sourceColumn", sourceColumn);
                                     relationship.put("targetTable", targetTable);
                                     relationship.put("targetColumn", "id");
-                                    relationship.put("relationshipType", "MANY_TO_ONE");
+                                    relationship.put("relationshipType", null); // ✅ 废弃字段，统一为NULL
                                     relationship.put("confidence", 0.8);
                                     relationship.put("description", generateStandardDescription(
                                         sourceTable, sourceColumn, targetTable, "id", datasourceId
@@ -404,8 +404,7 @@ public class TableRelationshipService {
                 conflict.put("hasConflict", true);
                 conflicts.add(conflict);
                 
-                log.warn("检测到冲突: {}, 规则引擎: {}, LLM: {}", 
-                    key, existing.get("relationshipType"), rel.get("relationshipType"));
+                log.warn("检测到冲突: {}", key);
             }
         }
         
