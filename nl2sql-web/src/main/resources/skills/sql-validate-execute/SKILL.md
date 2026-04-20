@@ -3,6 +3,8 @@ name: sql_validate_execute
 description: SQL验证与执行技能。先验证SQL语法和安全性，再执行查询。演示完整的Tool调用链。
 version: 1.0.0
 author: NL2SQL Team
+requiredParams: [sql, datasourceId]
+script: SQLValidateAndExecuteSkill.groovy
 ---
 
 # SQL验证与执行 Skill

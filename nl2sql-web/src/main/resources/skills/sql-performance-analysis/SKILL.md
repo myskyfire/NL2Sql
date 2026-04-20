@@ -3,6 +3,8 @@ name: sql_performance_analysis
 description: SQL性能分析技能。综合分析执行计划、索引使用、查询成本，给出优化建议。演示多Tool协同工作。
 version: 1.0.0
 author: NL2SQL Team
+requiredParams: [sql, datasourceId]
+script: SQLPerformanceAnalysisSkill.groovy
 ---
 
 # SQL性能分析 Skill

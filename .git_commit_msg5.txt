@@ -1,0 +1,23 @@
+feat: 创建2个演示Skill展示新架构最佳实践
+
+新增Skill：
+1. sql-validate-execute - SQL验证与执行Skill
+   - 演示2个Tool串联调用（validate_sql → execute_sql）
+   - 区分验证失败和执行失败
+   - 返回完整的验证+执行结果
+
+2. sql-performance-analysis - SQL性能分析Skill
+   - 演示4个Tool协同工作（validate_sql + analyze_query_plan + check_index + estimate_cost）
+   - 综合分析多维度数据生成优化建议
+   - 计算整体风险等级
+
+架构特点：
+- ✅ 纯编排逻辑，不直接操作数据库
+- ✅ 通过callTool()调用原子能力
+- ✅ 清晰的日志输出和错误处理
+- ✅ 详细的SKILL.md文档说明
+
+对比现有Skill：
+- simple-data-query: 已使用新架构（1个Tool）
+- report-with-insights: 已改造为callSkill()
+- standard-query: 仍使用Bean（太复杂，待逐步迁移）
