@@ -1,0 +1,13 @@
+feat: 创建10个原子Tool完善Skill架构
+
+新增原子Tool：
+1. ValidateSQLTool - SQL语法验证和安全检查
+2. AnalyzeQueryPlanTool - EXPLAIN执行计划分析
+3. GetDatabaseStatsTool - 数据库表统计信息
+4. CheckIndexTool - 索引情况检查
+5. GetTableRelationshipsTool - 查询表关联关系
+6. FormatSQLTool - SQL格式化
+7. CompareSQLTool - SQL差异对比
+8. EstimateCostTool - 查询成本估算
+
+更新AgentConfig注册所有新Tool，支持Skill调用

@@ -84,6 +84,30 @@ public class AgentConfig {
     private GetTableMetadataTool getTableMetadataTool;
     
     @Autowired(required = false)
+    private ValidateSQLTool validateSQLTool;
+    
+    @Autowired(required = false)
+    private AnalyzeQueryPlanTool analyzeQueryPlanTool;
+    
+    @Autowired(required = false)
+    private GetDatabaseStatsTool getDatabaseStatsTool;
+    
+    @Autowired(required = false)
+    private CheckIndexTool checkIndexTool;
+    
+    @Autowired(required = false)
+    private GetTableRelationshipsTool getTableRelationshipsTool;
+    
+    @Autowired(required = false)
+    private FormatSQLTool formatSQLTool;
+    
+    @Autowired(required = false)
+    private CompareSQLTool compareSQLTool;
+    
+    @Autowired(required = false)
+    private EstimateCostTool estimateCostTool;
+    
+    @Autowired(required = false)
     private MetadataService metadataService;
     
     /**
@@ -496,6 +520,84 @@ public class AgentConfig {
                 return getTableMetadataTool.getTableMetadata(tableName, datasourceId);
             }, "获取指定表的元数据信息，包括表注释、字段列表、数据类型等。这是原子能力，供Skill内部调用。输入表名和数据源ID");
             log.info("启用 GetTableMetadataTool");
+        }
+        
+        // 注册其他原子 Tool
+        if (validateSQLTool != null) {
+            agent.registerTool("validate_sql", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return validateSQLTool.validateSQL(sql, datasourceId);
+            }, "验证SQL语法和安全性。输入SQL语句和数据源ID，返回是否有效、错误信息、风险等级");
+            log.info("启用 ValidateSQLTool");
+        }
+        
+        if (analyzeQueryPlanTool != null) {
+            agent.registerTool("analyze_query_plan", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return analyzeQueryPlanTool.analyzeQueryPlan(sql, datasourceId);
+            }, "分析SQL执行计划（EXPLAIN），返回性能风险评估。输入SQL和数据源ID，返回风险等级、风险点、优化建议");
+            log.info("启用 AnalyzeQueryPlanTool");
+        }
+        
+        if (getDatabaseStatsTool != null) {
+            agent.registerTool("get_database_stats", (args, dsId, userId, username, userMessage) -> {
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                String tableNames = (String) args.get("tableNames");
+                return getDatabaseStatsTool.getDatabaseStats(datasourceId, tableNames);
+            }, "获取数据库表统计信息，包括表大小、行数、索引数量等。输入数据源ID和可选的表名列表");
+            log.info("启用 GetDatabaseStatsTool");
+        }
+        
+        if (checkIndexTool != null) {
+            agent.registerTool("check_index", (args, dsId, userId, username, userMessage) -> {
+                String tableName = (String) args.get("tableName");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return checkIndexTool.checkIndex(tableName, datasourceId);
+            }, "检查指定表的索引情况。输入表名和数据源ID，返回索引列表、字段覆盖情况");
+            log.info("启用 CheckIndexTool");
+        }
+        
+        if (getTableRelationshipsTool != null) {
+            agent.registerTool("get_table_relationships", (args, dsId, userId, username, userMessage) -> {
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                String tableName = (String) args.get("tableName");
+                return getTableRelationshipsTool.getTableRelationships(datasourceId, tableName);
+            }, "查询已配置的表关联关系。输入数据源ID和可选的表名，返回外键关联信息");
+            log.info("启用 GetTableRelationshipsTool");
+        }
+        
+        if (formatSQLTool != null) {
+            agent.registerTool("format_sql", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                return formatSQLTool.formatSQL(sql);
+            }, "格式化SQL语句提高可读性。输入SQL，返回格式化后的SQL（关键字大写、适当换行缩进）");
+            log.info("启用 FormatSQLTool");
+        }
+        
+        if (compareSQLTool != null) {
+            agent.registerTool("compare_sql", (args, dsId, userId, username, userMessage) -> {
+                String originalSql = (String) args.get("originalSql");
+                String newSql = (String) args.get("newSql");
+                return compareSQLTool.compareSQL(originalSql, newSql);
+            }, "对比两个SQL的差异。输入原始SQL和新SQL，返回差异分析包括字段变化、条件变化等");
+            log.info("启用 CompareSQLTool");
+        }
+        
+        if (estimateCostTool != null) {
+            agent.registerTool("estimate_cost", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return estimateCostTool.estimateCost(sql, datasourceId);
+            }, "估算SQL查询成本，包括预计扫描行数、执行时间等。输入SQL和数据源ID，返回成本评估");
+            log.info("启用 EstimateCostTool");
         }
         
         log.info("NL2SQL ReAct Agent 初始化完成");

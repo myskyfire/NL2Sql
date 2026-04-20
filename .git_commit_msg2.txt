@@ -1,0 +1,5 @@
+docs: 添加Skill新架构使用示例
+
+- 在StandardQuerySkill中添加callTool()和callSkill()使用示例
+- 标注迁移计划，指导后续改造
+- 保持向后兼容，不破坏现有功能
