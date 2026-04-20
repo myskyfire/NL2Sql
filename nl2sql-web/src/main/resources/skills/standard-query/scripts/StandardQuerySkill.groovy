@@ -48,7 +48,8 @@ class StandardQuerySkill {
         }
         
         try {
-            // 获取 Spring Bean
+            // ✅ 新架构：通过 callTool() 调用原子能力，而不是直接获取 Bean
+            // 保留旧方式作为兼容（后续逐步迁移）
             NL2SQLTool nl2sqlTool = context.getBean(NL2SQLTool.class)
             SQLExecutionTool sqlExecutionTool = context.getBean(SQLExecutionTool.class)
             LLMService llmService = context.getBean(LLMService.class)
@@ -1106,3 +1107,36 @@ ${sql}
         void setExpectedImprovement(String value) { this.expectedImprovement = value }
     }
 }
+
+/*
+ * ==================== 新架构示例（待迁移）====================
+ * 
+ * 以下是如何使用 callTool() 和 callSkill() 的示例：
+ * 
+ * // ✅ 示例1：调用 execute_sql Tool
+ * def toolParams = [
+ *     sql: "SELECT * FROM orders LIMIT 10",
+ *     datasourceId: context.getParameter("datasourceId")
+ * ]
+ * String resultJson = context.callTool("execute_sql", toolParams)
+ * 
+ * // ✅ 示例2：调用 get_table_metadata Tool
+ * def metadataParams = [
+ *     tableName: "orders",
+ *     datasourceId: context.getParameter("datasourceId")
+ * ]
+ * String metadataJson = context.callTool("get_table_metadata", metadataParams)
+ * 
+ * // ✅ 示例3：调用其他 Skill
+ * def skillParams = [
+ *     sql: "SELECT * FROM orders",
+ *     datasourceId: context.getParameter("datasourceId")
+ * ]
+ * def skillResult = context.callSkill("simple_data_query", skillParams)
+ * 
+ * 迁移计划：
+ * 1. 将 retrieveSchema() 改为调用 get_table_metadata Tool
+ * 2. 将 generateSQL() 保留（需要 LLM，不适合 Tool）
+ * 3. 将 executeWithAutoFix() 中的 SQL 执行改为调用 execute_sql Tool
+ * 4. 逐步移除直接 Bean 依赖
+ */
