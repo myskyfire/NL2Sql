@@ -1,0 +1,5 @@
+refactor: 改造ReportWithInsightsSkill使用新架构
+
+- 使用callSkill()调用StandardQuerySkill替代直接获取Bean
+- 简化代码，减少12行
+- 添加TODO注释说明未来可改为调用Tool
