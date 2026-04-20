@@ -1,13 +1,14 @@
 package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
+import com.nl2sql.common.util.NetworkUtils;
 import com.nl2sql.core.rag.SQLFeedbackService;
 import com.nl2sql.core.rag.dto.SQLFeedbackRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 
@@ -36,7 +37,7 @@ public class SQLFeedbackController {
             HttpServletRequest httpRequest) {
         try {
             // 获取用户IP和User-Agent
-            String ipAddress = getClientIp(httpRequest);
+            String ipAddress = NetworkUtils.getClientIp(httpRequest);
             String userAgent = httpRequest.getHeader("User-Agent");
             
             Long feedbackId = feedbackService.submitFeedback(request, ipAddress, userAgent);
@@ -84,23 +85,5 @@ public class SQLFeedbackController {
             log.error("获取低分反馈失败", e);
             return Result.error("获取反馈列表失败: " + e.getMessage());
         }
-    }
-    
-    /**
-     * 获取客户端IP
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 多个代理时，第一个IP是真实IP
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
     }
 }

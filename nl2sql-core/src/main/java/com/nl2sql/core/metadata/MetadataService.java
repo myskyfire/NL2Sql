@@ -4,7 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -146,6 +146,71 @@ public class MetadataService {
     
     public Map<String, TableMetadata> getAllMetadata() {
         return new HashMap<>(metadataCache);
+    }
+    
+    /**
+     * ✅ 获取指定数据源的元数据
+     */
+    public Map<String, TableMetadata> getAllMetadataByDatasource(Long datasourceId) {
+        if (datasourceId == null) {
+            log.warn("datasourceId 为 null，返回空元数据");
+            return Collections.emptyMap();
+        }
+        
+        Map<String, TableMetadata> result = new HashMap<>();
+        
+        try {
+            // 从 column_metadata 表查询该数据源的所有表
+            List<Map<String, Object>> tables = jdbcTemplate.queryForList(
+                "SELECT DISTINCT table_name FROM column_metadata WHERE datasource_id = ?",
+                datasourceId
+            );
+            
+            for (Map<String, Object> table : tables) {
+                String tableName = (String) table.get("table_name");
+                
+                // 获取表注释
+                String tableComment = jdbcTemplate.queryForObject(
+                    "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
+                    String.class, datasourceId, tableName
+                );
+                
+                TableMetadata tableMeta = new TableMetadata();
+                tableMeta.setTableName(tableName);
+                tableMeta.setTableComment(tableComment != null ? tableComment : tableName);
+                
+                // 获取字段信息
+                List<Map<String, Object>> columns = jdbcTemplate.queryForList(
+                    "SELECT column_name, data_type, column_comment, is_primary_key " +
+                    "FROM column_metadata " +
+                    "WHERE datasource_id = ? AND table_name = ? " +
+                    "ORDER BY ordinal_position",
+                    datasourceId, tableName
+                );
+                
+                List<ColumnMetadata> columnMetas = new ArrayList<>();
+                for (Map<String, Object> col : columns) {
+                    ColumnMetadata colMeta = new ColumnMetadata();
+                    colMeta.setColumnName((String) col.get("column_name"));
+                    colMeta.setDataType((String) col.get("data_type"));
+                    colMeta.setColumnComment((String) col.get("column_comment"));
+                    
+                    Object pkObj = col.get("is_primary_key");
+                    colMeta.setPrimary(pkObj != null && ("1".equals(pkObj.toString()) || "PRI".equals(pkObj.toString())));
+                    
+                    columnMetas.add(colMeta);
+                }
+                
+                tableMeta.setColumns(columnMetas);
+                result.put(tableName, tableMeta);
+            }
+            
+            log.debug("数据源 {} 的元数据加载完成，共 {} 张表", datasourceId, result.size());
+        } catch (Exception e) {
+            log.error("加载数据源 {} 的元数据失败", datasourceId, e);
+        }
+        
+        return result;
     }
     
     public TableMetadata getTableMetadata(String tableName) {

@@ -1,6 +1,7 @@
 package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
+import com.nl2sql.common.util.TemplateUtils;
 import com.nl2sql.core.rag.RagKnowledgeBaseService;
 import com.nl2sql.core.rag.dto.BatchImportResult;
 import com.nl2sql.core.rag.dto.QAImportRequest;
@@ -46,7 +47,7 @@ public class RagManagementController {
             // 生成AI回答（如果未提供）
             String answer = request.getAnswer();
             if (answer == null || answer.trim().isEmpty()) {
-                answer = generateAnswerTemplate(request.getQuestion(), request.getSql());
+                answer = TemplateUtils.generateAnswerTemplate(request.getQuestion(), request.getSql());
             }
             
             // 保存QA对
@@ -119,18 +120,5 @@ public class RagManagementController {
             log.error("清空知识库失败", e);
             return Result.error("清空失败: " + e.getMessage());
         }
-    }
-    
-    /**
-     * 生成AI回答模板
-     */
-    private String generateAnswerTemplate(String question, String sql) {
-        return String.format(
-            "根据您的查询「%s」，系统生成了相应的 SQL 并成功执行。\n" +
-            "您可以参考以下 SQL 语句进行类似的数据查询：\n\n" +
-            "```sql\n%s\n```\n\n" +
-            "如需进一步分析或可视化，请告知具体需求。",
-            question, sql
-        );
     }
 }

@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-21-orange.svg?style=flat-square&logo=openjdk)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.7.18-green.svg?style=flat-square&logo=spring)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-green.svg?style=flat-square&logo=spring)](https://spring.io/projects/spring-boot)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0-blue.svg?style=flat-square&logo=mysql)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-6.x-red.svg?style=flat-square&logo=redis)](https://redis.io/)
 [![Status](https://img.shields.io/badge/status-production%20ready-brightgreen.svg?style=flat-square)]()
@@ -240,7 +240,7 @@ Response:
 | MySQL | 8.0+ | [下载链接](https://dev.mysql.com/downloads/) |
 | Redis | 6.x+ | [下载链接](https://redis.io/download) |
 | LLM服务 | Ollama/ChatGLM/Qwen等（任选其一） | [Ollama](https://ollama.com/) / [ChatGLM](https://github.com/THUDM/ChatGLM3) / [Qwen](https://github.com/QwenLM/Qwen) |
-| Maven | 3.6+ | [下载链接](https://maven.apache.org/) |
+| Maven | 3.9+ | **Spring Boot 3.x 要求** [下载链接](https://maven.apache.org/) |
 | 向量数据库 | Chroma/Milvus/Qdrant（可选，未配置时自动降级为MySQL） | [Chroma](https://docs.trychroma.com/) / [Milvus](https://milvus.io/) / [Qdrant](https://qdrant.tech/) |
 
 ### 5分钟快速启动
@@ -348,10 +348,11 @@ java -jar nl2sql-web-1.0.0.jar
 
 | 分类 | 技术 | 版本 | 用途 |
 |------|------|------|------|
-| **后端框架** | Spring Boot | 2.7.18 | 应用框架 |
+| **后端框架** | Spring Boot | 3.2.5 | 应用框架（Jakarta EE） |
 | **JDK** | Java | 21 | 运行环境 |
 | **ORM** | MyBatis Plus | 3.5.5 | 数据持久化 |
-| **LLM集成** | LangChain4j | 0.27.1 | LLM编排框架 |
+| **LLM集成** | LangChain4j | 1.12.2 | LLM编排框架 |
+| **Maven** | Apache Maven | 3.9+ | 构建工具 |
 | **向量模型** | all-MiniLM-L6-v2 | - | 文本向量化 |
 | **大模型** | 多提供者适配（Ollama/ChatGLM/Qwen等） | - | SQL生成/AI总结 |
 | **向量数据库** | Chroma / Milvus / Qdrant（可扩展） | - | RAG向量检索 |

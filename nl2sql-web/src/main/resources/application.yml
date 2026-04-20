@@ -173,6 +173,7 @@ skills:
     scan-dirs:
       - standard-query
       - report-with-insights
+      - simple-data-query  # ✅ 示例 Skill：演示正确的 Tool 调用方式
 
 # Spring Boot Actuator 配置
 management:

@@ -8,9 +8,12 @@ public class NL2SQLApplication {
     
     public static void main(String[] args) {
         SpringApplication.run(NL2SQLApplication.class, args);
-        System.out.println("===========================================");
-        System.out.println("  DataMind AI 启动成功!");
-        System.out.println("  访问地址: http://localhost:8080");
-        System.out.println("===========================================");
+        System.out.println("╔═══════════════════════════════════════╗");
+        System.out.println("║                                       ║");
+        System.out.println("║     DataMind AI 启动成功!             ║");
+        System.out.println("║                                       ║");
+        System.out.println("║  访问地址: http://localhost:8080      ║");
+        System.out.println("║                                       ║");
+        System.out.println("╚═══════════════════════════════════════╝");
     }
 }

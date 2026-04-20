@@ -1,9 +1,9 @@
-﻿# NL2SQL 快速启动指南 v1.2.0
+# NL2SQL 快速启动指南 v1.2.0
 
 ## 📋 环境要求
 
 - **JDK**: Java 21+
-- **Maven**: 3.6+
+- **Maven**: 3.9+（Spring Boot 3.x 要求）
 - **MySQL**: 8.0+
 - **Redis**: 6.0+
 - **Ollama**: 最新版本

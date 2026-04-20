@@ -131,6 +131,283 @@ public class TableRelationshipService {
     }
     
     /**
+     * 使用规则引擎自动推断关联关系（基于字段名模式匹配）
+     */
+    public List<Map<String, Object>> autoDetectRelationships(Long datasourceId) {
+        try {
+            log.info("开始自动推断关联关系: datasourceId={}", datasourceId);
+            
+            // 获取所有表名
+            List<String> tables = jdbcTemplate.queryForList(
+                "SELECT DISTINCT table_name FROM column_metadata WHERE datasource_id = ?",
+                String.class, datasourceId
+            );
+            
+            if (tables.isEmpty()) {
+                throw new IllegalArgumentException("未找到任何表");
+            }
+            
+            log.info("共 {} 个表，开始分析...", tables.size());
+            
+            List<Map<String, Object>> detectedRelationships = new ArrayList<>();
+            
+            // 基于字段名模式匹配推断关联关系
+            for (String sourceTable : tables) {
+                // 获取源表的所有字段
+                List<Map<String, Object>> sourceColumns = jdbcTemplate.queryForList(
+                    "SELECT column_name, data_type, is_primary_key FROM column_metadata WHERE datasource_id = ? AND table_name = ?",
+                    datasourceId, sourceTable
+                );
+                
+                for (Map<String, Object> sourceCol : sourceColumns) {
+                    String sourceColumn = (String) sourceCol.get("column_name");
+                    
+                    // 跳过主键（除非是复合主键）
+                    if ("1".equals(String.valueOf(sourceCol.get("is_primary_key")))) {
+                        continue;
+                    }
+                    
+                    // 检测外键模式：xxx_id
+                    if (sourceColumn.endsWith("_id")) {
+                        String potentialTargetTable = sourceColumn.substring(0, sourceColumn.length() - 3);
+                        
+                        // 查找匹配的表
+                        for (String targetTable : tables) {
+                            if (targetTable.equalsIgnoreCase(potentialTargetTable) || 
+                                targetTable.toLowerCase().contains(potentialTargetTable.toLowerCase())) {
+                                
+                                // 验证目标表是否有对应的主键
+                                Integer pkCount = jdbcTemplate.queryForObject(
+                                    "SELECT COUNT(*) FROM column_metadata WHERE datasource_id = ? AND table_name = ? AND column_name = 'id' AND is_primary_key = 1",
+                                    Integer.class, datasourceId, targetTable
+                                );
+                                
+                                if (pkCount != null && pkCount > 0) {
+                                    Map<String, Object> relationship = new HashMap<>();
+                                    relationship.put("sourceTable", sourceTable);
+                                    relationship.put("sourceColumn", sourceColumn);
+                                    relationship.put("targetTable", targetTable);
+                                    relationship.put("targetColumn", "id");
+                                    relationship.put("relationshipType", "MANY_TO_ONE");
+                                    relationship.put("confidence", 0.8);
+                                    relationship.put("description", generateStandardDescription(
+                                        sourceTable, sourceColumn, targetTable, "id", datasourceId
+                                    ));
+                                    relationship.put("method", "rule_based"); // 标记来源
+                                    
+                                    detectedRelationships.add(relationship);
+                                    log.info("检测到关联: {}.{} -> {}.id", sourceTable, sourceColumn, targetTable);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            log.info("规则引擎推断完成，发现 {} 条关联关系", detectedRelationships.size());
+            return detectedRelationships;
+        } catch (Exception e) {
+            log.error("规则引擎推断失败", e);
+            throw new RuntimeException("推断失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 智能推断：合并规则引擎和LLM的结果
+     */
+    public List<Map<String, Object>> smartDetectRelationships(Long datasourceId) {
+        log.info("开始智能推断（规则引擎 + LLM）: datasourceId={}", datasourceId);
+        
+        // 1. 规则引擎快速推断
+        List<Map<String, Object>> ruleBasedResults = autoDetectRelationships(datasourceId);
+        log.info("规则引擎发现 {} 条关联", ruleBasedResults.size());
+        
+        // 2. LLM语义分析
+        List<Map<String, Object>> llmResults = new ArrayList<>();
+        try {
+            List<TableRelationship> llmRelationships = autoDiscoverRelationshipsWithoutSave(datasourceId);
+            for (TableRelationship rel : llmRelationships) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("sourceTable", rel.getSourceTable());
+                map.put("sourceColumn", rel.getSourceColumn());
+                map.put("targetTable", rel.getTargetTable());
+                map.put("targetColumn", rel.getTargetColumn());
+                map.put("relationshipType", rel.getRelationshipType());
+                map.put("confidence", rel.getConfidence());
+                map.put("description", rel.getDescription());
+                map.put("method", "llm_based"); // 标记来源
+                llmResults.add(map);
+            }
+            log.info("LLM发现 {} 条关联", llmResults.size());
+        } catch (Exception e) {
+            log.warn("LLM推断失败，仅使用规则引擎结果: {}", e.getMessage());
+        }
+        
+        // 3. 合并结果（检测冲突）
+        Map<String, Map<String, Object>> mergedMap = new LinkedHashMap<>();
+        List<Map<String, Object>> conflicts = new ArrayList<>();
+        
+        // 先添加规则引擎结果
+        for (Map<String, Object> rel : ruleBasedResults) {
+            String key = generateRelationshipKey(rel);
+            mergedMap.put(key, rel);
+        }
+        
+        // 再检查LLM结果
+        for (Map<String, Object> rel : llmResults) {
+            String key = generateRelationshipKey(rel);
+            if (!mergedMap.containsKey(key)) {
+                // 无冲突，直接添加
+                mergedMap.put(key, rel);
+            } else {
+                // 检测到冲突，标记为需要用户确认
+                Map<String, Object> existing = mergedMap.get(key);
+                Map<String, Object> conflict = new HashMap<>();
+                conflict.put("key", key);
+                conflict.put("ruleBased", existing);
+                conflict.put("llmBased", rel);
+                conflict.put("hasConflict", true);
+                conflicts.add(conflict);
+                
+                log.warn("检测到冲突: {}, 规则引擎: {}, LLM: {}", 
+                    key, existing.get("relationshipType"), rel.get("relationshipType"));
+            }
+        }
+        
+        List<Map<String, Object>> finalResults = new ArrayList<>(mergedMap.values());
+        
+        // 如果有冲突，在返回结果中添加冲突信息
+        if (!conflicts.isEmpty()) {
+            Map<String, Object> resultWithConflicts = new HashMap<>();
+            resultWithConflicts.put("relationships", finalResults);
+            resultWithConflicts.put("conflicts", conflicts);
+            resultWithConflicts.put("hasConflicts", true);
+            resultWithConflicts.put("conflictCount", conflicts.size());
+            
+            log.info("智能推断完成，共 {} 条关联关系，{} 个冲突需用户确认", 
+                finalResults.size(), conflicts.size());
+            
+            // 返回包含冲突信息的特殊格式
+            Map<String, Object> wrapper = new HashMap<>();
+            wrapper.put("data", resultWithConflicts);
+            wrapper.put("_hasConflicts", true);
+            return Collections.singletonList(wrapper);
+        }
+        
+        log.info("智能推断完成，共 {} 条关联关系", finalResults.size());
+        return finalResults;
+    }
+    
+    /**
+     * LLM自动发现但不保存（用于合并）
+     */
+    private List<TableRelationship> autoDiscoverRelationshipsWithoutSave(Long datasourceId) {
+        try {
+            // 获取所有表的元数据
+            String tableSql = "SELECT table_name, table_comment FROM table_metadata WHERE datasource_id = ?";
+            List<Map<String, Object>> tables = jdbcTemplate.queryForList(tableSql, datasourceId);
+            
+            if (tables.isEmpty()) {
+                return Collections.emptyList();
+            }
+            
+            // ✅ 优化：批量查询所有表的字段信息
+            List<String> tableNames = tables.stream()
+                .map(t -> (String) t.get("table_name"))
+                .collect(Collectors.toList());
+            
+            String placeholders = tableNames.stream()
+                .map(t -> "?")
+                .collect(Collectors.joining(", "));
+            
+            String batchColSql = String.format(
+                "SELECT table_name, column_name, data_type, column_comment, is_primary_key " +
+                "FROM column_metadata WHERE datasource_id = ? AND table_name IN (%s) " +
+                "ORDER BY table_name, ordinal_position",
+                placeholders
+            );
+            
+            Object[] params = new Object[tableNames.size() + 1];
+            params[0] = datasourceId;
+            for (int i = 0; i < tableNames.size(); i++) {
+                params[i + 1] = tableNames.get(i);
+            }
+            
+            List<Map<String, Object>> allColumns = jdbcTemplate.queryForList(batchColSql, params);
+            
+            // 按表名分组
+            Map<String, List<Map<String, Object>>> columnsByTable = allColumns.stream()
+                .collect(Collectors.groupingBy(col -> (String) col.get("table_name")));
+            
+            // 构建表结构描述
+            StringBuilder schemaDesc = new StringBuilder("数据库表结构：\n\n");
+            for (Map<String, Object> table : tables) {
+                String tableName = (String) table.get("table_name");
+                String tableComment = (String) table.get("table_comment");
+                
+                schemaDesc.append(String.format("表名: %s\n", tableName));
+                if (tableComment != null && !tableComment.isEmpty()) {
+                    schemaDesc.append(String.format("注释: %s\n", tableComment));
+                }
+                
+                List<Map<String, Object>> columns = columnsByTable.getOrDefault(tableName, Collections.emptyList());
+                
+                for (Map<String, Object> col : columns) {
+                    schemaDesc.append(String.format("  - %s (%s)", 
+                        col.get("column_name"), col.get("data_type")));
+                    if ("1".equals(String.valueOf(col.get("is_primary_key")))) {
+                        schemaDesc.append(" [主键]");
+                    }
+                    if (col.get("column_comment") != null) {
+                        schemaDesc.append(String.format(" - %s", col.get("column_comment")));
+                    }
+                    schemaDesc.append("\n");
+                }
+                schemaDesc.append("\n");
+            }
+            
+            // 调用LLM分析关联关系
+            String prompt = String.format(
+                "你是一个数据库专家。根据以下数据库表结构，分析表与表之间可能存在的关联关系。\n\n" +
+                "%s\n" +
+                "要求：\n" +
+                "1. 只输出JSON数组格式，不要包含其他文字\n" +
+                "2. 每个关联关系包含：source_table, source_column, target_table, target_column, relationship_type, confidence(0-1), description\n" +
+                "3. relationship_type只能是：ONE_TO_ONE, MANY_TO_ONE, MANY_TO_MANY\n" +
+                "4. 只返回高置信度(>0.7)的关联关系\n" +
+                "5. 基于字段名、注释等推测关联，例如：user_id通常关联users表的id\n\n" +
+                "示例输出：\n" +
+                "[{\"source_table\":\"orders\",\"source_column\":\"user_id\",\"target_table\":\"users\",\"target_column\":\"id\",\"relationship_type\":\"MANY_TO_ONE\",\"confidence\":0.95,\"description\":\"订单表的用户ID关联用户表\"}]\n\n" +
+                "请分析：",
+                schemaDesc.toString()
+            );
+            
+            String response = multiModelService.generateAnswer(prompt);
+            log.info("LLM返回关联关系: {}", response);
+            
+            // 解析JSON响应
+            return parseLLMResponse(response, datasourceId);
+            
+        } catch (Exception e) {
+            log.error("LLM自动发现关联关系失败", e);
+            return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 生成关联关系的唯一键
+     */
+    private String generateRelationshipKey(Map<String, Object> rel) {
+        return String.format("%s.%s->%s.%s",
+            rel.get("sourceTable"),
+            rel.get("sourceColumn"),
+            rel.get("targetTable"),
+            rel.get("targetColumn")
+        );
+    }
+    
+    /**
      * 获取指定数据源的关联关系
      */
     public List<TableRelationship> getRelationships(Long datasourceId) {

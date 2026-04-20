@@ -1,6 +1,7 @@
 package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
+import com.nl2sql.common.util.StringUtils;
 import com.nl2sql.core.agent.tools.NL2SQLTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -101,7 +102,7 @@ public class TranslationController {
                     result.put(original, translations.get(original));
                 } else {
                     // 未翻译的保持原样
-                    result.put(original, formatReadable(original));
+                    result.put(original, StringUtils.formatReadable(original));
                 }
             }
             
@@ -109,30 +110,10 @@ public class TranslationController {
             log.warn("解析翻译结果失败，使用默认格式化: {}", e.getMessage());
             // 降级：使用通用格式化
             for (String original : originalNames) {
-                result.put(original, formatReadable(original));
+                result.put(original, StringUtils.formatReadable(original));
             }
         }
         
         return result;
-    }
-    
-    /**
-     * 通用格式化（降级方案）
-     */
-    private String formatReadable(String colName) {
-        if (colName == null) return "";
-        
-        // 下划线转空格
-        String readable = colName.replace('_', ' ');
-        
-        // 驼峰转空格
-        readable = readable.replaceAll("([a-z])([A-Z])", "$1 $2");
-        
-        // 首字母大写
-        if (!readable.isEmpty()) {
-            readable = Character.toUpperCase(readable.charAt(0)) + readable.substring(1);
-        }
-        
-        return readable;
     }
 }

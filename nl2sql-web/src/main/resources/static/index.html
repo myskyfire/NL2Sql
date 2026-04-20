@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NLP2SQL - 企业级自然语言转SQL系统</title>
+    <title>DataMind AI - 企业级智能数据分析平台</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -382,7 +382,7 @@
 <body>
     <!-- 顶部导航 -->
     <div class="navbar">
-        <h1>🚀 NLP2SQL 企业版</h1>
+        <h1>🚀 DataMind AI 企业版</h1>
         <div class="nav-user">
             <span id="currentUser">加载中...</span>
             <button class="logout-btn" onclick="openChangePassword()">🔐 修改密码</button>
@@ -408,7 +408,7 @@
             </div>
             <div class="menu-item" onclick="showPage('query', this)" title="用中文直接提问，AI自动生成SQL并执行，支持多轮对话和上下文理解">
                 <span class="menu-icon">💬</span>
-                <span>NL2SQL查询</span>
+                <span>DataMind 查询</span>
             </div>
             <div class="menu-item admin-only hidden" onclick="showPage('table-permission', this)" title="管理用户对数据库表的访问权限，支持按用户和按表双向查询">
                 <span class="menu-icon">🔐</span>
@@ -466,8 +466,8 @@
             <div id="page-home" class="page">
                 <div style="padding: 30px;"> <!-- ✅ 为首页添加内边距 -->
                     <div class="page-header">
-                        <h2>欢迎使用 NLP2SQL</h2>
-                        <p>企业级自然语言转SQL智能查询系统</p>
+                        <h2>欢迎使用 DataMind AI</h2>
+                        <p>企业级智能数据分析平台</p>
                     </div>
                     
                     <div class="stats-grid" id="statsGrid">
@@ -550,7 +550,7 @@
                 </div>
             </div>
             
-            <!-- NL2SQL查询页面 -->
+            <!-- DataMind 查询页面 -->
             <div id="page-query" class="page">
                 <iframe id="iframe-query" class="iframe-container" src="/query.html" onload="fixIframeStyle(this)"></iframe>
             </div>
@@ -660,6 +660,45 @@
         let token = localStorage.getItem('token');
         let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
         
+        // ✅ 全局 Fetch 封装 - 自动处理 Token 过期
+        async function authenticatedFetch(url, options = {}) {
+            // 默认配置
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            };
+            
+            // 合并配置
+            const fetchOptions = {
+                ...defaultOptions,
+                ...options,
+                headers: {
+                    ...defaultOptions.headers,
+                    ...(options.headers || {})
+                }
+            };
+            
+            try {
+                const response = await fetch(url, fetchOptions);
+                
+                // ✅ 检查 Token 是否过期（401 未授权）
+                if (response.status === 401) {
+                    console.warn('⚠️ Token 已过期，跳转到登录页');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('userInfo');
+                    window.location.href = '/login.html';
+                    return null; // 阻止后续处理
+                }
+                
+                return response;
+            } catch (error) {
+                console.error('❌ 网络请求失败:', error);
+                throw error;
+            }
+        }
+        
         // ✅ 修复 iframe 内嵌页面的样式冲突
         function fixIframeStyle(iframe) {
             const applyStyles = () => {
@@ -676,6 +715,8 @@
                     
                     // ✅ 判断是否为对话页面（需要保留 flex 布局）
                     const isChatPage = iframe.src.includes('agent-chat.html') || iframe.src.includes('stream-chat.html');
+                    // ✅ 判断是否为表关联管理页面（需要显示 header）
+                    const isRelationshipPage = iframe.src.includes('relationship-management.html');
                     
                     style.textContent = `
                         /* 强制重置 body */
@@ -691,10 +732,8 @@
                             height: auto !important;
                             overflow: visible !important;
                         }
-                        /* 隐藏子页面的独立 header */
-                        .chat-header, .header {
-                            display: none !important;
-                        }
+                        /* 隐藏子页面的独立 header（表关联管理页面除外） */
+                        ${isRelationshipPage ? '' : '.chat-header, .header { display: none !important; }'}
                         /* 调整容器 */
                         .chat-container, .container, .main-container, .app-container, .query-container {
                             height: auto !important;
@@ -964,7 +1003,7 @@
                 'agent-chat': '🤖 AI Agent',
                 'stream-chat': '⚡ 流式对话',
                 'relationship-management': '🔗 表关联',
-                'query': '💬 NL2SQL',
+                'query': '💬 DataMind',
                 'table-permission': '🔐 表授权',
                 'execution-logs': '📊 执行日志',
                 'datasource': '🗄️ 数据源',
@@ -1050,7 +1089,9 @@
         // 加载统计数据
         async function loadStats() {
             try {
-                const response = await fetch('/api/monitor/stats');
+                const response = await authenticatedFetch('/api/monitor/stats');
+                if (!response) return; // Token 过期，已跳转
+                
                 const result = await response.json();
                 
                 if (result.code === 200 && result.data) {
@@ -1087,7 +1128,9 @@
         // ✅ 加载数据源列表（填充下拉框）
         async function loadDatasourceList() {
             try {
-                const response = await fetch('/api/admin/datasource/list');
+                const response = await authenticatedFetch('/api/admin/datasource/list');
+                if (!response) return; // Token 过期，已跳转
+                
                 const result = await response.json();
                 
                 if (result.code === 200 && result.data) {
@@ -1126,7 +1169,9 @@
             try {
                 document.getElementById('metadataList').innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">加载中...</p>';
                 
-                const response = await fetch(`/api/admin/metadata/list?datasourceId=${datasourceId}`);
+                const response = await authenticatedFetch(`/api/admin/metadata/list?datasourceId=${datasourceId}`);
+                if (!response) return; // Token 过期，已跳转
+                
                 const result = await response.json();
                 
                 console.log('元数据接口返回:', result);
@@ -1188,7 +1233,9 @@
         // 加载元数据（从已同步的元数据表查询）
         async function loadMetadata() {
             try {
-                const response = await fetch('/api/admin/metadata/list');
+                const response = await authenticatedFetch('/api/admin/metadata/list');
+                if (!response) return; // Token 过期，已跳转
+                
                 const result = await response.json();
                 
                 console.log('元数据接口返回:', result); // ✅ 调试日志
@@ -1310,10 +1357,10 @@
             }
             
             try {
-                const response = await fetch('/api/cache/clear', {
-                    method: 'POST',
-                    headers: { 'Authorization': token }
+                const response = await authenticatedFetch('/api/cache/clear', {
+                    method: 'POST'
                 });
+                if (!response) return; // Token 过期，已跳转
                 
                 const result = await response.json();
                 
@@ -1372,17 +1419,14 @@
             }
             
             try {
-                const response = await fetch('/api/auth/password/change', {
+                const response = await authenticatedFetch('/api/auth/password/change', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': token
-                    },
                     body: JSON.stringify({
                         oldPassword,
                         newPassword
                     })
                 });
+                if (!response) return; // Token 过期，已跳转
                 
                 const result = await response.json();
                 

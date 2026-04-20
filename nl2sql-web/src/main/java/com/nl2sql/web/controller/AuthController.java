@@ -2,11 +2,12 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
+import com.nl2sql.common.util.NetworkUtils;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,7 @@ public class AuthController {
     public Result<AuthService.LoginResult> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         log.info("用户登录请求: username={}", request.getUsername());
         
-        String ipAddress = getClientIp(httpRequest);
+        String ipAddress = NetworkUtils.getClientIp(httpRequest);
         AuthService.LoginResult result = authService.login(
             request.getUsername(), 
             request.getPassword(), 
@@ -389,20 +390,6 @@ public class AuthController {
         } else {
             return Result.error("重置失败");
         }
-    }
-    
-    /**
-     * 获取客户端IP
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        return ip;
     }
     
     @Data

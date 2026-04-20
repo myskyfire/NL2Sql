@@ -131,15 +131,22 @@ public class DatasourceClarificationTool {
                 "你是一个数据源选择助手。根据用户问题和可用数据源列表，判断应该使用哪个数据源。\n\n" +
                 "## 用户问题\n%s\n\n" +
                 "## 可用数据源（基本信息）\n%s\n\n" +
+                "## 业务领域映射规则（重要！）\n" +
+                "- **销售/订单/交易类**：销售额、订单数、GMV、成交金额、客户购买 → 优先匹配包含'订单/交易/trade/order'的数据源\n" +
+                "- **财务/会计类**：利润、成本、资产负债、财务报表、会计科目 → 优先匹配包含'财务/会计/finance/accounting'的数据源\n" +
+                "- **用户/会员类**：用户数、DAU、活跃度、注册 → 优先匹配包含'用户/user/customer'的数据源\n" +
+                "- **地区/地理类**：地区分布、城市统计、区域分析 → 通常与订单/销售数据关联\n\n" +
                 "## 任务\n" +
                 "1. 分析用户问题的意图和业务领域\n" +
-                "2. 如果只有一个数据源明显匹配，返回其ID\n" +
-                "3. 如果有多个候选或无法确定，返回null并标记需要查看表结构\n\n" +
+                "2. 根据业务领域映射规则匹配数据源\n" +
+                "3. 如果只有一个数据源明显匹配，返回其ID\n" +
+                "4. 如果有多个候选或无法确定，返回null并标记需要查看表结构\n\n" +
                 "## 输出格式\n" +
                 "只返回JSON格式，不要有其他文字：\n" +
                 "{\"matched_datasource_id\": 数据源ID或null, \"confidence\": \"high/medium/low\", \"need_table_info\": true/false, \"reason\": \"匹配原因\"}\n\n" +
                 "## 示例\n" +
-                "用户问：'统计某类数据数量' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"该数据源包含相关表，适合查询此类数据\"}\n" +
+                "用户问：'统计每个地区的销售额' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"销售额属于交易/订单领域，该数据源包含订单相关表\"}\n" +
+                "用户问：'查询财务报表数据' -> {\"matched_datasource_id\": 2, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"财务报表属于会计领域，该数据源包含财务相关表\"}\n" +
                 "用户问：'分析某领域数据' -> {\"matched_datasource_id\": null, \"confidence\": \"low\", \"need_table_info\": true, \"reason\": \"相关数据可能在多个数据源中\"}",
                 userQuery,
                 datasourceInfo.toString()

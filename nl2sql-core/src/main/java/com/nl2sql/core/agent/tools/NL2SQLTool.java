@@ -200,7 +200,7 @@ public class NL2SQLTool {
             
             // 1. 初始向量检索（高召回）
             publishProgress("retrieving_tables", "📊 检索相关表结构...");
-            List<String> initialTables = vectorRetriever.retrieveTopTables(expandedQuery, 15);  // 提高到15
+            List<String> initialTables = vectorRetriever.retrieveTopTables(expandedQuery, datasourceId, 15);  // 提高到15
             if (initialTables.isEmpty()) {
                 return "ERROR: 未找到任何相关表，请检查元数据是否已加载";
             }
@@ -956,8 +956,8 @@ public class NL2SQLTool {
      */
     public String retrieveSchema(String query, Long datasourceId) {
         try {
-            // 向量检索相关表
-            List<String> tables = vectorRetriever.retrieveTopTables(query, 10);
+            // ✅ 向量检索相关表（传入datasourceId，确保只检索指定数据源的表）
+            List<String> tables = vectorRetriever.retrieveTopTables(query, datasourceId, 10);
             if (tables.isEmpty()) {
                 return "ERROR: 未找到任何相关表";
             }

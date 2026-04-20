@@ -171,25 +171,13 @@ public class TableRelationshipController {
     }
     
     /**
-     * 使用LLM自动推断关联关系
+     * 使用规则引擎自动推断关联关系
      */
     @PostMapping("/auto-detect")
     public Result<List<Map<String, Object>>> autoDetectRelationships(@RequestParam Long datasourceId) {
         try {
-            log.info("开始自动推断关联关系: datasourceId={}", datasourceId);
-            
-            // 获取所有表名
-            List<String> tables = jdbcTemplate.queryForList(
-                "SELECT DISTINCT table_name FROM column_metadata WHERE datasource_id = ?",
-                String.class, datasourceId
-            );
-            
-            if (tables.isEmpty()) {
-                return Result.error("未找到任何表");
-            }
-            
-            // TODO: 调用LLM推断关联关系
-            return Result.success(new ArrayList<>());
+            List<Map<String, Object>> relationships = relationshipService.smartDetectRelationships(datasourceId);
+            return Result.success(relationships);
         } catch (Exception e) {
             log.error("自动推断关联关系失败", e);
             return Result.error("推断失败: " + e.getMessage());

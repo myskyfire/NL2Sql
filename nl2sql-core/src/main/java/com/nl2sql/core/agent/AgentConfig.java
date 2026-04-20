@@ -74,6 +74,16 @@ public class AgentConfig {
     private AISummaryTool aiSummaryTool;
     
     @Autowired(required = false)
+    private TableRelationshipDetectionTool tableRelationshipDetectionTool;
+    
+    // 原子 Tool（供 Skill 调用）
+    @Autowired(required = false)
+    private ExecuteSQLTool executeSQLTool;
+    
+    @Autowired(required = false)
+    private GetTableMetadataTool getTableMetadataTool;
+    
+    @Autowired(required = false)
     private MetadataService metadataService;
     
     /**
@@ -448,6 +458,44 @@ public class AgentConfig {
                 }
             }, "根据查询结果生成结构化的数据分析报告。当用户需要深度分析时调用此工具，从 context 参数中获取 userQuery、generatedSQL 和 dataJson，返回包含摘要、关键发现、趋势分析和业务建议的完整报告");
             log.info("启用 ReportGeneratorTool");
+        }
+        
+        // ✅ 注册表关联关系推断工具
+        if (tableRelationshipDetectionTool != null) {
+            agent.registerTool("detect_table_relationships", (args, dsId, userId, username, userMessage) -> {
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return tableRelationshipDetectionTool.detectTableRelationships(datasourceId);
+            }, "自动推断数据库表之间的关联关系。结合规则引擎和LLM语义分析，返回可能的表关联。当用户询问表之间的关系或需要理解数据结构时调用。输入数据源ID");
+            log.info("启用 TableRelationshipDetectionTool");
+            
+            agent.registerTool("quick_detect_table_relationships", (args, dsId, userId, username, userMessage) -> {
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return tableRelationshipDetectionTool.quickDetectTableRelationships(datasourceId);
+            }, "快速推断数据库表之间的关联关系（仅使用规则引擎，速度快但可能遗漏复杂关联）。适用于需要快速获取基础关联的场景。输入数据源ID");
+            log.info("启用 QuickDetectTableRelationships Tool");
+        }
+        
+        // ✅ 注册原子 Tool（供 Skill 调用）
+        if (executeSQLTool != null) {
+            agent.registerTool("execute_sql", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return executeSQLTool.executeSQL(sql, datasourceId);
+            }, "执行SQL查询并返回结果。这是原子能力，供Skill内部调用。输入SQL语句和数据源ID，返回JSON格式的查询结果");
+            log.info("启用 ExecuteSQLTool");
+        }
+        
+        if (getTableMetadataTool != null) {
+            agent.registerTool("get_table_metadata", (args, dsId, userId, username, userMessage) -> {
+                String tableName = (String) args.get("tableName");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return getTableMetadataTool.getTableMetadata(tableName, datasourceId);
+            }, "获取指定表的元数据信息，包括表注释、字段列表、数据类型等。这是原子能力，供Skill内部调用。输入表名和数据源ID");
+            log.info("启用 GetTableMetadataTool");
         }
         
         log.info("NL2SQL ReAct Agent 初始化完成");

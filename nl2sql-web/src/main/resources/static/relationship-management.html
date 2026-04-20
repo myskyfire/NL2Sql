@@ -27,17 +27,20 @@
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 24px 32px;
+            background: white;
+            color: #333;
+            padding: 16px 32px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 1px solid #e8e8e8;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
         
         .header h1 {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: 600;
+            color: #333;
         }
         
         .header-actions {
@@ -56,22 +59,24 @@
         }
         
         .btn-primary {
-            background: white;
-            color: #667eea;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
         }
         
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.3);
         }
         
         .btn-secondary {
-            background: rgba(255,255,255,0.2);
-            color: white;
+            background: #f5f7fa;
+            color: #667eea;
+            border: 1px solid #e0e0e0;
         }
         
         .btn-secondary:hover {
-            background: rgba(255,255,255,0.3);
+            background: #e8eeff;
+            border-color: #667eea;
         }
         
         .btn-danger {

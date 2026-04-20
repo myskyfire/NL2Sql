@@ -1,5 +1,6 @@
 package com.nl2sql.web.controller;
 
+import com.nl2sql.web.service.ConceptRecommendationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,6 +20,9 @@ public class IndustryConceptAdminController {
     
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private ConceptRecommendationService conceptRecommendationService;
     
     /**
      * 获取所有行业模板
@@ -186,7 +190,7 @@ public class IndustryConceptAdminController {
                 );
                 
                 if (businessCategory != null) {
-                    industryCode = matchIndustryCode(businessCategory);
+                    industryCode = conceptRecommendationService.matchIndustryCode(businessCategory);
                 }
             }
             
@@ -196,7 +200,7 @@ public class IndustryConceptAdminController {
             
             // 2. 如果未指定目标概念，尝试智能匹配
             if (suggestedConcept == null || suggestedConcept.trim().isEmpty()) {
-                suggestedConcept = suggestConceptByTerm(term, industryCode);
+                suggestedConcept = conceptRecommendationService.suggestConceptByTerm(term, industryCode);
             }
             
             // 3. 插入同义词关系
@@ -239,52 +243,5 @@ public class IndustryConceptAdminController {
             log.error("[IndustryConceptAdmin] 从反馈学习失败", e);
             return Map.of("success", false, "error", e.getMessage());
         }
-    }
-    
-    /**
-     * 根据业务类别匹配行业代码
-     */
-    private String matchIndustryCode(String businessCategory) {
-        String category = businessCategory.toLowerCase();
-        if (category.contains("order") || category.contains("交易") || category.contains("订单")) {
-            return "ecommerce";
-        } else if (category.contains("finance") || category.contains("财务")) {
-            return "finance";
-        } else if (category.contains("medical") || category.contains("医疗")) {
-            return "medical";
-        } else if (category.contains("education") || category.contains("教育")) {
-            return "education";
-        } else if (category.contains("manufacturing") || category.contains("制造")) {
-            return "manufacturing";
-        }
-        return null;
-    }
-    
-    /**
-     * 根据术语智能推荐概念
-     */
-    private String suggestConceptByTerm(String term, String industryCode) {
-        String lowerTerm = term.toLowerCase();
-        
-        // 电商行业常见术语映射
-        if ("ecommerce".equals(industryCode)) {
-            if (lowerTerm.contains("gmv") || lowerTerm.contains("成交") || lowerTerm.contains("营业额")) {
-                return "revenue";
-            } else if (lowerTerm.contains("uv") || lowerTerm.contains("访客")) {
-                return "customer";
-            } else if (lowerTerm.contains("pv") || lowerTerm.contains("浏览")) {
-                return "product";
-            }
-        }
-        
-        // 金融行业
-        if ("finance".equals(industryCode)) {
-            if (lowerTerm.contains("aUM") || lowerTerm.contains("资产规模")) {
-                return "balance";
-            }
-        }
-        
-        // 无法匹配，返回null
-        return null;
     }
 }

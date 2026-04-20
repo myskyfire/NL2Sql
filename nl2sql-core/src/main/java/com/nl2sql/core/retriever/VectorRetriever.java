@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -21,8 +21,9 @@ public class VectorRetriever {
     private MetadataCacheService cacheService;
     
     private final EmbeddingModel embeddingModel;
-    private final Map<String, Embedding> tableEmbeddings = new ConcurrentHashMap<>();
-    private final Map<String, Embedding> columnEmbeddings = new ConcurrentHashMap<>();
+    // ✅ 按数据源隔离的向量索引: datasourceId -> (tableName -> Embedding)
+    private final Map<Long, Map<String, Embedding>> tableEmbeddingsByDatasource = new ConcurrentHashMap<>();
+    private final Map<Long, Map<String, Embedding>> columnEmbeddingsByDatasource = new ConcurrentHashMap<>();
     
     public VectorRetriever() {
         this.embeddingModel = new AllMiniLmL6V2EmbeddingModel();
@@ -33,10 +34,14 @@ public class VectorRetriever {
         log.info("向量检索器初始化完成");
     }
     
-    public void buildIndex(Map<String, com.nl2sql.core.metadata.TableMetadata> metadata) {
-        log.info("开始构建向量索引...");
-        tableEmbeddings.clear();
-        columnEmbeddings.clear();
+    /**
+     * 构建指定数据源的向量索引
+     */
+    public void buildIndex(Long datasourceId, Map<String, com.nl2sql.core.metadata.TableMetadata> metadata) {
+        log.info("开始构建数据源 {} 的向量索引...", datasourceId);
+        
+        Map<String, Embedding> tableEmbeddings = new ConcurrentHashMap<>();
+        Map<String, Embedding> columnEmbeddings = new ConcurrentHashMap<>();
         
         for (Map.Entry<String, com.nl2sql.core.metadata.TableMetadata> entry : metadata.entrySet()) {
             String tableName = entry.getKey();
@@ -81,17 +86,32 @@ public class VectorRetriever {
             }
         }
         
-        log.info("向量索引构建完成，表: {}, 字段: {}", tableEmbeddings.size(), columnEmbeddings.size());
+        // ✅ 保存到对应数据源的索引中
+        tableEmbeddingsByDatasource.put(datasourceId, tableEmbeddings);
+        columnEmbeddingsByDatasource.put(datasourceId, columnEmbeddings);
+        
+        log.info("数据源 {} 向量索引构建完成，表: {}, 字段: {}", datasourceId, tableEmbeddings.size(), columnEmbeddings.size());
     }
     
-    public List<String> retrieveTopTables(String query, int topK) {
-        // ⚠️ P0优化：尝试从缓存获取
+    /**
+     * 检索指定数据源的相关表
+     */
+    public List<String> retrieveTopTables(String query, Long datasourceId, int topK) {
+        // ⚠️ P0优化：尝试从缓存获取（缓存key包含datasourceId）
         if (cacheService != null) {
-            List<String> cachedResult = cacheService.getVectorRetrieval(query);
+            String cacheKey = String.format("%d:%s", datasourceId, query);
+            List<String> cachedResult = cacheService.getVectorRetrieval(cacheKey);
             if (cachedResult != null && !cachedResult.isEmpty()) {
-                log.debug("[VectorRetriever] 缓存命中: {}", query);
+                log.debug("[VectorRetriever] 缓存命中: datasourceId={}, query={}", datasourceId, query);
                 return cachedResult;
             }
+        }
+        
+        // ✅ 获取指定数据源的索引
+        Map<String, Embedding> tableEmbeddings = tableEmbeddingsByDatasource.get(datasourceId);
+        if (tableEmbeddings == null || tableEmbeddings.isEmpty()) {
+            log.warn("[VectorRetriever] 数据源 {} 的向量索引不存在", datasourceId);
+            return Collections.emptyList();
         }
         
         Embedding queryEmbedding = embeddingModel.embed(query).content();
@@ -135,20 +155,31 @@ public class VectorRetriever {
         }
         
         if (result.isEmpty()) {
-            log.warn("向量检索未找到任何相关表，请检查元数据是否已加载");
+            log.warn("向量检索未找到任何相关表，请检查元数据是否已加载 (datasourceId={})", datasourceId);
         } else {
-            log.info("[表召回] 最终返回 {} 个表: {}", result.size(), result);
+            log.info("[表召回] datasourceId={} 最终返回 {} 个表: {}", datasourceId, result.size(), result);
             
-            // ⚠️ P0优化：写入缓存
+            // ⚠️ P0优化：写入缓存（缓存key包含datasourceId）
             if (cacheService != null && !result.isEmpty()) {
-                cacheService.putVectorRetrieval(query, result);
+                String cacheKey = String.format("%d:%s", datasourceId, query);
+                cacheService.putVectorRetrieval(cacheKey, result);
             }
         }
         
         return result;
     }
     
-    public List<String> retrieveTopColumns(String query, List<String> tables, int topK) {
+    /**
+     * 检索指定数据源的字段
+     */
+    public List<String> retrieveTopColumns(String query, Long datasourceId, List<String> tables, int topK) {
+        // ✅ 获取指定数据源的列索引
+        Map<String, Embedding> columnEmbeddings = columnEmbeddingsByDatasource.get(datasourceId);
+        if (columnEmbeddings == null || columnEmbeddings.isEmpty()) {
+            log.warn("[VectorRetriever] 数据源 {} 的列向量索引不存在", datasourceId);
+            return Collections.emptyList();
+        }
+        
         Embedding queryEmbedding = embeddingModel.embed(query).content();
         
         List<Map.Entry<String, Double>> similarities = new ArrayList<>();

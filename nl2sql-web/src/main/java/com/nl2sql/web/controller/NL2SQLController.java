@@ -18,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 import java.util.*;
 
 /**
@@ -67,18 +67,8 @@ public class NL2SQLController {
         this.cacheService = cacheService;
         this.sqlExecutor = sqlExecutor;
         this.chartRecommendationService = chartRecommendationService;
-        
-        initVectorIndex();
     }
-    
-    private void initVectorIndex() {
-        try {
-            vectorRetriever.buildIndex(metadataService.getAllMetadata());
-            log.info("向量索引初始化完成");
-        } catch (Exception e) {
-            log.error("向量索引初始化失败", e);
-        }
-    }
+
     
     /**
      * NL2SQL查询接口 - 已废弃
