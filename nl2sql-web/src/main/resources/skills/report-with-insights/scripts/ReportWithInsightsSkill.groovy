@@ -30,21 +30,13 @@ class ReportWithInsightsSkill {
         log.info("开始生成报表: question={}", question)
         
         try {
-            // Step 1: 调用 StandardQuerySkill（通过 GroovyScriptExecutor）
-            def groovyExecutor = context.getBean("groovySkillExecutor")
+            // ✅ 新架构：通过 callSkill() 调用 StandardQuerySkill
+            log.info("Step 1: 调用 StandardQuerySkill")
             
-            // 构建子 Skill 的上下文
-            SkillContext subContext = new SkillContext()
-            subContext.setParameters([
+            def queryResult = context.callSkill("standard_query", [
                 question: question,
-                datasourceId: datasourceId,
-                userId: userId,
-                username: username
+                datasourceId: datasourceId
             ])
-            subContext.setApplicationContext(context.getApplicationContext())
-            
-            // 执行标准查询
-            def queryResult = groovyExecutor.executeSkill("skills/standard-query/", subContext)
             
             if (!queryResult.success) {
                 log.error("标准查询失败: {}", queryResult.error)
@@ -58,6 +50,13 @@ class ReportWithInsightsSkill {
             if (data != null && data.size() > 5) {
                 log.info("Step 2: 生成智能总结")
                 try {
+                    // ✅ TODO: 未来可以改为调用 Tool
+                    // def summaryResult = context.callTool("ai_summary", [
+                    //     question: question,
+                    //     sql: queryResult.sql,
+                    //     dataJson: convertToJson(data.subList(0, Math.min(50, data.size())))
+                    // ])
+                    
                     // 取前50行作为样本
                     List<Map<String, Object>> sample = data.subList(0, Math.min(50, data.size()))
                     String dataJson = convertToJson(sample)
