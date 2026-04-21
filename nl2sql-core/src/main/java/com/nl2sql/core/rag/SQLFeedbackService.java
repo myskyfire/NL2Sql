@@ -1,5 +1,6 @@
 package com.nl2sql.core.rag;
 
+import com.nl2sql.core.cache.QueryCacheService;
 import com.nl2sql.core.rag.dto.SQLFeedbackRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,11 +27,17 @@ public class SQLFeedbackService {
     @Autowired(required = false)
     private FeedbackLearningService feedbackLearningService;
     
+    @Autowired(required = false)
+    private QueryCacheService queryCacheService;
+    
     /**
      * 提交SQL反馈
      */
     public Long submitFeedback(SQLFeedbackRequest request, String ipAddress, String userAgent) {
         try {
+            log.info("[SQL反馈] 收到请求: rating={}, question={}", 
+                request.getRating(), request.getQuestion());
+            
             // 参数校验
             if (request.getRating() == null || request.getRating() < 1 || request.getRating() > 5) {
                 throw new IllegalArgumentException("评分必须在1-5之间");
@@ -65,17 +72,19 @@ public class SQLFeedbackService {
             
             Long feedbackId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
             
-            log.info("收到SQL反馈: feedbackId={}, rating={}, question={}", 
-                feedbackId, request.getRating(), request.getQuestion());
+            log.info("[SQL反馈] 已保存到rag_feedback: feedbackId={}", feedbackId);
             
-            // 触发学习机制
+            // 触发学习机制（包含高分同步）
             learnFromFeedback(request, feedbackId);
             
             return feedbackId;
             
+        } catch (IllegalArgumentException e) {
+            log.warn("[SQL反馈] 参数错误: {}", e.getMessage());
+            throw e;
         } catch (Exception e) {
-            log.error("提交SQL反馈失败", e);
-            throw new RuntimeException("提交反馈失败: " + e.getMessage());
+            log.error("[SQL反馈] 提交失败: question={}", request.getQuestion(), e);
+            throw new RuntimeException("提交反馈失败: " + e.getMessage(), e);
         }
     }
     
@@ -89,6 +98,11 @@ public class SQLFeedbackService {
         }
         
         try {
+            // ✅ 新增：高分反馈（4-5星）自动同步到rag_knowledge_base
+            if (request.getRating() >= 4) {
+                syncHighRatingFeedbackToKnowledge(request);
+            }
+            
             // 如果有关联的知识库ID，更新其质量评分
             if (request.getKnowledgeId() != null) {
                 float scoreChange = calculateScoreChange(request.getRating());
@@ -102,6 +116,16 @@ public class SQLFeedbackService {
             if (request.getRating() <= 2 && request.getFeedbackText() != null) {
                 log.warn("低分反馈 [{}星]: question={}, reason={}", 
                     request.getRating(), request.getQuestion(), request.getFeedbackText());
+                
+                // ✅ 关键：清除该问题的 SQL 缓存（避免下次仍返回错误 SQL）
+                if (queryCacheService != null) {
+                    try {
+                        queryCacheService.invalidateCache(request.getQuestion());
+                        log.info("[反馈处理] ✅ 已清除 SQL 缓存: question={}", request.getQuestion());
+                    } catch (Exception e) {
+                        log.warn("[反馈处理] 清除缓存失败", e);
+                    }
+                }
                 
                 // ✅ 新增：触发Agent学习修正
                 if (feedbackLearningService != null) {
@@ -139,6 +163,93 @@ public class SQLFeedbackService {
             case 1: return -0.2f;  // 很差：大幅降低
             default: return 0.0f;
         }
+    }
+    
+    /**
+     * ✅ 新增：将高分反馈同步到rag_knowledge_base表
+     * 
+     * @param request 反馈请求
+     */
+    private void syncHighRatingFeedbackToKnowledge(SQLFeedbackRequest request) {
+        try {
+            String question = request.getQuestion();
+            String sql = request.getGeneratedSql();
+            int rating = request.getRating();
+            
+            log.info("[反馈同步] 开始处理: rating={}, question={}", rating, question);
+            
+            // 检查是否已存在相似问题（避免重复）
+            List<RagKnowledgeBaseService.KnowledgeItem> existingItems = 
+                ragKnowledgeBaseService.searchSimilarQuestions(question, 1);
+            
+            if (!existingItems.isEmpty()) {
+                double similarity = existingItems.get(0).getRelevance() != null ? 
+                    existingItems.get(0).getRelevance() : 0.0;
+                
+                log.info("[反馈同步] 找到相似示例: similarity={}", similarity);
+                
+                // 如果相似度>0.9，认为已存在，只更新质量评分
+                if (similarity > 0.9) {
+                    Long existingId = existingItems.get(0).getId();
+                    float scoreChange = calculateScoreChange(rating);
+                    ragKnowledgeBaseService.updateQualityScore(existingId, scoreChange);
+                    
+                    log.info("[反馈同步] ✅ 发现相似示例，更新质量评分: id={}, change={}", 
+                        existingId, scoreChange);
+                    return;
+                }
+            }
+            
+            // 不存在则新增
+            // 根据评分计算初始质量分：5星=1.0, 4星=0.8
+            float qualityScore = rating == 5 ? 1.0f : 0.8f;
+            
+            // 自动分类（简单规则）
+            String category = categorizeQuestion(question);
+            
+            log.info("[反馈同步] 准备新增: category={}, qualityScore={}", category, qualityScore);
+            
+            // 保存到rag_knowledge_base（会自动同步到Chroma）
+            Long knowledgeId = ragKnowledgeBaseService.saveQAPair(
+                question,
+                "",  // answer暂时为空
+                sql,
+                category,
+                qualityScore
+            );
+            
+            log.info("[反馈同步] ✅ 高分反馈已同步到知识库: id={}, rating={}, question={}", 
+                knowledgeId, rating, question);
+            
+        } catch (Exception e) {
+            // ⚠️ 关键：同步失败不影响主流程，只记录日志
+            log.error("[反馈同步] ❌ 同步失败（不影响反馈提交）: question={}", 
+                request.getQuestion(), e);
+        }
+    }
+    
+    /**
+     * 根据问题自动分类
+     */
+    private String categorizeQuestion(String question) {
+        if (question == null) return "其他";
+        
+        String lower = question.toLowerCase();
+        
+        if (lower.contains("统计") || lower.contains("汇总") || lower.contains("平均") || 
+            lower.contains("合计") || lower.contains("总数")) {
+            return "统计查询";
+        }
+        
+        if (lower.contains("查询") || lower.contains("查找") || lower.contains("显示")) {
+            return "明细查询";
+        }
+        
+        if (lower.contains("排序") || lower.contains("排名") || lower.contains("最")) {
+            return "排序查询";
+        }
+        
+        return "其他";
     }
     
     /**

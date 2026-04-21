@@ -7,6 +7,7 @@ import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.llm.IndustryConceptDictionary;
 import com.nl2sql.core.llm.ModelRouterService;
 import com.nl2sql.core.llm.SynonymService;
+import com.nl2sql.core.rag.LowRatingExampleService;
 import com.nl2sql.core.rag.RagKnowledgeBaseService;
 import com.nl2sql.core.rag.RagLearningContext;
 import com.nl2sql.core.retriever.VectorRetriever;
@@ -59,6 +60,9 @@ public class NL2SQLTool {
     
     @Autowired
     private MetadataCacheService metadataCacheService;
+    
+    @Autowired(required = false)
+    private LowRatingExampleService lowRatingExampleService;
     
     // ThreadLocal 存储当前会话ID
     private static final ThreadLocal<String> CURRENT_SESSION_ID = new ThreadLocal<>();
@@ -427,7 +431,7 @@ public class NL2SQLTool {
                 try {
                     publishProgress("rag_search", "📚 检索历史相似案例...");
                     List<RagKnowledgeBaseService.KnowledgeItem> similarItems = 
-                        ragService.searchSimilarQuestions(expandedQuery, 3);
+                        ragService.searchSimilarQuestions(expandedQuery, 1); // ✅ 限制为1个，避免Prompt过长
                     
                     if (!similarItems.isEmpty()) {
                         log.info("[NL2SQLTool] RAG检索到 {} 个参考示例", similarItems.size());
@@ -435,7 +439,7 @@ public class NL2SQLTool {
                         ragBuilder.append("\n\n参考示例（历史成功案例，请借鉴其JOIN方式和字段选择）:\n");
                         
                         int validCount = 0;
-                        for (int i = 0; i < Math.min(similarItems.size(), 3); i++) {
+                        for (int i = 0; i < Math.min(similarItems.size(), 1); i++) { // ✅ 最多使用1个
                             RagKnowledgeBaseService.KnowledgeItem item = similarItems.get(i);
                             
                             // ✅ 关键过滤：跳过包含GROUP BY但问题未要求统计的示例
@@ -528,6 +532,43 @@ public class NL2SQLTool {
             String joinHint = fullRelationshipInfo.isEmpty() ? "" : 
                 fullRelationshipInfo + "\n重要：以上关联关系是数据库中已定义的，请直接用于JOIN语句，不要再次询问或澄清。";
             
+            // ✅ Layer 1: 检索低分示例并注入负面Prompt
+            String negativeExamples = "";
+            if (lowRatingExampleService != null) {
+                try {
+                    List<LowRatingExampleService.LowRatingExample> badExamples = 
+                        lowRatingExampleService.findSimilarLowRatingExamples(originalQuery, 0.85, 2);
+                    
+                    if (!badExamples.isEmpty()) {
+                        log.info("[NL2SQLTool] ⚠️ 找到 {} 个低分示例，注入负面Prompt", badExamples.size());
+                        StringBuilder negBuilder = new StringBuilder();
+                        negBuilder.append("\n⚠️ **以下SQL曾被用户评为低分，请避免类似错误：**\n\n");
+                        
+                        for (int i = 0; i < badExamples.size(); i++) {
+                            LowRatingExampleService.LowRatingExample ex = badExamples.get(i);
+                            negBuilder.append(String.format(
+                                "**反例 %d:**\n" +
+                                "问题: %s\n" +
+                                "错误SQL: %s\n" +
+                                "用户反馈: %s\n" +
+                                "评分: %d星\n\n",
+                                i + 1,
+                                ex.getQuestion(),
+                                ex.getGeneratedSql(),
+                                ex.getFeedbackText() != null ? ex.getFeedbackText() : "未提供原因",
+                                ex.getRating()
+                            ));
+                        }
+                        
+                        negBuilder.append("**请确保生成的SQL与上述错误示例完全不同！**\n\n");
+                        negativeExamples = negBuilder.toString();
+                        publishProgress("negative_examples_loaded", "⚠️ 已加载 " + badExamples.size() + " 个负面示例");
+                    }
+                } catch (Exception e) {
+                    log.warn("[NL2SQLTool] 检索低分示例失败", e);
+                }
+            }
+            
             // ✅ 关键：明确列出可用表清单，强化约束
             String availableTablesList = String.join(", ", expandedTables);
             
@@ -540,6 +581,7 @@ public class NL2SQLTool {
                 "数据库表结构：\n%s\n\n" +
                 "%s" +
                 "%s" +
+                "%s" +  // ✅ Layer 1: 负面示例
                 "用户问题：%s\n\n" +
                 "要求：\n" +
                 "1. 只输出SQL语句，不要包含```sql或其他标记\n" +
@@ -593,9 +635,18 @@ public class NL2SQLTool {
                 "   - 或者优先使用主表的字段：直接使用users表的地区字段，而非user_addresses\n" +
                 "   - 只有在完全没有关联关系信息且确实需要多表JOIN时，才返回'CLARIFY_RELATIONSHIP:表A,表B'\n" +
                 "   - 当前场景已有明确的关联关系，请不要返回CLARIFY_RELATIONSHIP\n" +
+                "10. **⚠️ 语义一致性强制规则（重要）**：\n" +
+                "    - **对于相同语义的查询（如'查询用户X的订单'），必须保持SQL结构完全一致**\n" +
+                "    - 例如：'查询用户张三的订单'和'查询用户李四的订单'应该生成相同的SQL结构，只是WHERE条件不同\n" +
+                "    - **表选择一致性**：如果第一次选择了orders JOIN users，第二次也必须使用相同的表组合\n" +
+                "    - **字段映射一致性**：同一概念必须映射到相同字段（如用户名始终用u.username，不用o.receiver_name）\n" +
+                "    - **JOIN顺序一致性**：FROM orders o JOIN users u ON ... 的顺序必须保持一致\n" +
+                "    - ❌ 错误：第一次用 JOIN users，第二次用 JOIN order_items\n" +
+                "    - ✅ 正确：两次都用 JOIN users u ON o.user_id = u.id\n" +
+                "    - **关键原则**：优先使用业务主键关联（user_id），而非文本字段匹配（receiver_name）\n" +
                 "\nSQL：",
                 expandedTables.size(), availableTablesList,
-                finalSchemaInfo, fullRelationshipInfo.isEmpty() ? "" : fullRelationshipInfo + "\n\n", ragEnhancement, expandedQuery
+                finalSchemaInfo, fullRelationshipInfo.isEmpty() ? "" : fullRelationshipInfo + "\n\n", ragEnhancement, negativeExamples, expandedQuery
             );
             
             String sql = modelRouter.smartGenerateSQL(sqlPrompt, expandedQuery);
@@ -605,6 +656,41 @@ public class NL2SQLTool {
             
             log.info("[NL2SQLTool] 生成的SQL: {}", sql);
             publishProgress("sql_generated", "✅ SQL生成完成");
+            
+            // ✅ Layer 2: 检查是否与历史低分SQL高度相似，是则重新生成
+            if (lowRatingExampleService != null) {
+                try {
+                    LowRatingExampleService.LowRatingExample badMatch = 
+                        lowRatingExampleService.checkIfSimilarToLowRating(originalQuery, sql);
+                    
+                    if (badMatch != null) {
+                        log.warn("[NL2SQLTool] ⚠️ 生成的SQL与低分示例完全匹配，触发重新生成");
+                        log.warn("[NL2SQLTool] 低分原因: {}", badMatch.getFeedbackText());
+                        
+                        // 构造修正Prompt
+                        String correctionPrompt = String.format(
+                            "⚠️ **重要：刚才生成的SQL曾被用户评为%d星（低分）**\n" +
+                            "错误SQL: %s\n" +
+                            "用户反馈: %s\n\n" +
+                            "请重新生成一个完全不同的SQL，避免上述错误。\n" +
+                            "用户问题：%s\n\nSQL：",
+                            badMatch.getRating(),
+                            badMatch.getGeneratedSql(),
+                            badMatch.getFeedbackText() != null ? badMatch.getFeedbackText() : "未提供原因",
+                            expandedQuery
+                        );
+                        
+                        publishProgress("regenerating_sql", "⚠️ 检测到低分风险，重新生成...");
+                        sql = modelRouter.smartGenerateSQL(correctionPrompt, expandedQuery);
+                        sql = cleanSQL(sql);
+                        
+                        log.info("[NL2SQLTool] ✅ 重新生成后的SQL: {}", sql);
+                        publishProgress("sql_regenerated", "✅ 已重新生成SQL");
+                    }
+                } catch (Exception e) {
+                    log.warn("[NL2SQLTool] Layer 2检查失败，继续执行", e);
+                }
+            }
             
             // ⚠️ P0优化：SQL 验证与 Self-Correction
             publishProgress("validating_sql", "🔍 验证SQL正确性...");

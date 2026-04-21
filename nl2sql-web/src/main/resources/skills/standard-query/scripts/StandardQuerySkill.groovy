@@ -60,6 +60,15 @@ class StandardQuerySkill {
                 println "[StandardQuerySkill] SQLRiskAnalyzer 未配置，跳过风险评估"
             }
             
+            // ✅ 行业概念扩展点（可选）
+            def conceptExtensions = []
+            try {
+                conceptExtensions = context.getBeansOfType(com.nl2sql.core.llm.extension.IndustryConceptExtension.class)
+                println "[StandardQuerySkill] 加载到 ${conceptExtensions.size()} 个行业扩展点"
+            } catch (Exception e) {
+                println "[StandardQuerySkill] 未找到行业扩展点: ${e.message}"
+            }
+            
             // ✅ 检测用户是否要求生成图表（如“并生成柱状图”）
             String chartType = extractChartTypeFromQuestion(question)
             if (chartType != null) {
@@ -87,7 +96,25 @@ class StandardQuerySkill {
                 question = "${question} [优先使用表: ${tableHint}]"
             }
             
-            String sql = nl2sqlTool.generateSQL(question, datasourceId)
+            // ✅ 调用行业扩展点：在LLM生成SQL前注入行业特定的提示词
+            String enhancedQuestion = question
+            if (!conceptExtensions.isEmpty()) {
+                for (def extension : conceptExtensions) {
+                    try {
+                        String enhancedPrompt = extension.enhancePromptBeforeGeneration(null, question, datasourceId)
+                        if (enhancedPrompt != null && !enhancedPrompt.trim().isEmpty()) {
+                            println "[StandardQuerySkill] 行业扩展点增强Prompt: ${extension.getClass().getSimpleName()}"
+                            // 将增强信息附加到问题中
+                            enhancedQuestion = "${question}\n\n${enhancedPrompt}"
+                            break // 只应用第一个有效的扩展
+                        }
+                    } catch (Exception e) {
+                        println "[StandardQuerySkill] 行业扩展点执行失败: ${extension.getClass().getSimpleName()}, error: ${e.message}"
+                    }
+                }
+            }
+            
+            String sql = nl2sqlTool.generateSQL(enhancedQuestion, datasourceId)
             
             // ✅ 关键修复：检查 SQL 生成是否失败或需要澄清
             boolean hasSyntaxError = false
@@ -456,8 +483,9 @@ class StandardQuerySkill {
         
         // 规则5: WHERE 条件包含主键等值查询（id = ? 或 id = 数字）
         // 匹配模式：WHERE xxx_id = 数字 或 WHERE id = 数字
-        def primaryKeyPattern = ~/WHERE\s+\w*_?id\s*=\s*\d+/i
-        if (!(sql =~ primaryKeyPattern).find()) {
+        def primaryKeyPattern = java.util.regex.Pattern.compile("WHERE\\s+\\w*_?id\\s*=\\s*\\d+", java.util.regex.Pattern.CASE_INSENSITIVE)
+        def matcher = primaryKeyPattern.matcher(sql)
+        if (!matcher.find()) {
             return false
         }
         

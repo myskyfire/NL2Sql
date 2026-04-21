@@ -151,12 +151,16 @@ mybatis-plus:
 
 # Logging
 logging:
+  file:
+    name: ${user.dir}/logs/NL2SQL.log
+    path: ${user.dir}/logs
   level:
     com.nl2sql: DEBUG
     dev.langchain4j: DEBUG
     org.springframework.jdbc.core: DEBUG
   pattern:
-    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%line - %msg%n'
+    file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%line - %msg%n'
 
 # SQL执行配置
 sql:

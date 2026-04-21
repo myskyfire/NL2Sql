@@ -3,6 +3,7 @@ package com.nl2sql.web.config;
 import com.nl2sql.web.filter.AuthInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -31,5 +32,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
         
         // 可以在这里添加其他拦截器
         // registry.addInterceptor(otherInterceptor).addPathPatterns("/api/other/**");
+    }
+    
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // ✅ 忽略 Chrome DevTools 调试文件请求（避免日志污染）
+        registry.addResourceHandler("/.well-known/**")
+            .addResourceLocations("classpath:/static/")
+            .setCachePeriod(0);
     }
 }

@@ -464,7 +464,7 @@
             </div>
             
             <!-- 工具类 -->
-            <div class="menu-item admin-only hidden" onclick="showPage('manual-sql', this)" title="直接编写和执行SQL语句，支持权限校验和安全检查">
+            <div class="menu-item" onclick="showPage('manual-sql', this)" title="直接编写和执行SQL语句，支持权限校验和安全检查">
                 <span class="menu-icon">⚡</span>
                 <span>手动执行SQL</span>
             </div>
@@ -549,7 +549,7 @@
                             <p>查看数据库表结构、字段信息、索引详情等元数据</p>
                         </div>
                         
-                        <div class="welcome-card admin-only hidden" onclick="showPage('manual-sql')">
+                        <div class="welcome-card" onclick="showPage('manual-sql')">
                             <div class="welcome-icon">⚡</div>
                             <h3>手动执行SQL</h3>
                             <p>直接编写和执行SQL语句，支持权限校验和安全检查</p>
@@ -584,22 +584,22 @@
             
             <!-- DataMind 查询页面 -->
             <div id="page-query" class="page">
-                <iframe id="iframe-query" class="iframe-container" src="/query.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-query" class="iframe-container" src="/query.html"></iframe>
             </div>
             
             <!-- 表授权管理页面 -->
             <div id="page-table-permission" class="page">
-                <iframe id="iframe-table-permission" class="iframe-container" data-src="/admin-table-permission.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-table-permission" class="iframe-container" data-src="/admin-table-permission.html"></iframe>
             </div>
             
             <!-- 执行日志页面 -->
             <div id="page-execution-logs" class="page">
-                <iframe id="iframe-execution-logs" class="iframe-container" data-src="/admin-execution-logs.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-execution-logs" class="iframe-container" data-src="/admin-execution-logs.html"></iframe>
             </div>
             
             <!-- 数据源管理页面 -->
             <div id="page-datasource" class="page">
-                <iframe id="iframe-datasource" class="iframe-container" data-src="/admin-datasource.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-datasource" class="iframe-container" data-src="/admin-datasource.html"></iframe>
             </div>
             
             <!-- 元数据查看页面 -->
@@ -624,47 +624,47 @@
             
             <!-- 手动执行SQL页面 -->
             <div id="page-manual-sql" class="page">
-                <iframe id="iframe-manual-sql" class="iframe-container" data-src="/admin-manual-sql.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-manual-sql" class="iframe-container" data-src="/admin-manual-sql.html"></iframe>
             </div>
             
             <!-- 查询模板管理页面 -->
             <div id="page-template" class="page">
-                <iframe id="iframe-template" class="iframe-container" data-src="/admin-template.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-template" class="iframe-container" data-src="/admin-template.html"></iframe>
             </div>
             
             <!-- 用户管理页面 -->
             <div id="page-user-management" class="page">
-                <iframe id="iframe-user-management" class="iframe-container" data-src="/admin-user-management.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-user-management" class="iframe-container" data-src="/admin-user-management.html"></iframe>
             </div>
             
             <!-- AI Agent 对话页面 -->
             <div id="page-agent-chat" class="page active">
-                <iframe id="iframe-agent-chat" class="iframe-container" src="/agent-chat.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-agent-chat" class="iframe-container" src="/agent-chat.html"></iframe>
             </div>
             
             <!-- 流式对话页面 -->
             <div id="page-stream-chat" class="page">
-                <iframe id="iframe-stream-chat" class="iframe-container" src="/stream-chat.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-stream-chat" class="iframe-container" src="/stream-chat.html"></iframe>
             </div>
             
             <!-- 表关联管理页面 -->
             <div id="page-relationship-management" class="page">
-                <iframe id="iframe-relationship-management" class="iframe-container" src="/relationship-management.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-relationship-management" class="iframe-container" src="/relationship-management.html"></iframe>
             </div>
             
             <!-- RAG知识库管理页面 -->
             <div id="page-rag-management" class="page">
-                <iframe id="iframe-rag-management" class="iframe-container" data-src="/admin-rag-management.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-rag-management" class="iframe-container" data-src="/admin-rag-management.html"></iframe>
             </div>
             
             <!-- Prompt学习管理页面 -->
             <div id="page-prompt-learning" class="page">
-                <iframe id="iframe-prompt-learning" class="iframe-container" data-src="/admin-prompt-learning.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-prompt-learning" class="iframe-container" data-src="/admin-prompt-learning.html"></iframe>
             </div>
             
             <!-- 行业概念管理页面 -->
             <div id="page-industry-concepts" class="page">
-                <iframe id="iframe-industry-concepts" class="iframe-container" data-src="/admin-industry-concepts.html" onload="fixIframeStyle(this)"></iframe>
+                <iframe id="iframe-industry-concepts" class="iframe-container" data-src="/admin-industry-concepts.html"></iframe>
             </div>
         </div>
     </div>
@@ -919,6 +919,15 @@
             applyStyles();
             setTimeout(applyStyles, 1000);  // 1秒后再次尝试
         }
+        
+        // ✅ DOM加载完成后，为所有iframe绑定onload事件
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.iframe-container').forEach(iframe => {
+                iframe.addEventListener('load', function() {
+                    fixIframeStyle(this);
+                });
+            });
+        });
         function escapeHtml(text) {
             if (text === null || text === undefined) return '';
             const div = document.createElement('div');
@@ -980,7 +989,7 @@
                 'datasource', 'relationship-management', 'metadata',
                 'rag-management', 'prompt-learning', 'industry-concepts',
                 'user-management', 'table-permission', 'execution-logs',
-                'manual-sql', 'template'
+                'template'
             ];
             
             // ✅ 检查是否为管理员页面
@@ -1011,6 +1020,13 @@
             const targetPage = document.getElementById(`page-${pageName}`);
             if (targetPage) {
                 targetPage.classList.add('active');
+                
+                // ✅ 懒加载 iframe：只有当页面首次显示时才设置 src
+                const iframe = targetPage.querySelector('iframe');
+                if (iframe && !iframe.src && iframe.dataset.src) {
+                    iframe.src = iframe.dataset.src;
+                    console.log('✅ 懒加载 iframe:', iframe.dataset.src);
+                }
             }
             
             // ✅ 关键修复：直接高亮被点击的菜单项（避免索引错位）
@@ -1111,6 +1127,13 @@
             const targetPage = document.getElementById(`page-${pageName}`);
             if (targetPage) {
                 targetPage.classList.add('active');
+                
+                // ✅ 懒加载 iframe：只有当页面首次显示时才设置 src
+                const iframe = targetPage.querySelector('iframe');
+                if (iframe && !iframe.src && iframe.dataset.src) {
+                    iframe.src = iframe.dataset.src;
+                    console.log('✅ 懒加载 iframe:', iframe.dataset.src);
+                }
             }
             
             // 激活对应页签

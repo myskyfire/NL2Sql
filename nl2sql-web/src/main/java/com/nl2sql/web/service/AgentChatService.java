@@ -41,6 +41,12 @@ public class AgentChatService {
     @Autowired
     private AgentResponseProcessor responseProcessor;
     
+    @Autowired(required = false)
+    private JdbcTemplate datasourceJdbcTemplate; // ✅ 用于查询数据源配置
+    
+    @Autowired(required = false)
+    private DatasourceSessionService datasourceSessionService; // ✅ 数据源会话管理
+    
     /**
      * 处理聊天请求
      */
@@ -68,6 +74,18 @@ public class AgentChatService {
             // 5. 设置会话ID
             String sessionId = resolveSessionId(request, userInfo);
             setSessionId(sessionId);
+            
+            // ✅ 6. 检测清除命令
+            if (datasourceSessionService != null && datasourceSessionService.isClearCommand(fixedMessage)) {
+                log.info("[Agent对话] 检测到清除命令，清除数据源缓存");
+                datasourceSessionService.clearDatasourceCache(sessionId);
+                
+                Map<String, Object> clearResponse = new HashMap<>();
+                clearResponse.put("success", true);
+                clearResponse.put("message", "✅ 已清除当前数据源选择，下次查询将重新选择");
+                clearResponse.put("sessionId", sessionId);
+                return Result.success(clearResponse);
+            }
             
             try {
                 // 6. 调用 ReAct Agent
@@ -230,13 +248,39 @@ public class AgentChatService {
         ChatRequest request, 
         AuthService.UserInfo userInfo
     ) {
-        log.info("[Agent对话] 调用 ReActAgent.execute()...");
-        return reActAgent.execute(
-            fullMessage,
-            request.getDatasourceId(),
-            userInfo.getUserId().longValue(),
-            userInfo.getUsername()
-        );
+        String sessionId = request.getSessionId() != null ? request.getSessionId() : "default_" + userInfo.getUserId();
+        
+        // ✅ 关键优化：智能预选择数据源（混合策略）
+        Long resolvedDatasourceId = datasourceSessionService != null 
+            ? datasourceSessionService.resolveDatasourceId(sessionId, request.getDatasourceId())
+            : request.getDatasourceId();
+        
+        log.info("[Agent对话] 调用 ReActAgent.execute()... [datasourceId={}]", resolvedDatasourceId);
+        
+        try {
+            String result = reActAgent.execute(
+                fullMessage,
+                resolvedDatasourceId,
+                userInfo.getUserId().longValue(),
+                userInfo.getUsername()
+            );
+            
+            // ✅ 记录成功（自动续期）
+            if (datasourceSessionService != null) {
+                datasourceSessionService.recordSuccess(sessionId);
+            }
+            
+            return result;
+        } catch (Exception e) {
+            // ✅ 记录失败（连续失败检测）
+            if (datasourceSessionService != null) {
+                boolean shouldClear = datasourceSessionService.recordFailure(sessionId);
+                if (shouldClear) {
+                    log.warn("[Agent对话] 连续失败，已清除数据源缓存");
+                }
+            }
+            throw e;
+        }
     }
     
     /**

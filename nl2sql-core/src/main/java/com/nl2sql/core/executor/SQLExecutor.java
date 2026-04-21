@@ -27,6 +27,7 @@ public class SQLExecutor {
     private final com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool;  // LLM翻译工具
     private final com.nl2sql.core.llm.ModelRouterService modelRouter;  // 模型路由服务
     private final com.nl2sql.core.cache.QueryCacheService queryCacheService;  // 查询结果缓存
+    private final com.nl2sql.core.cache.MetadataCacheService metadataCacheService;  // 元数据缓存服务
     
     @Value("${sql.execution.query-timeout:30}")
     private int queryTimeout;
@@ -48,7 +49,8 @@ public class SQLExecutor {
                       ValueMappingService valueMappingService,
                       com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool,
                       com.nl2sql.core.llm.ModelRouterService modelRouter,
-                      com.nl2sql.core.cache.QueryCacheService queryCacheService) {
+                      com.nl2sql.core.cache.QueryCacheService queryCacheService,
+                      com.nl2sql.core.cache.MetadataCacheService metadataCacheService) {
         this.jdbcTemplate = jdbcTemplate;
         this.dataSource = dataSource;
         this.executionLogService = executionLogService;
@@ -57,6 +59,7 @@ public class SQLExecutor {
         this.nl2sqlTool = nl2sqlTool;
         this.modelRouter = modelRouter;
         this.queryCacheService = queryCacheService;
+        this.metadataCacheService = metadataCacheService;
     }
     
     @Data
@@ -395,6 +398,7 @@ public class SQLExecutor {
     
     /**
      * 翻译未映射的列名（LLM生成的聚合别名）
+     * ✅ 优化：增加LLM翻译缓存机制
      */
     private void translateColumnNames(List<Map<String, Object>> rows, 
                                       Map<String, String> columnNameMap,
@@ -414,44 +418,89 @@ public class SQLExecutor {
         
         if (untranslatedColumns.isEmpty()) return;
         
-        // 调用LLM批量翻译
+        log.info("[列名翻译] 需要翻译的列: {}", untranslatedColumns);
+        
         try {
-            StringBuilder prompt = new StringBuilder();
-            prompt.append("请将以下数据库字段名翻译成简洁的中文，返回JSON格式。\n\n");
-            prompt.append("字段列表：\n");
-            for (String col : untranslatedColumns) {
-                prompt.append("- ").append(col).append("\n");
+            // ✅ 步骤1：从LLM翻译缓存中查找已翻译的列
+            Map<String, String> cachedTranslations = new java.util.HashMap<>();
+            List<String> needLLMTranslation = new java.util.ArrayList<>();
+            
+            if (metadataCacheService != null && datasourceId != null) {
+                cachedTranslations = metadataCacheService.batchGetColumnTranslations(datasourceId, untranslatedColumns);
+                
+                // 过滤出需要调用LLM翻译的列
+                for (String col : untranslatedColumns) {
+                    if (!cachedTranslations.containsKey(col)) {
+                        needLLMTranslation.add(col);
+                    }
+                }
+                
+                log.info("[列名翻译] 缓存命中: {}/{} 个", cachedTranslations.size(), untranslatedColumns.size());
+            } else {
+                needLLMTranslation.addAll(untranslatedColumns);
             }
-            prompt.append("\n要求：\n");
-            prompt.append("1. 只返回JSON格式：{\"字段名\": \"中文翻译\"}\n");
-            prompt.append("2. 翻译要简洁准确\n");
-            prompt.append("3. 不要添加任何解释\n");
-            prompt.append("4. **重要：这不是SQL查询请求，只需要返回翻译结果的JSON**\n");
             
-            // ✅ 关键修复：直接调用ModelRouter，而非NL2SQLTool.generateSQL()
-            String response = modelRouter.smartGenerateSQL(prompt.toString(), "");
+            // ✅ 步骤2：对未命中的列调用LLM翻译
+            Map<String, String> llmTranslations = new java.util.HashMap<>();
+            if (!needLLMTranslation.isEmpty()) {
+                StringBuilder prompt = new StringBuilder();
+                prompt.append("请将以下数据库字段名翻译成简洁的中文，返回JSON格式。\n\n");
+                prompt.append("字段列表：\n");
+                for (String col : needLLMTranslation) {
+                    prompt.append("- ").append(col).append("\n");
+                }
+                prompt.append("\n要求：\n");
+                prompt.append("1. 只返回JSON格式：{\"字段名\": \"中文翻译\"}\n");
+                prompt.append("2. 翻译要简洁准确\n");
+                prompt.append("3. 不要添加任何解释\n");
+                prompt.append("4. **重要：这不是SQL查询请求，只需要返回翻译结果的JSON**\n");
+                
+                // ✅ 关键修复：直接调用ModelRouter，而非NL2SQLTool.generateSQL()
+                String response = modelRouter.smartGenerateSQL(prompt.toString(), "");
+                
+                // 清洗Markdown
+                response = com.nl2sql.common.util.MarkdownUtils.extractFromMarkdown(response);
+                
+                // 解析JSON
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, String> parsedTranslations = mapper.readValue(response, Map.class);
+                
+                // 验证并填充结果
+                for (String col : needLLMTranslation) {
+                    if (parsedTranslations.containsKey(col)) {
+                        llmTranslations.put(col, parsedTranslations.get(col));
+                    } else {
+                        // 降级：使用通用格式化
+                        llmTranslations.put(col, com.nl2sql.common.util.StringUtils.formatReadable(col));
+                    }
+                }
+                
+                // ✅ 步骤3：将LLM翻译结果写入缓存
+                if (metadataCacheService != null && datasourceId != null && !llmTranslations.isEmpty()) {
+                    metadataCacheService.batchPutColumnTranslations(datasourceId, llmTranslations);
+                    log.info("[列名翻译] LLM翻译完成并缓存: {} 个", llmTranslations.size());
+                }
+            }
             
-            // 清洗Markdown
-            response = com.nl2sql.common.util.MarkdownUtils.extractFromMarkdown(response);
-            
-            // 解析JSON
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            @SuppressWarnings("unchecked")
-            Map<String, String> translations = mapper.readValue(response, Map.class);
+            // ✅ 步骤4：合并缓存和LLM翻译结果
+            Map<String, String> allTranslations = new java.util.HashMap<>();
+            allTranslations.putAll(cachedTranslations);
+            allTranslations.putAll(llmTranslations);
             
             // 重命名所有行的列
             for (Map<String, Object> row : rows) {
                 Map<String, Object> newRow = new java.util.LinkedHashMap<>();
                 for (Map.Entry<String, Object> entry : row.entrySet()) {
                     String oldKey = entry.getKey();
-                    String newKey = translations.getOrDefault(oldKey, oldKey);
+                    String newKey = allTranslations.getOrDefault(oldKey, oldKey);
                     newRow.put(newKey, entry.getValue());
                 }
                 row.clear();
                 row.putAll(newRow);
             }
             
-            log.info("[列名翻译] 翻译了 {} 个列名: {}", translations.size(), translations);
+            log.info("[列名翻译] 翻译了 {} 个列名: {}", allTranslations.size(), allTranslations);
             
         } catch (Exception e) {
             log.warn("[列名翻译] 失败，保持原样: {}", e.getMessage());

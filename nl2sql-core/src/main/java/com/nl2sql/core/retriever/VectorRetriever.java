@@ -1,6 +1,7 @@
 package com.nl2sql.core.retriever;
 
 import com.nl2sql.core.cache.MetadataCacheService;
+import com.nl2sql.core.cache.QueryCacheVectorService;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
@@ -19,6 +20,9 @@ public class VectorRetriever {
     
     @Autowired(required = false)
     private MetadataCacheService cacheService;
+    
+    @Autowired(required = false)
+    private QueryCacheVectorService queryCacheVectorService;
     
     private final EmbeddingModel embeddingModel;
     // ✅ 按数据源隔离的向量索引: datasourceId -> (tableName -> Embedding)
@@ -97,13 +101,52 @@ public class VectorRetriever {
      * 检索指定数据源的相关表
      */
     public List<String> retrieveTopTables(String query, Long datasourceId, int topK) {
-        // ⚠️ P0优化：尝试从缓存获取（缓存key包含datasourceId）
+        // ⚠️ P0优化：L1 精确匹配缓存
         if (cacheService != null) {
             String cacheKey = String.format("%d:%s", datasourceId, query);
             List<String> cachedResult = cacheService.getVectorRetrieval(cacheKey);
             if (cachedResult != null && !cachedResult.isEmpty()) {
-                log.debug("[VectorRetriever] 缓存命中: datasourceId={}, query={}", datasourceId, query);
+                log.info("[VectorRetriever] ✅ L1缓存命中(精确): datasourceId={}, query='{}', tables={}", 
+                    datasourceId, query, cachedResult);
                 return cachedResult;
+            }
+        }
+        
+        // ✅ 新增：L2 模糊匹配缓存（归一化后）
+        if (cacheService != null) {
+            String normalizedQuery = normalizeQuery(query);
+            String fuzzyCacheKey = String.format("%d:%s", datasourceId, normalizedQuery);
+            List<String> fuzzyCachedResult = cacheService.getFuzzyVectorRetrieval(fuzzyCacheKey);
+            if (fuzzyCachedResult != null && !fuzzyCachedResult.isEmpty()) {
+                log.info("[VectorRetriever] ✅ L2缓存命中(模糊): datasourceId={}, original='{}', normalized='{}', tables={}", 
+                    datasourceId, query, normalizedQuery, fuzzyCachedResult);
+                
+                // 同时写入L1缓存，加速下次相同查询
+                cacheService.putVectorRetrieval(String.format("%d:%s", datasourceId, query), fuzzyCachedResult);
+                
+                return fuzzyCachedResult;
+            }
+        }
+        
+        // ✅ 新增：L3 语义相似度匹配（阈值0.85）
+        if (cacheService != null) {
+            log.info("[VectorRetriever] 🔍 L3语义检索开始: query='{}', datasourceId={}", query, datasourceId);
+            List<String> semanticResult = cacheService.findSimilarQueryBySemantic(query, datasourceId, 0.85);
+            if (semanticResult != null && !semanticResult.isEmpty()) {
+                log.info("[VectorRetriever] ✅ L3缓存命中(语义): datasourceId={}, query='{}', tables={}", 
+                    datasourceId, query, semanticResult);
+                
+                // 写入L1和L2缓存，加速后续查询
+                cacheService.putVectorRetrieval(String.format("%d:%s", datasourceId, query), semanticResult);
+                cacheService.putFuzzyVectorRetrieval(
+                    String.format("%d:%s", datasourceId, normalizeQuery(query)), 
+                    semanticResult
+                );
+                log.debug("[VectorRetriever] L3结果已同步到L1/L2缓存");
+                
+                return semanticResult;
+            } else {
+                log.info("[VectorRetriever] ⚠️ L3语义缓存未命中，继续执行向量检索");
             }
         }
         
@@ -159,10 +202,54 @@ public class VectorRetriever {
         } else {
             log.info("[表召回] datasourceId={} 最终返回 {} 个表: {}", datasourceId, result.size(), result);
             
-            // ⚠️ P0优化：写入缓存（缓存key包含datasourceId）
+            // ⚠️ P0优化：L1 写入精确缓存
             if (cacheService != null && !result.isEmpty()) {
                 String cacheKey = String.format("%d:%s", datasourceId, query);
                 cacheService.putVectorRetrieval(cacheKey, result);
+            }
+            
+            // ✅ 新增：L2 写入模糊缓存（归一化后）
+            if (cacheService != null && !result.isEmpty()) {
+                String normalizedQuery = normalizeQuery(query);
+                String fuzzyCacheKey = String.format("%d:%s", datasourceId, normalizedQuery);
+                cacheService.putFuzzyVectorRetrieval(fuzzyCacheKey, result);
+                log.debug("[VectorRetriever] L2缓存写入: normalized={}", normalizedQuery);
+            }
+            
+            // ✅ 新增：L3 记录到语义索引（Jaccard降级方案）
+            if (cacheService != null && !result.isEmpty()) {
+                cacheService.recordQueryToSemanticIndex(datasourceId, query, result);
+                log.debug("[VectorRetriever] Jaccard语义索引已更新: datasourceId={}, query='{}'", 
+                    datasourceId, query);
+            }
+            
+            // ✅ 新增：自动写入Chroma向量缓存（如果可用）
+            if (queryCacheVectorService != null && queryCacheVectorService.isAvailable() && !result.isEmpty()) {
+                try {
+                    log.info("[VectorRetriever] 💾 开始写入Chroma查询缓存: query='{}', datasourceId={}, tables={}", 
+                        query, datasourceId, result);
+                    
+                    // 将表列表转换为JSON字符串
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    String tablesJson = mapper.writeValueAsString(result);
+                    
+                    boolean success = queryCacheVectorService.addQueryToCache(query, datasourceId, tablesJson);
+                    if (success) {
+                        log.info("[VectorRetriever] ✅ Chroma查询缓存写入成功: query='{}', tables={}", 
+                            query, result);
+                    } else {
+                        log.warn("[VectorRetriever] ⚠️ Chroma查询缓存写入返回false: query='{}'", query);
+                    }
+                } catch (Exception e) {
+                    log.warn("[VectorRetriever] ⚠️ Chroma查询缓存写入失败: query='{}', error={}", 
+                        query, e.getMessage());
+                }
+            } else {
+                if (queryCacheVectorService == null) {
+                    log.debug("[VectorRetriever] QueryCacheVectorService未注入，跳过Chroma缓存写入");
+                } else if (!queryCacheVectorService.isAvailable()) {
+                    log.debug("[VectorRetriever] QueryCacheVectorService不可用，跳过Chroma缓存写入");
+                }
             }
         }
         
@@ -199,6 +286,51 @@ public class VectorRetriever {
             result.add(similarities.get(i).getKey());
         }
         return result;
+    }
+    
+    /**
+     * ✅ 新增：查询文本归一化 - 去除可变实体，保留查询结构
+     */
+    private String normalizeQuery(String query) {
+        if (query == null || query.isEmpty()) {
+            return query;
+        }
+        
+        String normalized = query;
+        
+        // 1. 去除人名（中文2-4字姓名 + 的/先生/女士等后缀）
+        normalized = normalized.replaceAll("[\\u4e00-\\u9fa5]{2,4}(?=的|先生|女士|同学|老师|经理|总)", "{PERSON}");
+        
+        // 2. 去除地名（省市县）
+        String[] provinces = {"北京", "上海", "天津", "重庆", "广东", "江苏", "浙江", "四川", "湖南", "湖北", 
+                             "河南", "河北", "山东", "山西", "陕西", "安徽", "福建", "江西", "辽宁", "黑龙江", 
+                             "吉林", "甘肃", "青海", "云南", "贵州", "海南", "台湾", "内蒙古", "广西", "宁夏", 
+                             "新疆", "西藏"};
+        for (String province : provinces) {
+            normalized = normalized.replaceAll(province + "(省|市|自治区|地区|县)?", "{LOCATION}");
+        }
+        
+        // 3. 去除时间（日期、月份）
+        normalized = normalized.replaceAll("\\d{4}年\\d{1,2}月?", "{DATE}");
+        normalized = normalized.replaceAll("\\d{4}-\\d{2}-\\d{2}", "{DATE}");
+        normalized = normalized.replaceAll("\\d{4}/\\d{1,2}/\\d{1,2}", "{DATE}");
+        
+        // 4. 去除数字ID
+        normalized = normalized.replaceAll("ID[为是]?\\d+", "ID{NUM}");
+        normalized = normalized.replaceAll("编号[为是]?\\w+", "编号{NUM}");
+        normalized = normalized.replaceAll("订单号[为是]?\\w+", "订单号{NUM}");
+        
+        // 5. 去除具体金额
+        normalized = normalized.replaceAll("\\d+[万千元亿]?(?:以上|以下|之间)?", "{AMOUNT}");
+        
+        // 6. 去除商品品牌/型号（常见品牌）
+        String[] brands = {"苹果", "华为", "小米", "OPPO", "vivo", "三星", "索尼", "海尔", "美的", "格力",
+                          "联想", "戴尔", "惠普", "华硕", "ThinkPad", "MacBook", "iPhone", "iPad"};
+        for (String brand : brands) {
+            normalized = normalized.replaceAll(brand, "{BRAND}");
+        }
+        
+        return normalized.trim();
     }
     
     private double cosineSimilarity(List<Float> vec1, List<Float> vec2) {

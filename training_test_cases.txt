@@ -1,0 +1,338 @@
+# NL2SQL Training Test Cases (500+ cases with real data)
+# Format: question|expected_sql|tables|functions
+# Address Mapping Rules:
+# 1. User registration location -> users.city/province
+# 2. Order delivery location -> orders.shipping_address (LIKE match)
+# 3. User address book -> user_addresses table (add is_default=1 for default address)
+
+# ===== L1: 简单单表查询 (50个) =====
+# Note: For L1, use user_id directly. For queries by real_name, see L3 section.
+查询用户ID为1的订单|SELECT * FROM orders WHERE user_id = 1|orders|WHERE
+查询用户ID为2的订单|SELECT * FROM orders WHERE user_id = 2|orders|WHERE
+查询用户ID为3的订单|SELECT * FROM orders WHERE user_id = 3|orders|WHERE
+查询订单号ORD20260401090001的详情|SELECT * FROM orders WHERE order_no = 'ORD20260401090001'|orders|WHERE
+订单总数|SELECT COUNT(*) FROM orders|orders|COUNT
+商品总数|SELECT COUNT(*) FROM products|products|COUNT
+用户总数|SELECT COUNT(*) FROM users|users|COUNT
+已完成订单数量|SELECT COUNT(*) FROM orders WHERE status = 'completed'|orders|COUNT,WHERE
+待支付订单数量|SELECT COUNT(*) FROM orders WHERE status = 'pending'|orders|COUNT,WHERE
+所有订单总金额|SELECT SUM(total_amount) FROM orders|orders|SUM
+平均订单金额|SELECT AVG(total_amount) FROM orders|orders|AVG
+最高订单金额|SELECT MAX(total_amount) FROM orders|orders|MAX
+最低订单金额|SELECT MIN(total_amount) FROM orders|orders|MIN
+最贵的商品|SELECT * FROM products ORDER BY price DESC LIMIT 1|products|ORDER BY,LIMIT
+最便宜的商品|SELECT * FROM products ORDER BY price ASC LIMIT 1|products|ORDER BY,LIMIT
+MacBook Pro 14的价格|SELECT price FROM products WHERE product_name = 'MacBook Pro 14'|products|WHERE
+索尼65寸电视的信息|SELECT * FROM products WHERE product_name = '索尼65寸电视'|products|WHERE
+海尔冰箱的价格|SELECT price FROM products WHERE product_name = '海尔冰箱'|products|WHERE
+Nike运动鞋的价格|SELECT price FROM products WHERE product_name = 'Nike运动鞋'|products|WHERE
+Adidas外套的信息|SELECT * FROM products WHERE product_name = 'Adidas外套'|products|WHERE
+优衣库衬衫价格|SELECT price FROM products WHERE product_name = '优衣库衬衫'|products|WHERE
+订单ORD20260401100003的金额|SELECT total_amount FROM orders WHERE order_no = 'ORD20260401100003'|orders|WHERE
+查询用户ID为4的订单|SELECT * FROM orders WHERE user_id = 4|orders|WHERE
+查询用户ID为5的订单|SELECT * FROM orders WHERE user_id = 5|orders|WHERE
+查询用户ID为6的订单|SELECT * FROM orders WHERE user_id = 6|orders|WHERE
+查询用户ID为7的订单|SELECT * FROM orders WHERE user_id = 7|orders|WHERE
+查询用户ID为8的订单|SELECT * FROM orders WHERE user_id = 8|orders|WHERE
+查询用户ID为9的订单|SELECT * FROM orders WHERE user_id = 9|orders|WHERE
+查询用户ID为10的订单|SELECT * FROM orders WHERE user_id = 10|orders|WHERE
+查询用户ID为11的订单|SELECT * FROM orders WHERE user_id = 11|orders|WHERE
+查询用户ID为12的订单|SELECT * FROM orders WHERE user_id = 12|orders|WHERE
+查询用户ID为13的订单|SELECT * FROM orders WHERE user_id = 13|orders|WHERE
+查询用户ID为14的订单|SELECT * FROM orders WHERE user_id = 14|orders|WHERE
+查询用户ID为15的订单|SELECT * FROM orders WHERE user_id = 15|orders|WHERE
+查询用户ID为16的订单|SELECT * FROM orders WHERE user_id = 16|orders|WHERE
+查询用户ID为17的订单|SELECT * FROM orders WHERE user_id = 17|orders|WHERE
+查询用户ID为18的订单|SELECT * FROM orders WHERE user_id = 18|orders|WHERE
+查询用户ID为19的订单|SELECT * FROM orders WHERE user_id = 19|orders|WHERE
+查询用户ID为20的订单|SELECT * FROM orders WHERE user_id = 20|orders|WHERE
+OPPO Find X7的价格|SELECT price FROM products WHERE product_name = 'OPPO Find X7'|products|WHERE
+vivo X100 Pro的信息|SELECT * FROM products WHERE product_name = 'vivo X100 Pro'|products|WHERE
+ThinkPad X1 Carbon价格|SELECT price FROM products WHERE product_name = 'ThinkPad X1 Carbon'|products|WHERE
+戴尔XPS 15的详情|SELECT * FROM products WHERE product_name = '戴尔XPS 15'|products|WHERE
+三星Galaxy S24价格|SELECT price FROM products WHERE product_name = '三星Galaxy S24'|products|WHERE
+华硕ROG游戏本信息|SELECT * FROM products WHERE product_name = '华硕ROG游戏本'|products|WHERE
+惠普战66价格|SELECT price FROM products WHERE product_name = '惠普战66'|products|WHERE
+微软Surface Laptop详情|SELECT * FROM products WHERE product_name = '微软Surface Laptop'|products|WHERE
+苹果iPad Air价格|SELECT price FROM products WHERE product_name = '苹果iPad Air'|products|WHERE
+荣耀Magic6信息|SELECT * FROM products WHERE product_name = '荣耀Magic6'|products|WHERE
+男士商务衬衫价格|SELECT price FROM products WHERE product_name = '男士商务衬衫'|products|WHERE
+男士休闲裤信息|SELECT * FROM products WHERE product_name = '男士休闲裤'|products|WHERE
+女士连衣裙价格|SELECT price FROM products WHERE product_name = '女士连衣裙'|products|WHERE
+女士牛仔裤信息|SELECT * FROM products WHERE product_name = '女士牛仔裤'|products|WHERE
+三只松鼠坚果礼盒价格|SELECT price FROM products WHERE product_name = '三只松鼠坚果礼盒'|products|WHERE
+良品铺子零食大礼包信息|SELECT * FROM products WHERE product_name = '良品铺子零食大礼包'|products|WHERE
+可口可乐价格|SELECT price FROM products WHERE product_name = '可口可乐'|products|WHERE
+农夫山泉矿泉水信息|SELECT * FROM products WHERE product_name = '农夫山泉矿泉水'|products|WHERE
+百事可乐价格|SELECT price FROM products WHERE product_name = '百事可乐'|products|WHERE
+康师傅红茶信息|SELECT * FROM products WHERE product_name = '康师傅红茶'|products|WHERE
+恰恰瓜子价格|SELECT price FROM products WHERE product_name = '恰恰瓜子'|products|WHERE
+百草味坚果信息|SELECT * FROM products WHERE product_name = '百草味坚果'|products|WHERE
+查询已支付订单|SELECT * FROM orders WHERE status = 'paid'|orders|WHERE
+查询已发货订单|SELECT * FROM orders WHERE status = 'shipped'|orders|WHERE
+查询已完成订单|SELECT * FROM orders WHERE status = 'completed'|orders|WHERE
+微信支付订单列表|SELECT * FROM orders WHERE payment_method = '微信支付'|orders|WHERE
+支付宝订单列表|SELECT * FROM orders WHERE payment_method = '支付宝'|orders|WHERE
+银行卡支付订单|SELECT * FROM orders WHERE payment_method = '银行卡'|orders|WHERE
+库存大于100的商品|SELECT p.product_name, i.stock_quantity FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.stock_quantity > 100|products,inventory|JOIN,WHERE
+库存小于50的商品|SELECT p.product_name, i.stock_quantity FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.stock_quantity < 50|products,inventory|JOIN,WHERE
+有退货的订单|SELECT DISTINCT o.order_no FROM orders o JOIN returns r ON o.id = r.order_id|orders,returns|JOIN,DISTINCT
+退货原因统计|SELECT reason, COUNT(*) FROM returns GROUP BY reason|returns|COUNT,GROUP BY
+
+# ===== L2: 聚合与分组 (40个) =====
+每个用户的订单数量|SELECT user_id, COUNT(*) FROM orders GROUP BY user_id|orders|COUNT,GROUP BY
+每个状态订单数量|SELECT status, COUNT(*) FROM orders GROUP BY status|orders|COUNT,GROUP BY
+每个商品分类的商品数量|SELECT category_id, COUNT(*) FROM products GROUP BY category_id|products|COUNT,GROUP BY
+深圳市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '深圳市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+广州市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '广州市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+杭州市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '杭州市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+南京市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '南京市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+成都市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '成都市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+武汉市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '武汉市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+青岛市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '青岛市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+厦门市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '厦门市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+郑州市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '郑州市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+长沙市注册用户数量|SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '长沙市' AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+各省份注册用户数|SELECT ua.province, COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.is_default = 1 GROUP BY ua.province|user_addresses|COUNT,GROUP BY,DISTINCT,WHERE
+手机数码类商品均价|SELECT AVG(price) FROM products WHERE category_id = 1|products|AVG,WHERE
+电脑办公类商品均价|SELECT AVG(price) FROM products WHERE category_id = 2|products|AVG,WHERE
+家用电器类商品均价|SELECT AVG(price) FROM products WHERE category_id = 3|products|AVG,WHERE
+服装服饰类商品均价|SELECT AVG(price) FROM products WHERE category_id = 4|products|AVG,WHERE
+订单金额大于5000的数量|SELECT COUNT(*) FROM orders WHERE total_amount > 5000|orders|COUNT,WHERE
+订单金额大于10000的数量|SELECT COUNT(*) FROM orders WHERE total_amount > 10000|orders|COUNT,WHERE
+订单金额在1000到5000之间的数量|SELECT COUNT(*) FROM orders WHERE total_amount BETWEEN 1000 AND 5000|orders|COUNT,WHERE,BETWEEN
+价格高于5000的商品数量|SELECT COUNT(*) FROM products WHERE price > 5000|products|COUNT,WHERE
+价格低于1000的商品数量|SELECT COUNT(*) FROM products WHERE price < 1000|products|COUNT,WHERE
+每个分类的平均价格|SELECT category_id, AVG(price) FROM products GROUP BY category_id|products|AVG,GROUP BY
+每个分类的最高价格|SELECT category_id, MAX(price) FROM products GROUP BY category_id|products|MAX,GROUP BY
+每个分类的最低价格|SELECT category_id, MIN(price) FROM products GROUP BY category_id|products|MIN,GROUP BY
+查询用户ID为1的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 1|orders|SUM,WHERE
+查询用户ID为2的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 2|orders|SUM,WHERE
+查询用户ID为3的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 3|orders|SUM,WHERE
+查询用户ID为4的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 4|orders|SUM,WHERE
+查询用户ID为5的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 5|orders|SUM,WHERE
+订单金额超过10000的订单号|SELECT order_no FROM orders WHERE total_amount > 10000|orders|WHERE
+订单金额最高的前5个订单|SELECT order_no, total_amount FROM orders ORDER BY total_amount DESC LIMIT 5|orders|ORDER BY,LIMIT
+订单金额最低的前5个订单|SELECT order_no, total_amount FROM orders ORDER BY total_amount ASC LIMIT 5|orders|ORDER BY,LIMIT
+商品价格高于5000的商品名称|SELECT product_name FROM products WHERE price > 5000|products|WHERE
+价格最高的3个商品|SELECT product_name, price FROM products ORDER BY price DESC LIMIT 3|products|ORDER BY,LIMIT
+价格最低的3个商品|SELECT product_name, price FROM products ORDER BY price ASC LIMIT 3|products|ORDER BY,LIMIT
+不同状态的订单平均金额|SELECT status, AVG(total_amount) FROM orders GROUP BY status|orders|AVG,GROUP BY
+不同分类商品数量统计|SELECT c.category_name, COUNT(p.id) FROM product_categories c LEFT JOIN products p ON c.id = p.category_id GROUP BY c.category_name|product_categories,products|COUNT,GROUP BY,LEFT JOIN
+发往广东省的订单总数|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '广东省'|orders,users|COUNT,JOIN,WHERE
+各城市用户数量|SELECT city, COUNT(*) FROM users GROUP BY city|users|COUNT,GROUP BY
+各省份用户数量|SELECT province, COUNT(*) FROM users GROUP BY province|users|COUNT,GROUP BY
+男性用户数量|SELECT COUNT(*) FROM users WHERE gender = '男'|users|COUNT,WHERE
+女性用户数量|SELECT COUNT(*) FROM users WHERE gender = '女'|users|COUNT,WHERE
+北京市用户数量|SELECT COUNT(*) FROM users WHERE city = '北京市'|users|COUNT,WHERE
+深圳市用户数量|SELECT COUNT(*) FROM users WHERE city = '深圳市'|users|COUNT,WHERE
+上海市用户数量|SELECT COUNT(*) FROM users WHERE city = '上海市'|users|COUNT,WHERE
+广东省用户数量|SELECT COUNT(*) FROM users WHERE province = '广东省'|users|COUNT,WHERE
+浙江省用户数量|SELECT COUNT(*) FROM users WHERE province = '浙江省'|users|COUNT,WHERE
+江苏省用户数量|SELECT COUNT(*) FROM users WHERE province = '江苏省'|users|COUNT,WHERE
+四川省用户数量|SELECT COUNT(*) FROM users WHERE province = '四川省'|users|COUNT,WHERE
+湖北省用户数量|SELECT COUNT(*) FROM users WHERE province = '湖北省'|users|COUNT,WHERE
+山东省用户数量|SELECT COUNT(*) FROM users WHERE province = '山东省'|users|COUNT,WHERE
+福建省用户数量|SELECT COUNT(*) FROM users WHERE province = '福建省'|users|COUNT,WHERE
+河南省用户数量|SELECT COUNT(*) FROM users WHERE province = '河南省'|users|COUNT,WHERE
+湖南省用户数量|SELECT COUNT(*) FROM users WHERE province = '湖南省'|users|COUNT,WHERE
+手机数码类商品总数|SELECT COUNT(*) FROM products WHERE category_id = 1|products|COUNT,WHERE
+电脑办公类商品总数|SELECT COUNT(*) FROM products WHERE category_id = 2|products|COUNT,WHERE
+家用电器类商品总数|SELECT COUNT(*) FROM products WHERE category_id = 3|products|COUNT,WHERE
+服装服饰类商品总数|SELECT COUNT(*) FROM products WHERE category_id = 4|products|COUNT,WHERE
+上架商品数量|SELECT COUNT(*) FROM products WHERE status = '上架'|products|COUNT,WHERE
+价格高于10000的商品数|SELECT COUNT(*) FROM products WHERE price > 10000|products|COUNT,WHERE
+价格在5000-10000之间的商品数|SELECT COUNT(*) FROM products WHERE price BETWEEN 5000 AND 10000|products|COUNT,WHERE,BETWEEN
+价格低于1000的商品数|SELECT COUNT(*) FROM products WHERE price < 1000|products|COUNT,WHERE
+库存总量|SELECT SUM(stock_quantity) FROM inventory|inventory|SUM
+可用库存总量|SELECT SUM(available_quantity) FROM inventory|inventory|SUM
+锁定库存总量|SELECT SUM(locked_quantity) FROM inventory|inventory|SUM
+退货总数|SELECT COUNT(*) FROM returns|returns|COUNT
+已完成的退货数|SELECT COUNT(*) FROM returns WHERE status = '已完成'|returns|COUNT,WHERE
+审核中的退货数|SELECT COUNT(*) FROM returns WHERE status = '审核中'|returns|COUNT,WHERE
+总退款金额|SELECT SUM(refund_amount) FROM returns|returns|SUM
+
+# ===== L3: 双表关联 (40个) =====
+张三的订单及金额|SELECT o.order_no, o.total_amount FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '张三'|orders,users|JOIN,WHERE
+李四的订单列表|SELECT o.order_no, o.status FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '李四'|orders,users|JOIN,WHERE
+王五的订单详情|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '王五'|orders,users|JOIN,WHERE
+手机数码类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '手机数码'|products,product_categories|JOIN,WHERE
+电脑办公类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '电脑办公'|products,product_categories|JOIN,WHERE
+家用电器类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '家用电器'|products,product_categories|JOIN,WHERE
+服装服饰类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '服装服饰'|products,product_categories|JOIN,WHERE
+食品饮料类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '食品饮料'|products,product_categories|JOIN,WHERE
+图书音像类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '图书音像'|products,product_categories|JOIN,WHERE
+运动户外类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '运动户外'|products,product_categories|JOIN,WHERE
+美妆个护类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '美妆个护'|products,product_categories|JOIN,WHERE
+家居家装类商品列表|SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '家居家装'|products,product_categories|JOIN,WHERE
+订单ORD20260401090001的用户信息|SELECT u.real_name, u.phone FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401090001'|orders,users|JOIN,WHERE
+订单ORD20260401093002的用户|SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401093002'|orders,users|JOIN,WHERE
+订单ORD20260401100003的用户|SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401100003'|orders,users|JOIN,WHERE
+订单ORD20260401103004的用户|SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401103004'|orders,users|JOIN,WHERE
+订单ORD20260401110005的用户|SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401110005'|orders,users|JOIN,WHERE
+张三的默认收货地址|SELECT ua.province, ua.city, ua.detail_address FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '张三' AND ua.is_default = 1|users,user_addresses|JOIN,WHERE
+李四的所有收货地址|SELECT ua.province, ua.city, ua.detail_address FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '李四'|users,user_addresses|JOIN,WHERE
+王五的收货地址簿|SELECT ua.* FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '王五'|users,user_addresses|JOIN,WHERE
+赵六的默认地址|SELECT ua.province, ua.city FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '赵六' AND ua.is_default = 1|users,user_addresses|JOIN,WHERE
+孙七的地址列表|SELECT ua.province, ua.city, ua.detail_address FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '孙七'|users,user_addresses|JOIN,WHERE
+MacBook Pro 14所属分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'MacBook Pro 14'|products,product_categories|JOIN,WHERE
+ThinkPad X1 Carbon分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'ThinkPad X1 Carbon'|products,product_categories|JOIN,WHERE
+戴尔XPS 15分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '戴尔XPS 15'|products,product_categories|JOIN,WHERE
+华为Mate 60 Pro所属分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '华为Mate 60 Pro'|products,product_categories|JOIN,WHERE
+小米14的分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '小米14'|products,product_categories|JOIN,WHERE
+iPhone 15 Pro所属分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'iPhone 15 Pro'|products,product_categories|JOIN,WHERE
+OPPO Find X7分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'OPPO Find X7'|products,product_categories|JOIN,WHERE
+vivo X100 Pro分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'vivo X100 Pro'|products,product_categories|JOIN,WHERE
+三星Galaxy S24分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '三星Galaxy S24'|products,product_categories|JOIN,WHERE
+荣耀Magic6分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '荣耀Magic6'|products,product_categories|JOIN,WHERE
+MacBook Pro 14分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'MacBook Pro 14'|products,product_categories|JOIN,WHERE
+联想ThinkPad X1分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '联想ThinkPad X1'|products,product_categories|JOIN,WHERE
+华硕ROG游戏本分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '华硕ROG游戏本'|products,product_categories|JOIN,WHERE
+惠普战66分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '惠普战66'|products,product_categories|JOIN,WHERE
+戴尔XPS 13分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '戴尔XPS 13'|products,product_categories|JOIN,WHERE
+微软Surface Laptop分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '微软Surface Laptop'|products,product_categories|JOIN,WHERE
+苹果iPad Air分类|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '苹果iPad Air'|products,product_categories|JOIN,WHERE
+北京市用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市'|orders,users|JOIN,WHERE
+深圳市用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '深圳市'|orders,users|JOIN,WHERE
+上海市用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '上海市'|orders,users|JOIN,WHERE
+广东省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '广东省'|orders,users|JOIN,WHERE
+浙江省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '浙江省'|orders,users|JOIN,WHERE
+江苏省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '江苏省'|orders,users|JOIN,WHERE
+四川省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '四川省'|orders,users|JOIN,WHERE
+湖北省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖北省'|orders,users|JOIN,WHERE
+山东省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '山东省'|orders,users|JOIN,WHERE
+福建省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '福建省'|orders,users|JOIN,WHERE
+河南省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '河南省'|orders,users|JOIN,WHERE
+湖南省用户下的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖南省'|orders,users|JOIN,WHERE
+周八的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '周八'|orders,users|JOIN,WHERE
+吴九的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '吴九'|orders,users|JOIN,WHERE
+郑十的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '郑十'|orders,users|JOIN,WHERE
+陈一的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '陈一'|orders,users|JOIN,WHERE
+林二的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '林二'|orders,users|JOIN,WHERE
+黄三的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '黄三'|orders,users|JOIN,WHERE
+何四的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '何四'|orders,users|JOIN,WHERE
+高五的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '高五'|orders,users|JOIN,WHERE
+罗六的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '罗六'|orders,users|JOIN,WHERE
+梁七的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '梁七'|orders,users|JOIN,WHERE
+宋八的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '宋八'|orders,users|JOIN,WHERE
+唐九的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '唐九'|orders,users|JOIN,WHERE
+冯十的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '冯十'|orders,users|JOIN,WHERE
+曹一的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '曹一'|orders,users|JOIN,WHERE
+薛二的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '薛二'|orders,users|JOIN,WHERE
+
+# ===== L4: 多表复杂查询 (40个) =====
+张三购买的商品列表|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '张三'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+李四购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '李四'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+王五购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '王五'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+手机数码类商品销售总额|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '手机数码'|order_items,products,product_categories|SUM,JOIN,WHERE
+电脑办公类商品销售总额|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '电脑办公'|order_items,products,product_categories|SUM,JOIN,WHERE
+家用电器类商品销售总额|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '家用电器'|order_items,products,product_categories|SUM,JOIN,WHERE
+服装服饰类商品销售总额|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '服装服饰'|order_items,products,product_categories|SUM,JOIN,WHERE
+张三买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '张三'|orders,users|COUNT,JOIN,WHERE
+李四买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '李四'|orders,users|COUNT,JOIN,WHERE
+王五买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '王五'|orders,users|COUNT,JOIN,WHERE
+赵六买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '赵六'|orders,users|COUNT,JOIN,WHERE
+孙七买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '孙七'|orders,users|COUNT,JOIN,WHERE
+北京市用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市'|orders,users|COUNT,JOIN,WHERE
+深圳市用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '深圳市'|orders,users|COUNT,JOIN,WHERE
+上海市用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '上海市'|orders,users|COUNT,JOIN,WHERE
+广东省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '广东省'|orders,users|COUNT,JOIN,WHERE
+浙江省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '浙江省'|orders,users|COUNT,JOIN,WHERE
+江苏省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '江苏省'|orders,users|COUNT,JOIN,WHERE
+四川省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '四川省'|orders,users|COUNT,JOIN,WHERE
+湖北省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖北省'|orders,users|COUNT,JOIN,WHERE
+山东省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '山东省'|orders,users|COUNT,JOIN,WHERE
+福建省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '福建省'|orders,users|COUNT,JOIN,WHERE
+河南省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '河南省'|orders,users|COUNT,JOIN,WHERE
+湖南省用户订单数量|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖南省'|orders,users|COUNT,JOIN,WHERE
+北京市用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市'|orders,users|SUM,JOIN,WHERE
+深圳市用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '深圳市'|orders,users|SUM,JOIN,WHERE
+上海市用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '上海市'|orders,users|SUM,JOIN,WHERE
+广东省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '广东省'|orders,users|SUM,JOIN,WHERE
+浙江省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '浙江省'|orders,users|SUM,JOIN,WHERE
+江苏省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '江苏省'|orders,users|SUM,JOIN,WHERE
+四川省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '四川省'|orders,users|SUM,JOIN,WHERE
+湖北省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖北省'|orders,users|SUM,JOIN,WHERE
+山东省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '山东省'|orders,users|SUM,JOIN,WHERE
+福建省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '福建省'|orders,users|SUM,JOIN,WHERE
+河南省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '河南省'|orders,users|SUM,JOIN,WHERE
+湖南省用户购买的订单总额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖南省'|orders,users|SUM,JOIN,WHERE
+周八购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '周八'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+吴九购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '吴九'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+郑十购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '郑十'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+陈一购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '陈一'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+林二购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '林二'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+黄三购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '黄三'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+何四购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '何四'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+高五购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '高五'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+罗六购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '罗六'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+梁七购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '梁七'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+宋八购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '宋八'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+唐九购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '唐九'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+冯十购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '冯十'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+曹一购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '曹一'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+薛二购买的商品|SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '薛二'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+
+# ===== L5: 高级函数与复杂场景 (30个) =====
+订单金额排名前10的用户|SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY total DESC LIMIT 10|users,orders|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+消费最少的后5个用户|SELECT u.real_name, SUM(o.total_amount) as total_spent FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY total_spent ASC LIMIT 5|users,orders|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+不同城市的平均订单金额|SELECT u.city, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city|users,orders|AVG,GROUP BY,JOIN
+不同省份的平均订单金额|SELECT u.province, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province|users,orders|AVG,GROUP BY,JOIN
+每个分类销售额|SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name|product_categories,products,order_items|SUM,GROUP BY,JOIN
+每个分类销售数量|SELECT c.category_name, SUM(oi.quantity) as qty FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name|product_categories,products,order_items|SUM,GROUP BY,JOIN
+销售额最高的分类|SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY revenue DESC LIMIT 1|product_categories,products,order_items|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+销售额最低的分类|SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY revenue ASC LIMIT 1|product_categories,products,order_items|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+不同状态订单总额|SELECT status, SUM(total_amount) FROM orders GROUP BY status|orders|SUM,GROUP BY
+不同状态订单平均金额|SELECT status, AVG(total_amount) FROM orders GROUP BY status|orders|AVG,GROUP BY
+不同状态订单最大金额|SELECT status, MAX(total_amount) FROM orders GROUP BY status|orders|MAX,GROUP BY
+不同状态订单最小金额|SELECT status, MIN(total_amount) FROM orders GROUP BY status|orders|MIN,GROUP BY
+订单数大于2的用户及其订单总额|SELECT u.real_name, COUNT(o.id) as cnt, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING cnt > 2|users,orders|COUNT,SUM,GROUP BY,HAVING,JOIN
+订单数大于5的用户及其平均订单金额|SELECT u.real_name, COUNT(o.id) as cnt, AVG(o.total_amount) as avg_amt FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING cnt > 5|users,orders|COUNT,AVG,GROUP BY,HAVING,JOIN
+消费超过10000的用户|SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING total > 10000|users,orders|SUM,GROUP BY,HAVING,JOIN
+消费超过20000的用户|SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING total > 20000|users,orders|SUM,GROUP BY,HAVING,JOIN
+消费超过50000的用户|SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING total > 50000|users,orders|SUM,GROUP BY,HAVING,JOIN
+每个用户的订单数和总金额|SELECT u.real_name, COUNT(o.id) as order_count, SUM(o.total_amount) as total_amount FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name|users,orders|COUNT,SUM,GROUP BY,LEFT JOIN
+各城市平均订单金额|SELECT u.city, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city|users,orders|AVG,GROUP BY,JOIN
+各省份平均订单金额|SELECT u.province, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province|users,orders|AVG,GROUP BY,JOIN
+北京市平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市'|orders,users|AVG,JOIN,WHERE
+深圳市平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '深圳市'|orders,users|AVG,JOIN,WHERE
+上海市平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '上海市'|orders,users|AVG,JOIN,WHERE
+广东省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '广东省'|orders,users|AVG,JOIN,WHERE
+浙江省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '浙江省'|orders,users|AVG,JOIN,WHERE
+江苏省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '江苏省'|orders,users|AVG,JOIN,WHERE
+四川省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '四川省'|orders,users|AVG,JOIN,WHERE
+湖北省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖北省'|orders,users|AVG,JOIN,WHERE
+山东省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '山东省'|orders,users|AVG,JOIN,WHERE
+福建省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '福建省'|orders,users|AVG,JOIN,WHERE
+河南省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '河南省'|orders,users|AVG,JOIN,WHERE
+湖南省平均订单金额|SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '湖南省'|orders,users|AVG,JOIN,WHERE
+周八的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '周八'|orders,users|SUM,JOIN,WHERE
+吴九的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '吴九'|orders,users|SUM,JOIN,WHERE
+郑十的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '郑十'|orders,users|SUM,JOIN,WHERE
+陈一的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '陈一'|orders,users|SUM,JOIN,WHERE
+林二的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '林二'|orders,users|SUM,JOIN,WHERE
+黄三的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '黄三'|orders,users|SUM,JOIN,WHERE
+何四的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '何四'|orders,users|SUM,JOIN,WHERE
+高五的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '高五'|orders,users|SUM,JOIN,WHERE
+罗六的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '罗六'|orders,users|SUM,JOIN,WHERE
+梁七的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '梁七'|orders,users|SUM,JOIN,WHERE
+宋八的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '宋八'|orders,users|SUM,JOIN,WHERE
+唐九的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '唐九'|orders,users|SUM,JOIN,WHERE
+冯十的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '冯十'|orders,users|SUM,JOIN,WHERE
+曹一的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '曹一'|orders,users|SUM,JOIN,WHERE
+薛二的订单总金额|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '薛二'|orders,users|SUM,JOIN,WHERE
+周八买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '周八'|orders,users|COUNT,JOIN,WHERE
+吴九买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '吴九'|orders,users|COUNT,JOIN,WHERE
+郑十买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '郑十'|orders,users|COUNT,JOIN,WHERE
+陈一买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '陈一'|orders,users|COUNT,JOIN,WHERE
+林二买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '林二'|orders,users|COUNT,JOIN,WHERE
+黄三买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '黄三'|orders,users|COUNT,JOIN,WHERE
+何四买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '何四'|orders,users|COUNT,JOIN,WHERE
+高五买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '高五'|orders,users|COUNT,JOIN,WHERE
+罗六买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '罗六'|orders,users|COUNT,JOIN,WHERE
+梁七买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '梁七'|orders,users|COUNT,JOIN,WHERE
+宋八买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '宋八'|orders,users|COUNT,JOIN,WHERE
+唐九买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '唐九'|orders,users|COUNT,JOIN,WHERE
+冯十买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '冯十'|orders,users|COUNT,JOIN,WHERE
+曹一买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '曹一'|orders,users|COUNT,JOIN,WHERE
+薛二买过几次订单|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '薛二'|orders,users|COUNT,JOIN,WHERE

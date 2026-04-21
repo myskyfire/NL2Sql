@@ -1,4 +1,4 @@
-package com.nl2sql.core.agent.prompt;
+ package com.nl2sql.core.agent.prompt;
 
 import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
 import lombok.extern.slf4j.Slf4j;

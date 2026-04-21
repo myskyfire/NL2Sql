@@ -30,7 +30,7 @@ public class IndustryConceptDictionary {
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     
     @Autowired(required = false)
-    private IndustryConceptExtension conceptExtension;
+    private List<IndustryConceptExtension> conceptExtensions;
     
     public IndustryConceptDictionary() {
         initializeDefaultIndustries();
@@ -120,14 +120,16 @@ public class IndustryConceptDictionary {
     private IndustryConcepts loadConceptsFromDatabase(String industryCode) {
         try {
             // 查询行业基本信息
-            Map<String, Object> industryInfo = jdbcTemplate.queryForMap(
+            List<Map<String, Object>> industryList = jdbcTemplate.queryForList(
                 "SELECT industry_code, industry_name FROM industry_template WHERE industry_code = ? AND is_active = 1",
                 industryCode
             );
             
-            if (industryInfo == null) {
+            if (industryList == null || industryList.isEmpty()) {
                 return null;
             }
+            
+            Map<String, Object> industryInfo = industryList.get(0);
             
             IndustryConcepts concepts = new IndustryConcepts();
             concepts.setIndustryCode((String) industryInfo.get("industry_code"));
@@ -350,6 +352,36 @@ public class IndustryConceptDictionary {
         concepts.getQueryPatterns().add("查询{entity}的{metric}趋势");
         concepts.getQueryPatterns().add("对比不同{dimension}的{metric}");
         
+        // ✅ 地域语义规则（电商行业）
+        LocationSemantics locationSem = new LocationSemantics();
+        
+        // 用户维度：users表
+        LocationRule userReg = new LocationRule();
+        userReg.setKeywords(Arrays.asList("用户.*订单", ".*用户.*数量", ".*用户.*总额", "用户下的"));
+        userReg.setTargetTable("users");
+        userReg.setTargetFields(Arrays.asList("province", "city"));
+        userReg.setSqlTemplate("SELECT ... FROM orders o JOIN users u ON o.user_id = u.id WHERE u.{field} = '{value}'");
+        locationSem.setUserRegistration(userReg);
+        
+        // 配送维度：orders.shipping_address
+        LocationRule delivery = new LocationRule();
+        delivery.setKeywords(Arrays.asList("发往", "配送到", "收货地址", "订单.*省", "订单.*市"));
+        delivery.setTargetTable("orders");
+        delivery.setTargetFields(Arrays.asList("shipping_address"));
+        delivery.setSqlTemplate("SELECT ... FROM orders WHERE shipping_address LIKE '%{value}%'");
+        locationSem.setDeliveryAddress(delivery);
+        
+        // 地址簿维度：user_addresses
+        LocationRule addrBook = new LocationRule();
+        addrBook.setKeywords(Arrays.asList("默认地址", "收货地址簿", "所有地址", "地址列表"));
+        addrBook.setTargetTable("user_addresses");
+        addrBook.setTargetFields(Arrays.asList("province", "city", "detail_address"));
+        addrBook.setDefaultFilter("is_default = ${default_flag}");
+        addrBook.setSqlTemplate("SELECT ... FROM user_addresses ua WHERE ua.is_default = {default}");
+        locationSem.setAddressBook(addrBook);
+        
+        concepts.setLocationSemantics(locationSem);
+        
         return concepts;
     }
     
@@ -527,6 +559,42 @@ public class IndustryConceptDictionary {
     // ==================== 内部类 ====================
     
     /**
+     * ✅ 地域语义配置（新增）
+     */
+    @Data
+    public static class LocationSemantics {
+        // 用户维度：users表
+        private LocationRule userRegistration = new LocationRule();
+        
+        // 配送维度：orders.shipping_address
+        private LocationRule deliveryAddress = new LocationRule();
+        
+        // 地址簿维度：user_addresses表
+        private LocationRule addressBook = new LocationRule();
+    }
+    
+    /**
+     * ✅ 地域规则定义
+     */
+    @Data
+    public static class LocationRule {
+        // 关键词列表
+        private List<String> keywords = new ArrayList<>();
+        
+        // SQL模板（支持占位符 {field}, {value}, {default}）
+        private String sqlTemplate = "";
+        
+        // 目标表名
+        private String targetTable = "";
+        
+        // 目标字段
+        private List<String> targetFields = new ArrayList<>();
+        
+        // 默认过滤条件（如 is_default=1）
+        private String defaultFilter = "";
+    }
+    
+    /**
      * 行业概念定义
      */
     @Data
@@ -548,6 +616,9 @@ public class IndustryConceptDictionary {
         
         // 典型查询模式
         private List<String> queryPatterns = new ArrayList<>();
+        
+        // ✅ 地域语义规则（新增）
+        private LocationSemantics locationSemantics = new LocationSemantics();
         
         // 通用字段（用于fallback）
         private List<String> metricTypes = new ArrayList<>();
@@ -571,39 +642,59 @@ public class IndustryConceptDictionary {
      * 从用户问题中提取术语（调用扩展点）
      */
     public List<Map<String, Object>> extractTerms(String question, Long datasourceId) {
-        if (conceptExtension != null) {
+        if (conceptExtensions == null || conceptExtensions.isEmpty()) {
+            return List.of();
+        }
+        
+        List<Map<String, Object>> allTerms = new ArrayList<>();
+        for (IndustryConceptExtension extension : conceptExtensions) {
             try {
-                return conceptExtension.extractTerms(question, datasourceId);
+                List<Map<String, Object>> terms = extension.extractTerms(question, datasourceId);
+                if (terms != null && !terms.isEmpty()) {
+                    allTerms.addAll(terms);
+                }
             } catch (Exception e) {
-                log.warn("[IndustryConceptDictionary] 术语提取扩展失败: {}", e.getMessage());
+                log.warn("[IndustryConceptDictionary] 术语提取扩展失败: {}", extension.getClass().getSimpleName(), e);
             }
         }
-        return List.of();
+        return allTerms;
     }
     
     /**
      * 验证语义一致性（调用扩展点）
      */
     public boolean validateSemanticConsistency(String question, String sql, Long datasourceId) {
-        if (conceptExtension != null) {
+        if (conceptExtensions == null || conceptExtensions.isEmpty()) {
+            return true; // 默认通过
+        }
+        
+        // 所有扩展点都通过才返回true
+        for (IndustryConceptExtension extension : conceptExtensions) {
             try {
-                return conceptExtension.validateSemanticConsistency(question, sql, datasourceId);
+                if (!extension.validateSemanticConsistency(question, sql, datasourceId)) {
+                    log.debug("[IndustryConceptDictionary] 语义验证未通过: {}", extension.getClass().getSimpleName());
+                    return false;
+                }
             } catch (Exception e) {
-                log.warn("[IndustryConceptDictionary] 语义验证扩展失败: {}", e.getMessage());
+                log.warn("[IndustryConceptDictionary] 语义验证扩展失败: {}", extension.getClass().getSimpleName(), e);
             }
         }
-        return true; // 默认通过
+        return true;
     }
     
     /**
      * 学习成功查询（调用扩展点）
      */
     public void learnFromSuccess(String question, String sql, Double rating, Long datasourceId) {
-        if (conceptExtension != null) {
+        if (conceptExtensions == null || conceptExtensions.isEmpty()) {
+            return;
+        }
+        
+        for (IndustryConceptExtension extension : conceptExtensions) {
             try {
-                conceptExtension.learnFromSuccess(question, sql, rating, datasourceId);
+                extension.learnFromSuccess(question, sql, rating, datasourceId);
             } catch (Exception e) {
-                log.warn("[IndustryConceptDictionary] 学习扩展失败: {}", e.getMessage());
+                log.warn("[IndustryConceptDictionary] 学习扩展失败: {}", extension.getClass().getSimpleName(), e);
             }
         }
     }
@@ -612,13 +703,21 @@ public class IndustryConceptDictionary {
      * 推荐同义词（调用扩展点）
      */
     public List<String> suggestSynonyms(String conceptKey, String industryCode) {
-        if (conceptExtension != null) {
+        if (conceptExtensions == null || conceptExtensions.isEmpty()) {
+            return List.of();
+        }
+        
+        List<String> allSynonyms = new ArrayList<>();
+        for (IndustryConceptExtension extension : conceptExtensions) {
             try {
-                return conceptExtension.suggestSynonyms(conceptKey, industryCode);
+                List<String> synonyms = extension.suggestSynonyms(conceptKey, industryCode);
+                if (synonyms != null && !synonyms.isEmpty()) {
+                    allSynonyms.addAll(synonyms);
+                }
             } catch (Exception e) {
-                log.warn("[IndustryConceptDictionary] 同义词推荐扩展失败: {}", e.getMessage());
+                log.warn("[IndustryConceptDictionary] 同义词推荐扩展失败: {}", extension.getClass().getSimpleName(), e);
             }
         }
-        return List.of();
+        return allSynonyms;
     }
 }

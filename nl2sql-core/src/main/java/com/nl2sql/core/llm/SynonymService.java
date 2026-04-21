@@ -27,7 +27,7 @@ public class SynonymService {
     private IndustryConceptDictionary industryConceptDictionary;
     
     @Autowired(required = false)
-    private IndustryConceptExtension conceptExtension;
+    private List<IndustryConceptExtension> conceptExtensions;
     
     @PostConstruct
     public void init() {
@@ -186,7 +186,7 @@ public class SynonymService {
         }
         
         // ✅ 优化3：调用行业扩展点获取额外同义词
-        if (conceptExtension != null && industryConceptDictionary != null && datasourceId != null) {
+        if (conceptExtensions != null && !conceptExtensions.isEmpty() && industryConceptDictionary != null && datasourceId != null) {
             try {
                 // 获取当前数据源的行业代码
                 String industryCode = getIndustryCodeByDatasource(datasourceId);
@@ -195,17 +195,28 @@ public class SynonymService {
                     // 遍历所有概念，尝试匹配用户问题中的术语
                     for (Map.Entry<String, List<String>> entry : synonymMap.entrySet()) {
                         String conceptKey = entry.getKey();
-                        List<String> extraSynonyms = conceptExtension.suggestSynonyms(conceptKey, industryCode);
                         
-                        if (extraSynonyms != null && !extraSynonyms.isEmpty()) {
-                            for (String extraSynonym : extraSynonyms) {
-                                if (expanded.toLowerCase().contains(extraSynonym.toLowerCase())) {
-                                    expanded = expanded.replaceAll(
-                                        "(?i)" + extraSynonym,
-                                        conceptKey
-                                    );
-                                    log.debug("[SynonymService] 扩展点同义词: {} -> {}", extraSynonym, conceptKey);
+                        // 调用所有扩展点收集同义词
+                        Set<String> extraSynonyms = new HashSet<>();
+                        for (IndustryConceptExtension extension : conceptExtensions) {
+                            try {
+                                List<String> synonyms = extension.suggestSynonyms(conceptKey, industryCode);
+                                if (synonyms != null && !synonyms.isEmpty()) {
+                                    extraSynonyms.addAll(synonyms);
                                 }
+                            } catch (Exception e) {
+                                log.warn("[SynonymService] 扩展点{}调用失败", extension.getClass().getSimpleName(), e);
+                            }
+                        }
+                        
+                        // 应用收集到的同义词
+                        for (String extraSynonym : extraSynonyms) {
+                            if (expanded.toLowerCase().contains(extraSynonym.toLowerCase())) {
+                                expanded = expanded.replaceAll(
+                                    "(?i)" + extraSynonym,
+                                    conceptKey
+                                );
+                                log.debug("[SynonymService] 扩展点同义词: {} -> {}", extraSynonym, conceptKey);
                             }
                         }
                     }
@@ -251,7 +262,15 @@ public class SynonymService {
                 return industryCode;
             }
             
-            // fallback：从 business_category 推断
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            // 没有映射记录，继续尝试从 business_category 推断
+            log.debug("[SynonymService] 数据源 {} 没有行业映射，尝试从业务分类推断", datasourceId);
+        } catch (Exception e) {
+            log.warn("[SynonymService] 查询行业映射失败: {}", e.getMessage());
+        }
+        
+        // fallback：从 business_category 推断
+        try {
             String businessCategory = jdbcTemplate.queryForObject(
                 "SELECT business_category FROM datasource_config WHERE id = ?",
                 String.class, datasourceId
@@ -262,8 +281,11 @@ public class SynonymService {
                 return matchIndustryByKeyword(businessCategory);
             }
             
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            // 数据源不存在或没有业务分类
+            log.debug("[SynonymService] 数据源 {} 没有业务分类", datasourceId);
         } catch (Exception e) {
-            log.debug("[SynonymService] 获取行业代码失败", e);
+            log.warn("[SynonymService] 查询业务分类失败: {}", e.getMessage());
         }
         
         return null;

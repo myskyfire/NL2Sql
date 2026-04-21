@@ -1,0 +1,17 @@
+# NL2SQL Training - Round 4
+
+**Date**: 2026-04-21 08:51:34
+**Average Score**: 3.80 / 5.0
+
+| # | Question | Score | Expected SQL | Actual SQL | Issues |
+|---|----------|-------|--------------|------------|--------|
+| 1 | 赵六的订单总金额 | 5 | ```SELECT SUM(total_amount) FROM orders WHERE user_id = 4``` | ```SELECT SUM(actual_amount) AS '订单总金额' FROM orders WHERE user_id IN ( SELECT id FROM users WHERE receiver_name = '赵六' ) GROUP BY user_id``` |  |
+| 2 | 销售额最高的分类 | 1 | ```SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY revenue DESC LIMIT 1``` | ```Invalid Response``` | No SQL generated |
+| 3 | 山东省用户购买的订单总额 | 1 | ```SELECT SUM(o.total_amount) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '山东省'``` | ```SELECT u.province AS '省份', SUM(o.total_amount) AS '订单总额' FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '山东' GROUP BY u.province;``` | Missing tables: user_addresses |
+| 4 | 家用电器类商品列表 | 5 | ```SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '家用电器'``` | ```SELECT pc.category_name AS '分类名称', p.product_name AS '商品名称', p.brand AS '品牌', p.model AS '型号', p.specification AS '规格参数', p.price AS '价格' FROM products p JOIN product_categories pc ON p.category_id = pc.id WHERE pc.level = 3 AND pc.description LIKE '%家用电器%' LIMIT 10;``` |  |
+| 5 | 订单ORD20260401090001的用户信息 | 5 | ```SELECT u.real_name, u.phone FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401090001'``` | ```SELECT u.id AS '用户ID', u.username AS '用户名', u.real_name AS '真实姓名', u.gender AS '性别', u.phone AS '手机号', u.email AS '邮箱', u.province AS '省份', u.city AS '城市', u.district AS '区县', u.created_at AS '创建时间', u.updated_at AS '更新时间' FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401090001';``` |  |
+| 6 | 订单金额超过10000的订单号 | 5 | ```SELECT order_no FROM orders WHERE total_amount > 10000``` | ```SELECT order_no AS '订单号' FROM orders WHERE actual_amount > 10000;``` |  |
+| 7 | 戴尔XPS 15的详情 | 5 | ```SELECT * FROM products WHERE product_name = '戴尔XPS 15'``` | ```SELECT p.id AS '商品ID', p.product_name AS '商品名称', p.brand AS '品牌', p.model AS '型号', p.specification AS '规格参数', p.description AS '商品描述', p.detail_info AS '商品详情', p.price AS '商品价格', p.cost_price AS '成本价', p.status AS '商品状态' FROM products p JOIN order_items oi ON p.id = oi.product_id WHERE p.product_name LIKE '%戴尔XPS 15%' LIMIT 10;``` |  |
+| 8 | 订单金额最高的前5个订单 | 5 | ```SELECT order_no, total_amount FROM orders ORDER BY total_amount DESC LIMIT 5``` | ```SELECT o.id AS '订单ID', o.order_no AS '订单号', o.total_amount AS '订单总金额', o.discount_amount AS '优惠金额', o.actual_amount AS '实付金额', o.status AS '订单状态', o.payment_method AS '支付方式', o.payment_time AS '支付时间', o.shipping_address AS '收货地址', o.receiver_name AS '收货人', o.receiver_phone AS '收货人电话', o.created_at AS '下单时间' FROM orders o ORDER BY o.actual_amount DESC LIMIT 5;``` |  |
+| 9 | 每个用户平均订单金额 | 5 | ```SELECT u.real_name, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name``` | ```SELECT u.real_name AS '用户姓名', AVG(o.actual_amount) AS '平均订单金额' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.real_name;``` |  |
+| 10 | 孙七的订单总金额 | 1 | ```SELECT SUM(total_amount) FROM orders WHERE user_id = 5``` | ```Invalid Response``` | No SQL generated |
