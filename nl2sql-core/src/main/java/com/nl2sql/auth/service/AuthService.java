@@ -633,7 +633,7 @@ public class AuthService {
     /**
      * 检查是否为管理员
      */
-    private boolean isAdmin(Long userId) {
+    public boolean isAdmin(Long userId) {
         try {
             String sql = "SELECT role FROM users WHERE id = ?";
             String role = jdbcTemplate.queryForObject(sql, String.class, userId);

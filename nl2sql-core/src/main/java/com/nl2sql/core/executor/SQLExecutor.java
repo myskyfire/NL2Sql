@@ -2,8 +2,10 @@ package com.nl2sql.core.executor;
 
 import com.nl2sql.core.datasource.DataSourceManager;
 import com.nl2sql.core.metadata.ValueMappingService;
+import com.nl2sql.auth.service.AuthService;  // ✅ 新增：权限服务
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceUtils;
@@ -28,6 +30,9 @@ public class SQLExecutor {
     private final com.nl2sql.core.llm.ModelRouterService modelRouter;  // 模型路由服务
     private final com.nl2sql.core.cache.QueryCacheService queryCacheService;  // 查询结果缓存
     private final com.nl2sql.core.cache.MetadataCacheService metadataCacheService;  // 元数据缓存服务
+    
+    @Autowired(required = false)
+    private AuthService authService;  // ✅ 新增：权限服务（可选注入）
     
     @Value("${sql.execution.query-timeout:30}")
     private int queryTimeout;
@@ -108,6 +113,26 @@ public class SQLExecutor {
         }
         
         log.debug("[❌ 缓存未命中] 执行数据库查询...");
+        
+        // ✅ 新增：表级权限校验（非管理员用户）
+        if (authService != null && userId != null) {
+            try {
+                List<String> unauthorizedTables = checkTablePermissions(sql, userId);
+                if (!unauthorizedTables.isEmpty()) {
+                    String errorMsg = String.format(
+                        "您缺少以下表的访问权限：%s\n请联系管理员添加权限后再进行查询。",
+                        String.join("、", unauthorizedTables)
+                    );
+                    result.setError(errorMsg);
+                    result.setExecutionTime(0);
+                    log.warn("[权限拦截] 用户userId={} 缺少表权限: {}", userId, unauthorizedTables);
+                    return result;
+                }
+            } catch (Exception e) {
+                log.error("[权限校验失败] 继续执行SQL: {}", e.getMessage());
+                // 权限校验失败不阻断执行，仅记录日志
+            }
+        }
         
         // 最终安全检查：确保只执行查询操作
         String upperSQL = sql.trim().toUpperCase();
@@ -558,5 +583,113 @@ public class SQLExecutor {
         
         // 其他类型保持不变
         return value;
+    }
+    
+    /**
+     * ✅ 新增：检查SQL中涉及的表是否有访问权限
+     * @param sql SQL语句
+     * @param userId 用户ID
+     * @return 无权限的表名列表（空表示全部有权限）
+     */
+    private List<String> checkTablePermissions(String sql, Long userId) {
+        List<String> unauthorizedTables = new java.util.ArrayList<>();
+        
+        try {
+            // 1. 从SQL中提取表名（简单解析）
+            List<String> tablesInSQL = extractTablesFromSQL(sql);
+            if (tablesInSQL.isEmpty()) {
+                log.debug("[权限校验] 未检测到表名，跳过校验");
+                return unauthorizedTables;
+            }
+            
+            log.debug("[权限校验] SQL中涉及的表: {}", tablesInSQL);
+            
+            // 2. 获取用户有权限的所有表
+            java.util.Set<String> authorizedTables = authService.getUserAuthorizedTables(userId);
+            
+            // 3. 检查每个表是否有权限
+            for (String tableName : tablesInSQL) {
+                String normalizedTable = tableName.toLowerCase().trim();
+                
+                // 管理员或有全局权限的用户跳过检查
+                if (authService.isAdmin(userId)) {
+                    log.debug("[权限校验] 用户userId={}是管理员，跳过表权限检查", userId);
+                    return unauthorizedTables;
+                }
+                
+                if (!authorizedTables.contains(normalizedTable)) {
+                    unauthorizedTables.add(tableName);
+                    log.warn("[权限拦截] 用户userId={} 无权访问表: {}", userId, tableName);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("[权限校验异常] userId={}, error={}", userId, e.getMessage(), e);
+            // 异常时不阻断执行，仅记录日志
+        }
+        
+        return unauthorizedTables;
+    }
+    
+    /**
+     * ✅ 从SQL中提取表名（简单启发式解析）
+     * @param sql SQL语句
+     * @return 表名列表
+     */
+    private List<String> extractTablesFromSQL(String sql) {
+        List<String> tables = new java.util.ArrayList<>();
+        
+        if (sql == null || sql.trim().isEmpty()) {
+            return tables;
+        }
+        
+        String upperSQL = sql.toUpperCase();
+        
+        try {
+            // 匹配 FROM 子句中的表名
+            java.util.regex.Pattern fromPattern = java.util.regex.Pattern.compile(
+                "\\bFROM\\s+([a-zA-Z_][a-zA-Z0-9_]*)", 
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            java.util.regex.Matcher fromMatcher = fromPattern.matcher(sql);
+            while (fromMatcher.find()) {
+                String tableName = fromMatcher.group(1);
+                if (!isSQLKeyword(tableName)) {
+                    tables.add(tableName);
+                }
+            }
+            
+            // 匹配 JOIN 子句中的表名
+            java.util.regex.Pattern joinPattern = java.util.regex.Pattern.compile(
+                "\\bJOIN\\s+([a-zA-Z_][a-zA-Z0-9_]*)", 
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            java.util.regex.Matcher joinMatcher = joinPattern.matcher(sql);
+            while (joinMatcher.find()) {
+                String tableName = joinMatcher.group(1);
+                if (!isSQLKeyword(tableName)) {
+                    tables.add(tableName);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.warn("[提取表名失败] {}", e.getMessage());
+        }
+        
+        // 去重
+        return tables.stream().distinct().collect(java.util.stream.Collectors.toList());
+    }
+    
+    /**
+     * 判断是否为SQL关键字
+     */
+    private boolean isSQLKeyword(String word) {
+        String upper = word.toUpperCase();
+        return upper.equals("SELECT") || upper.equals("WHERE") || upper.equals("AND") ||
+               upper.equals("OR") || upper.equals("NOT") || upper.equals("IN") ||
+               upper.equals("EXISTS") || upper.equals("BETWEEN") || upper.equals("LIKE") ||
+               upper.equals("ORDER") || upper.equals("GROUP") || upper.equals("BY") ||
+               upper.equals("HAVING") || upper.equals("LIMIT") || upper.equals("OFFSET") ||
+               upper.equals("AS") || upper.equals("ON") || upper.equals("USING");
     }
 }
