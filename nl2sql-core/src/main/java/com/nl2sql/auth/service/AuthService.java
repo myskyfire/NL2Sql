@@ -1,5 +1,9 @@
 package com.nl2sql.auth.service;
 
+import com.nl2sql.auth.mapper.OperationLogMapper;
+import com.nl2sql.auth.mapper.TablePermissionMapper;
+import com.nl2sql.auth.mapper.UserMapper;
+import com.nl2sql.auth.mapper.WhitelistMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -20,6 +24,12 @@ public class AuthService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final BCryptPasswordEncoder passwordEncoder;
     
+    // ✅ MyBatis Mappers
+    private final UserMapper userMapper;
+    private final WhitelistMapper whitelistMapper;
+    private final TablePermissionMapper tablePermissionMapper;
+    private final OperationLogMapper operationLogMapper;
+    
     private static final String WHITELIST_CACHE_KEY = "auth:whitelist:user:%d";
     private static final String SESSION_CACHE_KEY = "auth:session:%s";
     private static final String TABLE_PERMS_CACHE_KEY = "auth:tableperms:user:%d";
@@ -27,11 +37,19 @@ public class AuthService {
     
     public AuthService(
         JdbcTemplate jdbcTemplate,
-        RedisTemplate<String, Object> redisTemplate
+        RedisTemplate<String, Object> redisTemplate,
+        UserMapper userMapper,
+        WhitelistMapper whitelistMapper,
+        TablePermissionMapper tablePermissionMapper,
+        OperationLogMapper operationLogMapper
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.redisTemplate = redisTemplate;
         this.passwordEncoder = new BCryptPasswordEncoder();
+        this.userMapper = userMapper;
+        this.whitelistMapper = whitelistMapper;
+        this.tablePermissionMapper = tablePermissionMapper;
+        this.operationLogMapper = operationLogMapper;
     }
     
     @PostConstruct
@@ -44,15 +62,12 @@ public class AuthService {
      */
     public LoginResult login(String username, String password, String ipAddress) {
         try {
-            // 查询用户
-            String sql = "SELECT id, username, password, real_name, role, status FROM users WHERE username = ?";
-            List<Map<String, Object>> users = jdbcTemplate.queryForList(sql, username);
+            // ✅ 使用Mapper查询用户
+            Map<String, Object> user = userMapper.findByUsername(username);
             
-            if (users.isEmpty()) {
+            if (user == null) {
                 return LoginResult.error("用户名或密码错误");
             }
-            
-            Map<String, Object> user = users.get(0);
             
             // 检查是否激活（兼容Boolean和Integer类型）
             Object statusObj = user.get("status");
@@ -76,8 +91,8 @@ public class AuthService {
             Long userId = ((Number) user.get("id")).longValue();
             String role = (String) user.get("role");
             
-            // 更新最后登录时间
-            jdbcTemplate.update("UPDATE users SET last_login_at = NOW() WHERE id = ?", userId);
+            // ✅ 使用Mapper更新最后登录时间
+            userMapper.updateLastLoginAt(userId);
             
             // 记录登录日志
             logOperation(userId, null, "LOGIN", "用户登录成功", ipAddress);
@@ -184,12 +199,9 @@ public class AuthService {
                 return cached;
             }
             
-            // 查数据库
-            String sql = "SELECT COUNT(*) FROM whitelist WHERE user_id = ? AND is_active = 1 " +
-                        "AND (expires_at IS NULL OR expires_at > NOW())";
-            
-            Integer count = jdbcTemplate.queryForObject(sql, Integer.class, userId);
-            boolean inWhitelist = count != null && count > 0;
+            // ✅ 使用Mapper查数据库
+            int count = whitelistMapper.countActiveWhitelist(userId);
+            boolean inWhitelist = count > 0;
             
             // 更新缓存
             redisTemplate.opsForValue().set(cacheKey, inWhitelist, CACHE_TTL_MINUTES, TimeUnit.MINUTES);
@@ -672,7 +684,8 @@ public class AuthService {
                 description != null ? description.replace("\"", "\\\"") : ""
             );
             
-            jdbcTemplate.update(sql, operatorId, username, operationType, details, ipAddress);
+            // ✅ 使用Mapper记录日志
+            operationLogMapper.insertOperationLog(operatorId, username, operationType, details, ipAddress);
         } catch (Exception e) {
             log.error("记录操作日志失败: {}", e.getMessage());
         }
@@ -756,10 +769,9 @@ public class AuthService {
      */
     public boolean createUser(String username, String password, String realName, String role) {
         try {
-            // 检查用户名是否已存在
-            String checkSql = "SELECT COUNT(*) FROM users WHERE username = ?";
-            Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, username);
-            if (count != null && count > 0) {
+            // ✅ 使用Mapper检查用户名是否已存在
+            Map<String, Object> existingUser = userMapper.findByUsername(username);
+            if (existingUser != null) {
                 log.warn("用户名已存在: {}", username);
                 return false;
             }
@@ -767,9 +779,8 @@ public class AuthService {
             // 加密密码
             String encodedPassword = passwordEncoder.encode(password);
             
-            // 插入用户
-            String insertSql = "INSERT INTO users (username, password, real_name, role, status, created_at) VALUES (?, ?, ?, ?, 1, NOW())";
-            jdbcTemplate.update(insertSql, username, encodedPassword, realName, role);
+            // ✅ 使用Mapper插入用户
+            userMapper.insertUser(username, encodedPassword, realName, role);
             
             log.info("创建用户成功: username={}, role={}", username, role);
             return true;
@@ -784,15 +795,16 @@ public class AuthService {
      */
     public boolean changePassword(Long userId, String oldPassword, String newPassword) {
         try {
-            // 查询用户当前密码
-            String querySql = "SELECT password FROM users WHERE id = ?";
-            List<Map<String, Object>> users = jdbcTemplate.queryForList(querySql, userId);
+            // ✅ 使用Mapper查询用户当前密码
+            Map<String, Object> user = userMapper.findByUsername(
+                jdbcTemplate.queryForObject("SELECT username FROM users WHERE id = ?", String.class, userId)
+            );
             
-            if (users.isEmpty()) {
+            if (user == null) {
                 return false;
             }
             
-            String storedPassword = (String) users.get(0).get("password");
+            String storedPassword = (String) user.get("password");
             
             // 验证原密码
             if (!passwordEncoder.matches(oldPassword, storedPassword)) {
@@ -802,8 +814,7 @@ public class AuthService {
             
             // 更新新密码
             String newEncodedPassword = passwordEncoder.encode(newPassword);
-            String updateSql = "UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?";
-            jdbcTemplate.update(updateSql, newEncodedPassword, userId);
+            userMapper.updatePassword(userId, newEncodedPassword);
             
             log.info("用户修改密码成功: userId={}", userId);
             return true;
@@ -818,17 +829,15 @@ public class AuthService {
      */
     public boolean resetUserPassword(Long userId, String newPassword) {
         try {
-            // 检查用户是否存在
-            String checkSql = "SELECT COUNT(*) FROM users WHERE id = ?";
-            Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, userId);
-            if (count == null || count == 0) {
+            // ✅ 使用Mapper检查用户是否存在
+            String username = jdbcTemplate.queryForObject("SELECT username FROM users WHERE id = ?", String.class, userId);
+            if (username == null) {
                 return false;
             }
             
             // 直接更新密码
             String encodedPassword = passwordEncoder.encode(newPassword);
-            String updateSql = "UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?";
-            jdbcTemplate.update(updateSql, encodedPassword, userId);
+            userMapper.updatePassword(userId, encodedPassword);
             
             log.info("管理员重置用户密码成功: userId={}", userId);
             return true;
