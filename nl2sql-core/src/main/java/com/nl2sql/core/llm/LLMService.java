@@ -179,9 +179,9 @@ public class LLMService {
         try {
             log.debug("[LLMService] 调用原生 Tool Calling，工具数量: {}", tools != null ? tools.size() : 0);
             
-            // ✅ 使用代码模型（qwen2.5-coder）- 结构化输出更准确
-            if (ollamaCodeProvider != null) {
-                return ollamaCodeProvider.generateWithTools(messages, temperature, tools);
+            // ✅ 使用推理模型（qwen3:8b）- Tool Calling需要强推理能力
+            if (ollamaReasoningProvider != null) {
+                return ollamaReasoningProvider.generateWithTools(messages, temperature, tools);
             }
             
             // 降级：如果 Ollama Provider 不支持，抛出异常
