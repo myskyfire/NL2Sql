@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" scanPeriod="60 seconds">
     
-    <!-- 属性定义 -->
-    <property name="LOG_HOME" value="${user.dir}/logs" />
+    <!-- 属性定义 - 使用绝对路径 -->
+    <property name="LOG_HOME" value="D:/WorkSpace/idea workspace/NL2Sql/logs" />
     <property name="APP_NAME" value="NL2SQL" />
     <property name="MAX_HISTORY" value="30" />
     <property name="MAX_FILE_SIZE" value="100MB" />
