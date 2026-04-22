@@ -1245,48 +1245,6 @@
                 addMessage(`❌ 网络错误: ${error.message}`, 'agent');
             }
         }
-            if (!currentContext || !currentContext.sql) {
-                addMessage('❌ 没有可生成图表的查询结果', 'agent');
-                return;
-            }
-            
-            // ✅ 点击后立即删除所有追问按钮
-            removeFollowUpHints(containerId);
-            
-            addMessage('📊 请生成柱状图', 'user');
-            showTypingIndicator();
-            
-            try {
-                const response = await fetch('/api/agent/chat', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': token 
-                    },
-                    body: JSON.stringify({
-                        message: '[INTENT:GENERATE_CHART] 请生成柱状图',
-                        sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
-                        context: {
-                            chartType: 'bar',
-                            generatedSQL: currentContext.sql
-                        }
-                    })
-                });
-                
-                const result = await response.json();
-                removeTypingIndicator();
-                
-                if (result.code === 200 && result.data) {
-                    handleAgentResponse(result.data);
-                } else {
-                    addMessage(`❌ 错误: ${result.message}`, 'agent');
-                }
-            } catch (error) {
-                removeTypingIndicator();
-                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
-            }
-        }
         
         // 触发Excel下载
         function triggerExcelDownload(containerId) {
