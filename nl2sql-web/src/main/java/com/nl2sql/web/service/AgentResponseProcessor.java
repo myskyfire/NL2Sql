@@ -384,7 +384,8 @@ public class AgentResponseProcessor {
                 enhancedMessage,
                 datasourceId,
                 userId,
-                username
+                username,
+                null  // ✅ 第二轮查询不传历史
             );
             
             // 清理并解析第二轮响应

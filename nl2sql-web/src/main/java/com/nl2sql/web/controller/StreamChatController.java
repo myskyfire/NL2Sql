@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 流式对话Controller
@@ -52,19 +53,14 @@ public class StreamChatController {
     
     /**
      * 获取对话历史
+     * TODO: 待实现 - 需要扩展ConversationHistoryService
      */
     @GetMapping("/history/{sessionId}")
-    public Result<List<ConversationHistoryService.ChatMessage>> getHistory(
+    public Result<List<Map<String, Object>>> getHistory(
             @PathVariable String sessionId,
             @RequestParam(defaultValue = "10") int limit) {
-        try {
-            List<ConversationHistoryService.ChatMessage> history = 
-                conversationHistoryService.getRecentHistory(sessionId, limit);
-            return Result.success(history);
-        } catch (Exception e) {
-            log.error("获取对话历史失败", e);
-            return Result.error("获取失败: " + e.getMessage());
-        }
+        // TODO: 实现获取历史接口
+        return Result.success(java.util.Collections.emptyList());
     }
     
     /**
@@ -83,18 +79,12 @@ public class StreamChatController {
     
     /**
      * 获取会话统计
+     * TODO: 待实现 - 需要扩展ConversationHistoryService
      */
     @GetMapping("/stats/{sessionId}")
-    public Result<ConversationHistoryService.ConversationStats> getStats(
-            @PathVariable String sessionId) {
-        try {
-            ConversationHistoryService.ConversationStats stats = 
-                conversationHistoryService.getStats(sessionId);
-            return Result.success(stats);
-        } catch (Exception e) {
-            log.error("获取会话统计失败", e);
-            return Result.error("获取失败: " + e.getMessage());
-        }
+    public Result<Map<String, Object>> getStats(@PathVariable String sessionId) {
+        // TODO: 实现统计接口
+        return Result.success(new java.util.HashMap<>());
     }
     
     /**

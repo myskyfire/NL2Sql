@@ -61,7 +61,7 @@ class ReActAgentTest {
         when(llmService.generateWithTools(anyList(), anyDouble(), anyList()))
             .thenReturn(llmResponse);
         
-        String result = agent.execute("测试问题", 1L, 123L, "user");
+        String result = agent.execute("测试问题", 1L, 123L, "user", null);
         
         assertEquals("这是最终答案", result);
         verify(llmService, times(1)).generateWithTools(anyList(), anyDouble(), anyList());
@@ -84,7 +84,7 @@ class ReActAgentTest {
             return "工具执行结果";  // 非JSON格式，不会直接返回
         }, "测试工具");
         
-        String result = agent.execute("测试问题", 1L, 123L, "user");
+        String result = agent.execute("测试问题", 1L, 123L, "user", null);
         
         assertEquals("工具执行完成", result);
         verify(llmService, times(2)).generateWithTools(anyList(), anyDouble(), anyList());
@@ -123,7 +123,7 @@ class ReActAgentTest {
             return "继续循环";
         }, "循环工具");
         
-        String result = agent.execute("测试问题", 1L, 123L, "user");
+        String result = agent.execute("测试问题", 1L, 123L, "user", null);
         
         assertTrue(result.contains("超过最大迭代次数"));
         verify(llmService, times(10)).generateWithTools(anyList(), anyDouble(), anyList());
@@ -136,7 +136,7 @@ class ReActAgentTest {
         when(llmService.generateWithTools(anyList(), anyDouble(), anyList()))
             .thenReturn(response);
         
-        String result = agent.execute("测试问题", null, 123L, "user");
+        String result = agent.execute("测试问题", null, 123L, "user", null);
         
         assertEquals("请先选择数据源", result);
     }
@@ -153,7 +153,7 @@ class ReActAgentTest {
             .thenReturn(firstResponse)
             .thenReturn(secondResponse);
         
-        String result = agent.execute("测试问题", 1L, 123L, "user");
+        String result = agent.execute("测试问题", 1L, 123L, "user", null);
         
         assertEquals("未知工具", result);
         verify(llmService, times(2)).generateWithTools(anyList(), anyDouble(), anyList());

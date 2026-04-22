@@ -1,227 +1,176 @@
 package com.nl2sql.conversation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
 
 /**
- * 对话历史管理服务
- * 支持多轮对话上下文记忆
+ * 对话历史服务
+ * 
+ * 职责：管理多轮对话的历史记录，支持上下文加载和保存
  */
 @Slf4j
 @Service
 public class ConversationHistoryService {
     
-    @Autowired
-    private StringRedisTemplate redisTemplate;
+    @Autowired(required = false)
+    private JdbcTemplate jdbcTemplate;
     
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-    
-    static {
-        objectMapper.registerModule(new JavaTimeModule());
-    }
-    
-    private static final String CONVERSATION_PREFIX = "conversation:";
-    private static final long TTL_HOURS = 24; // 会话保留24小时
-    private static final int MAX_HISTORY = 10; // 最多保留10轮
+    private static final int MAX_HISTORY_ROUNDS = 5; // 最多保留5轮对话
+    private static final int MAX_MESSAGES_PER_ROUND = 4; // 每轮最多4条消息(user/assistant/tool_calls/tool_result)
     
     /**
-     * 保存用户消息
+     * 获取会话历史(最多MAX_HISTORY_ROUNDS轮)
+     * 
+     * @param sessionId 会话ID
+     * @return 历史消息列表
      */
-    public void saveUserMessage(String sessionId, String message) {
-        saveMessage(sessionId, "user", message);
-    }
-    
-    /**
-     * 保存AI回复
-     */
-    public void saveAssistantMessage(String sessionId, String message, String sql) {
-        ChatMessage chatMessage = new ChatMessage("assistant", message, LocalDateTime.now());
-        chatMessage.setGeneratedSql(sql);
-        saveMessageObject(sessionId, chatMessage);
-    }
-    
-    /**
-     * 获取最近N轮对话历史
-     */
-    public List<ChatMessage> getRecentHistory(String sessionId, int limit) {
+    public List<Map<String, Object>> getHistory(String sessionId) {
+        if (jdbcTemplate == null) {
+            log.warn("[ConversationHistory] JdbcTemplate未注入，返回空历史");
+            return Collections.emptyList();
+        }
+        
         try {
-            String key = buildKey(sessionId);
-            List<String> rawMessages = redisTemplate.opsForList()
-                .range(key, -limit, -1);
+            // 查询最近N轮对话的消息
+            String sql = "SELECT role, content, name, tool_call_id " +
+                        "FROM conversation_history " +
+                        "WHERE session_id = ? " +
+                        "ORDER BY created_at ASC " +
+                        "LIMIT ?";
             
-            if (rawMessages == null || rawMessages.isEmpty()) {
-                return new ArrayList<>();
+            List<Map<String, Object>> messages = jdbcTemplate.queryForList(
+                sql, 
+                sessionId, 
+                MAX_HISTORY_ROUNDS * MAX_MESSAGES_PER_ROUND
+            );
+            
+            // ✅ 过滤掉clarify_datasource相关的tool消息
+            List<Map<String, Object>> filtered = filterClarifyTools(messages);
+            
+            log.info("[ConversationHistory] 加载历史: sessionId={}, 原始={}, 过滤后={}", 
+                sessionId, messages.size(), filtered.size());
+            
+            return filtered;
+            
+        } catch (Exception e) {
+            log.error("[ConversationHistory] 加载历史失败: sessionId={}", sessionId, e);
+            return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 保存本轮对话消息
+     * 
+     * @param sessionId 会话ID
+     * @param userId 用户ID
+     * @param messages 消息列表
+     */
+    public void saveHistory(String sessionId, Long userId, List<Map<String, Object>> messages) {
+        if (jdbcTemplate == null) {
+            log.warn("[ConversationHistory] JdbcTemplate未注入，跳过保存");
+            return;
+        }
+        
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        
+        try {
+            String insertSql = "INSERT INTO conversation_history " +
+                              "(session_id, user_id, role, content, name, tool_call_id) " +
+                              "VALUES (?, ?, ?, ?, ?, ?)";
+            
+            for (Map<String, Object> msg : messages) {
+                String role = (String) msg.get("role");
+                String content = (String) msg.get("content");
+                String name = (String) msg.get("name");
+                String toolCallId = (String) msg.get("tool_call_id");
+                
+                // ✅ 跳过clarify_datasource的tool消息
+                if ("tool".equals(role) && "clarify_datasource".equals(name)) {
+                    log.debug("[ConversationHistory] 跳过clarify_datasource工具消息");
+                    continue;
+                }
+                
+                // ✅ 跳过包含clarify_datasource tool_calls的assistant消息
+                if ("assistant".equals(role) && content != null && content.contains("clarify_datasource")) {
+                    log.debug("[ConversationHistory] 跳过包含clarify_datasource的assistant消息");
+                    continue;
+                }
+                
+                jdbcTemplate.update(insertSql, 
+                    sessionId, 
+                    userId, 
+                    role, 
+                    content, 
+                    name, 
+                    toolCallId
+                );
             }
             
-            List<ChatMessage> messages = new ArrayList<>();
-            for (String json : rawMessages) {
-                ChatMessage msg = deserialize(json);
-                if (msg != null) {
-                    messages.add(msg);
+            log.info("[ConversationHistory] 保存历史: sessionId={}, 消息数={}", 
+                sessionId, messages.size());
+            
+        } catch (Exception e) {
+            log.error("[ConversationHistory] 保存历史失败: sessionId={}", sessionId, e);
+        }
+    }
+    
+    /**
+     * 过滤掉clarify_datasource相关的工具消息
+     * 
+     * @param messages 原始消息列表
+     * @return 过滤后的消息列表
+     */
+    private List<Map<String, Object>> filterClarifyTools(List<Map<String, Object>> messages) {
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        
+        boolean skipNextToolResult = false;
+        
+        for (Map<String, Object> msg : messages) {
+            String role = (String) msg.get("role");
+            String name = (String) msg.get("name");
+            
+            // 跳过clarify_datasource的tool消息
+            if ("tool".equals(role) && "clarify_datasource".equals(name)) {
+                skipNextToolResult = false; // tool消息本身不添加到结果
+                continue;
+            }
+            
+            // 跳过assistant消息中包含clarify_datasource tool_calls的
+            if ("assistant".equals(role)) {
+                String content = (String) msg.get("content");
+                if (content != null && content.contains("clarify_datasource")) {
+                    skipNextToolResult = true;
+                    continue;
                 }
             }
             
-            log.debug("获取对话历史: sessionId={}, count={}", sessionId, messages.size());
-            return messages;
-            
-        } catch (Exception e) {
-            log.warn("获取对话历史失败: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * 格式化对话历史为Prompt文本
-     */
-    public String formatHistoryForPrompt(String sessionId, int limit) {
-        List<ChatMessage> history = getRecentHistory(sessionId, limit);
-        
-        if (history.isEmpty()) {
-            return "";
+            filtered.add(msg);
         }
         
-        StringBuilder sb = new StringBuilder();
-        sb.append("【对话历史】\n");
-        
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
-        for (ChatMessage msg : history) {
-            String role = "user".equals(msg.getRole()) ? "用户" : "AI";
-            sb.append(String.format("%s (%s): %s\n", role, 
-                msg.getTimestamp().format(formatter), msg.getContent()));
-            
-            if (msg.getGeneratedSql() != null && !msg.getGeneratedSql().isEmpty()) {
-                sb.append("生成的SQL: ").append(msg.getGeneratedSql()).append("\n");
-            }
-        }
-        
-        sb.append("\n【当前问题】\n");
-        return sb.toString();
+        return filtered;
     }
     
     /**
      * 清除会话历史
+     * 
+     * @param sessionId 会话ID
      */
     public void clearHistory(String sessionId) {
-        try {
-            String key = buildKey(sessionId);
-            redisTemplate.delete(key);
-            log.info("已清除会话历史: sessionId={}", sessionId);
-        } catch (Exception e) {
-            log.warn("清除会话历史失败: {}", e.getMessage());
+        if (jdbcTemplate == null) {
+            return;
         }
-    }
-    
-    /**
-     * 获取会话统计信息
-     */
-    public ConversationStats getStats(String sessionId) {
-        try {
-            String key = buildKey(sessionId);
-            Long size = redisTemplate.opsForList().size(key);
-            
-            ConversationStats stats = new ConversationStats();
-            stats.setSessionId(sessionId);
-            stats.setMessageCount(size != null ? size.intValue() : 0);
-            stats.setCreatedAt(getSessionCreateTime(sessionId));
-            
-            return stats;
-            
-        } catch (Exception e) {
-            log.warn("获取会话统计失败: {}", e.getMessage());
-            return new ConversationStats();
-        }
-    }
-    
-    // ==================== 私有方法 ====================
-    
-    private void saveMessage(String sessionId, String role, String content) {
-        ChatMessage message = new ChatMessage(role, content, LocalDateTime.now());
-        saveMessageObject(sessionId, message);
-    }
-    
-    private void saveMessageObject(String sessionId, ChatMessage message) {
-        try {
-            String key = buildKey(sessionId);
-            String json = serialize(message);
-            
-            redisTemplate.opsForList().rightPush(key, json);
-            redisTemplate.expire(key, TTL_HOURS, TimeUnit.HOURS);
-            
-            // 限制历史记录数量
-            trimHistory(key, MAX_HISTORY);
-            
-        } catch (Exception e) {
-            log.error("保存对话消息失败: sessionId={}", sessionId, e);
-        }
-    }
-    
-    private void trimHistory(String key, int maxSize) {
-        Long size = redisTemplate.opsForList().size(key);
-        if (size != null && size > maxSize) {
-            redisTemplate.opsForList().trim(key, size - maxSize, -1);
-        }
-    }
-    
-    private String buildKey(String sessionId) {
-        return CONVERSATION_PREFIX + sessionId;
-    }
-    
-    private String serialize(ChatMessage message) {
-        try {
-            return objectMapper.writeValueAsString(message);
-        } catch (Exception e) {
-            throw new RuntimeException("序列化失败", e);
-        }
-    }
-    
-    private ChatMessage deserialize(String json) {
-        try {
-            return objectMapper.readValue(json, ChatMessage.class);
-        } catch (Exception e) {
-            log.warn("反序列化失败: {}", e.getMessage());
-            return null;
-        }
-    }
-    
-    private LocalDateTime getSessionCreateTime(String sessionId) {
-        // 简化实现：返回第一条消息时间
-        List<ChatMessage> history = getRecentHistory(sessionId, 1);
-        return history.isEmpty() ? LocalDateTime.now() : history.get(0).getTimestamp();
-    }
-    
-    // ==================== 数据模型 ====================
-    
-    @Data
-    public static class ChatMessage {
-        private String role; // user / assistant
-        private String content;
-        private String generatedSql;
-        private LocalDateTime timestamp;
         
-        public ChatMessage() {}
-        
-        public ChatMessage(String role, String content, LocalDateTime timestamp) {
-            this.role = role;
-            this.content = content;
-            this.timestamp = timestamp;
+        try {
+            jdbcTemplate.update("DELETE FROM conversation_history WHERE session_id = ?", sessionId);
+            log.info("[ConversationHistory] 清除历史: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.error("[ConversationHistory] 清除历史失败: sessionId={}", sessionId, e);
         }
-    }
-    
-    @Data
-    public static class ConversationStats {
-        private String sessionId;
-        private Integer messageCount;
-        private LocalDateTime createdAt;
     }
 }

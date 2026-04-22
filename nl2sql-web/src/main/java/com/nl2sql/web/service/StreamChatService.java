@@ -91,11 +91,11 @@ public class StreamChatService {
         try {
             log.info("开始流式对话: sessionId={}, question={}", sessionId, question);
             
-            // 1. 保存用户消息
-            conversationHistoryService.saveUserMessage(sessionId, question);
+            // 1. ✅ TODO: 保存用户消息 - 待实现
+            // conversationHistoryService.saveUserMessage(sessionId, question);
             
-            // 2. 获取对话历史
-            conversationHistoryService.formatHistoryForPrompt(sessionId, 5);
+            // 2. ✅ TODO: 获取对话历史 - 待实现
+            // String history = conversationHistoryService.formatHistoryForPrompt(sessionId, 5);
             
             // 3. 设置当前会话ID
             setCurrentSessionId(sessionId);
@@ -109,7 +109,8 @@ public class StreamChatService {
                     question,
                     datasourceId,
                     1L, // TODO: 从SecurityContext获取
-                    "user"
+                    "user",
+                    null  // ✅ TODO: 传入历史消息
                 );
                 
                 // 6. 解析Agent响应
@@ -222,10 +223,10 @@ public class StreamChatService {
             executionTime != null ? executionTime : 0.0
         ));
         
-        // 保存AI回复
+        // 保存AI回复 - ✅ TODO: 待实现
         String summary = generateSummary(rowCount != null ? rowCount : 0, executionTime != null ? executionTime : 0.0);
         String sql = (String) responseMap.get("sql");
-        conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
+        // conversationHistoryService.saveAssistantMessage(sessionId, summary, sql);
     }
     
     /**

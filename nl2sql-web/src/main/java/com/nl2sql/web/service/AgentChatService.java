@@ -3,6 +3,7 @@ package com.nl2sql.web.service;
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.common.util.LogContextUtil;
+import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
 import com.nl2sql.core.agent.tools.NL2SQLTool;
 import com.nl2sql.core.rag.SQLFeedbackService;
@@ -11,8 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Agent 对话服务
@@ -46,6 +46,9 @@ public class AgentChatService {
     
     @Autowired(required = false)
     private DatasourceSessionService datasourceSessionService; // ✅ 数据源会话管理
+    
+    @Autowired(required = false)
+    private ConversationHistoryService historyService; // ✅ 对话历史服务
     
     /**
      * 处理聊天请求
@@ -105,6 +108,9 @@ public class AgentChatService {
                 
                 // 9. 记录查询日志
                 logQueryToDatabase(request, response, userInfo);
+                
+                // ✅ 10. 保存对话历史
+                saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, agentResponse);
                 
                 return Result.success(response);
                 
@@ -257,12 +263,18 @@ public class AgentChatService {
         
         log.info("[Agent对话] 调用 ReActAgent.execute()... [datasourceId={}]", resolvedDatasourceId);
         
+        // ✅ 加载对话历史
+        List<Map<String, Object>> history = historyService != null 
+            ? historyService.getHistory(sessionId)
+            : Collections.emptyList();
+        
         try {
             String result = reActAgent.execute(
                 fullMessage,
                 resolvedDatasourceId,
                 userInfo.getUserId().longValue(),
-                userInfo.getUsername()
+                userInfo.getUsername(),
+                history  // ✅ 传入历史消息
             );
             
             // ✅ 记录成功（自动续期）
@@ -372,6 +384,36 @@ public class AgentChatService {
             }
         } catch (Exception e) {
             log.warn("[查询日志] 记录失败", e);
+        }
+    }
+    
+    /**
+     * 保存对话历史
+     */
+    private void saveConversationHistory(String sessionId, Number userId, String userMessage, String agentResponse) {
+        if (historyService == null) {
+            return;
+        }
+        
+        try {
+            List<Map<String, Object>> messages = new ArrayList<>();
+            
+            // User message
+            Map<String, Object> userMsg = new HashMap<>();
+            userMsg.put("role", "user");
+            userMsg.put("content", userMessage);
+            messages.add(userMsg);
+            
+            // Assistant message
+            Map<String, Object> assistantMsg = new HashMap<>();
+            assistantMsg.put("role", "assistant");
+            assistantMsg.put("content", agentResponse);
+            messages.add(assistantMsg);
+            
+            historyService.saveHistory(sessionId, userId.longValue(), messages);
+            
+        } catch (Exception e) {
+            log.warn("[对话历史] 保存失败", e);
         }
     }
     
