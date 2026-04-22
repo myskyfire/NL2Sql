@@ -37,4 +37,13 @@
         ORDER BY w.created_at DESC
     </select>
     
+    <!-- 查询白名单列表 -->
+    <select id="findWhitelistList" resultType="java.util.HashMap">
+        SELECT w.id, w.user_id, u.username, u.real_name,
+               w.added_by, w.reason, w.expires_at, w.is_active, w.created_at
+        FROM whitelist w
+        JOIN users u ON w.user_id = u.id
+        ORDER BY w.created_at DESC
+    </select>
+    
 </mapper>

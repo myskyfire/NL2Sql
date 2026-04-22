@@ -39,4 +39,11 @@
         ORDER BY created_at DESC
     </select>
     
+    <!-- 查询所有用户列表 -->
+    <select id="findAllUsers" resultType="java.util.HashMap">
+        SELECT id, username, real_name, email, role, status, created_at, last_login_at
+        FROM users
+        ORDER BY created_at DESC
+    </select>
+    
 </mapper>

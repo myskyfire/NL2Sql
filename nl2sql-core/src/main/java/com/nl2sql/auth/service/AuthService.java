@@ -456,16 +456,8 @@ public class AuthService {
      */
     public List<Map<String, Object>> getAllTablePermissions() {
         try {
-            String sql = "SELECT tp.table_name, COUNT(DISTINCT tp.user_id) as user_count, " +
-                        "GROUP_CONCAT(DISTINCT u.username ORDER BY u.username SEPARATOR ', ') as usernames " +
-                        "FROM table_permissions tp " +
-                        "JOIN users u ON tp.user_id = u.id " +
-                        "WHERE tp.is_active = 1 " +
-                        "GROUP BY tp.table_name " +
-                        "ORDER BY tp.table_name";
-            
-            return jdbcTemplate.queryForList(sql);
-            
+            // ✅ 使用Mapper查询
+            return tablePermissionMapper.findAllTablePermissions();
         } catch (Exception e) {
             log.error("获取所有表授权统计失败", e);
             return Collections.emptyList();
@@ -477,16 +469,8 @@ public class AuthService {
      */
     public List<TablePermission> getPermissionsByTable(String tableName) {
         try {
-            String sql = "SELECT tp.id, tp.user_id, u.username, u.real_name, u.email, u.role, " +
-                        "tp.table_name, tp.granted_by, gb.username as granted_by_username, " +
-                        "tp.granted_at, tp.is_active " +
-                        "FROM table_permissions tp " +
-                        "JOIN users u ON tp.user_id = u.id " +
-                        "LEFT JOIN users gb ON tp.granted_by = gb.id " +
-                        "WHERE tp.table_name = ? AND tp.is_active = 1 " +
-                        "ORDER BY tp.granted_at DESC";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, tableName.toLowerCase());
+            // ✅ 使用Mapper查询
+            List<Map<String, Object>> rows = tablePermissionMapper.findByTableName(tableName.toLowerCase());
             List<TablePermission> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
@@ -555,13 +539,8 @@ public class AuthService {
      */
     public List<WhitelistEntry> getWhitelistList() {
         try {
-            String sql = "SELECT w.id, w.user_id, u.username, u.real_name, " +
-                        "w.added_by, w.reason, w.expires_at, w.is_active, w.created_at " +
-                        "FROM whitelist w " +
-                        "JOIN users u ON w.user_id = u.id " +
-                        "ORDER BY w.created_at DESC";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+            // ✅ 使用Mapper查询
+            List<Map<String, Object>> rows = whitelistMapper.findWhitelistList();
             List<WhitelistEntry> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
@@ -597,10 +576,8 @@ public class AuthService {
      */
     public List<UserInfo> getAllUsers() {
         try {
-            String sql = "SELECT id, username, real_name, email, role, status, created_at, last_login_at " +
-                        "FROM users ORDER BY created_at DESC";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+            // ✅ 使用Mapper查询
+            List<Map<String, Object>> rows = userMapper.findAllUsers();
             List<UserInfo> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
@@ -647,8 +624,8 @@ public class AuthService {
      */
     public boolean isAdmin(Long userId) {
         try {
-            String sql = "SELECT role FROM users WHERE id = ?";
-            String role = jdbcTemplate.queryForObject(sql, String.class, userId);
+            // ✅ 使用Mapper查询角色
+            String role = userMapper.findRoleById(userId);
             return "admin".equals(role);
         } catch (Exception e) {
             return false;
@@ -661,16 +638,14 @@ public class AuthService {
     private void logOperation(Long operatorId, Long targetUserId, String operationType, 
                              String description, String ipAddress) {
         try {
-            String sql = "INSERT INTO operation_logs (user_id, username, operation, details, ip_address) VALUES (?, ?, ?, ?, ?)";
-            
             // 获取用户名
             String username = "unknown";
             try {
-                List<Map<String, Object>> users = jdbcTemplate.queryForList(
-                    "SELECT username FROM users WHERE id = ?", operatorId
+                Map<String, Object> user = userMapper.findByUsername(
+                    jdbcTemplate.queryForObject("SELECT username FROM users WHERE id = ?", String.class, operatorId)
                 );
-                if (!users.isEmpty()) {
-                    username = (String) users.get(0).get("username");
+                if (user != null) {
+                    username = (String) user.get("username");
                 }
             } catch (Exception e) {
                 log.warn("获取用户名失败: {}", e.getMessage());

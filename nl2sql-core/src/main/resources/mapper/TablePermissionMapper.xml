@@ -54,4 +54,27 @@
         ORDER BY tp.created_at DESC
     </select>
     
+    <!-- 查询有权限的用户列表 -->
+    <select id="findUsersWithTablePermission" resultType="java.util.HashMap">
+        SELECT tp.id, tp.user_id, u.username, u.real_name, u.email, u.role,
+               tp.table_name, tp.granted_by, gb.username as granted_by_username,
+               tp.granted_at, tp.is_active
+        FROM table_permissions tp
+        JOIN users u ON tp.user_id = u.id
+        LEFT JOIN users gb ON tp.granted_by = gb.id
+        WHERE tp.table_name = #{tableName} AND tp.is_active = 1
+        ORDER BY tp.granted_at DESC
+    </select>
+    
+    <!-- 获取所有表的授权统计 -->
+    <select id="findAllTablePermissions" resultType="java.util.HashMap">
+        SELECT tp.table_name, COUNT(DISTINCT tp.user_id) as user_count,
+               GROUP_CONCAT(DISTINCT u.username ORDER BY u.username SEPARATOR ', ') as usernames
+        FROM table_permissions tp
+        JOIN users u ON tp.user_id = u.id
+        WHERE tp.is_active = 1
+        GROUP BY tp.table_name
+        ORDER BY tp.table_name
+    </select>
+    
 </mapper>

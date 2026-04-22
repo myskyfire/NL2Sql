@@ -44,4 +44,14 @@ public interface TablePermissionMapper {
      * 查询有权限的用户列表
      */
     List<Map<String, Object>> findUsersWithTablePermission();
+    
+    /**
+     * 按表名查询已授权的用户列表
+     */
+    List<Map<String, Object>> findByTableName(@Param("tableName") String tableName);
+    
+    /**
+     * 获取所有表的授权统计
+     */
+    List<Map<String, Object>> findAllTablePermissions();
 }
