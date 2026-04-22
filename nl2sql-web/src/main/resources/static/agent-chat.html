@@ -587,6 +587,14 @@
                 const formattedSummary = formatAISummary(data.summary);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
                 addMessage(html, 'agent');
+                
+                // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
+                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
+                    const followUpHtml = renderRemainingFollowUpHints('summary');
+                    if (followUpHtml) {
+                        addMessage(followUpHtml, 'agent');
+                    }
+                }
                 return;
             }
             
@@ -638,6 +646,16 @@
             if (data.echartsConfig && data.chartType) {
                 console.log('[查询成功] 检测到图表配置:', data.chartType);
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
+                addMessage(html, 'agent');
+                
+                // ✅ 图表生成后，重新渲染剩余追问按钮（基于原始查询数据）
+                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
+                    const followUpHtml = renderRemainingFollowUpHints('chart');
+                    if (followUpHtml) {
+                        addMessage(followUpHtml, 'agent');
+                    }
+                }
+                return;
             }
             
             // ❌ 已移除：图表推荐按钮（改为追问模式）
@@ -1049,6 +1067,39 @@
                 container.remove();
                 console.log('[追问提示] 已删除:', containerId);
             }
+        }
+        
+        // ✅ 渲染剩余追问按钮（AI总结/图表后调用）
+        function renderRemainingFollowUpHints(completedAction) {
+            if (!currentContext || !currentContext.data || !Array.isArray(currentContext.data) || currentContext.data.length === 0) {
+                return null;
+            }
+            
+            const sql = currentContext.sql || currentContext.generatedSQL || '';
+            const isStatistical = isStatisticalData(sql);
+            const hasNumeric = hasNumericColumn(currentContext.data);
+            
+            const containerId = 'follow-up-' + Date.now();
+            let html = `<div class="follow-up-hints" id="${containerId}" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">`;
+            html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续:</div>';
+            html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+            
+            // completedAction='summary' → AI总结已完成，不显示
+            // completedAction='chart' → 图表已完成，不显示
+            
+            if (completedAction !== 'summary' && isStatistical) {
+                html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
+            }
+            
+            if (completedAction !== 'chart' && isStatistical && hasNumeric && currentContext.data.length >= 2) {
+                html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
+            }
+            
+            // ✅ 始终显示下载Excel
+            html += `<button class="suggestion-btn" onclick="triggerExcelDownload('${containerId}')">💾 下载Excel</button>`;
+            
+            html += '</div></div>';
+            return html;
         }
         
         // 检查数据是否包含数值字段
