@@ -1026,6 +1026,12 @@
             }
         }
         
+        // ✅ 追问状态缓存（DeepSeek风格）
+        let followUpState = {
+            containerId: null,
+            availableActions: []  // ['summary', 'chart', 'download']
+        };
+        
         // ✅ 新增：渲染动态追问提示（DeepSeek风格）
         function renderDynamicFollowUpHints(data) {
             if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
@@ -1038,6 +1044,13 @@
             
             // ✅ 生成唯一ID用于后续删除
             const containerId = 'follow-up-' + Date.now();
+            
+            // ✅ 初始化追问状态
+            followUpState.containerId = containerId;
+            followUpState.availableActions = [];
+            if (isStatistical) followUpState.availableActions.push('summary');
+            if (isStatistical && hasNumeric && data.data.length >= 2) followUpState.availableActions.push('chart');
+            followUpState.availableActions.push('download');
             
             let html = `<div class="follow-up-hints" id="${containerId}" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">`;
             html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续追问:</div>';
@@ -1139,6 +1152,9 @@
             // ✅ 点击后立即删除所有追问按钮
             removeFollowUpHints(containerId);
             
+            // ✅ 从缓存中移除summary
+            followUpState.availableActions = followUpState.availableActions.filter(a => a !== 'summary');
+            
             // 显示用户消息
             addMessage('🤖 请对以上查询结果进行AI分析总结', 'user');
             showTypingIndicator();
@@ -1166,6 +1182,9 @@
                 
                 if (result.code === 200 && result.data) {
                     handleAgentResponse(result.data);
+                    
+                    // ✅ AI总结返回后，重新渲染剩余按钮
+                    renderRemainingFromCache();
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
                 }
@@ -1177,6 +1196,55 @@
         
         // 触发表格生成（追问模式）
         async function triggerChartGeneration(containerId) {
+            if (!currentContext || !currentContext.sql) {
+                addMessage('❌ 没有可生成图表的查询结果', 'agent');
+                return;
+            }
+            
+            // ✅ 点击后立即删除所有追问按钮
+            removeFollowUpHints(containerId);
+            
+            // ✅ 从缓存中移除chart
+            followUpState.availableActions = followUpState.availableActions.filter(a => a !== 'chart');
+            
+            // 显示用户消息
+            addMessage('📊 请生成柱状图', 'user');
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: '[INTENT:GENERATE_CHART] 请生成柱状图',
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId,
+                        context: {
+                            chartType: 'bar',
+                            generatedSQL: currentContext.sql
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                    
+                    // ✅ 图表返回后，重新渲染剩余按钮
+                    renderRemainingFromCache();
+                } else {
+                    addMessage(`❌ 错误: ${result.message}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
             if (!currentContext || !currentContext.sql) {
                 addMessage('❌ 没有可生成图表的查询结果', 'agent');
                 return;
@@ -1230,8 +1298,51 @@
             // ✅ 点击后立即删除所有追问按钮
             removeFollowUpHints(containerId);
             
+            // ✅ 从缓存中移除download
+            followUpState.availableActions = followUpState.availableActions.filter(a => a !== 'download');
+            
             downloadExcel(currentContext.data, 'query_result.xlsx');
             addMessage('✅ Excel文件已开始下载', 'agent');
+            
+            // ✅ 如果还有剩余按钮，重新渲染
+            renderRemainingFromCache();
+        }
+        
+        // ✅ 根据缓存渲染剩余按钮
+        function renderRemainingFromCache() {
+            if (!followUpState.containerId || followUpState.availableActions.length === 0) {
+                return;
+            }
+            
+            if (!currentContext || !currentContext.data || !Array.isArray(currentContext.data) || currentContext.data.length === 0) {
+                return;
+            }
+            
+            const sql = currentContext.sql || currentContext.generatedSQL || '';
+            const isStatistical = isStatisticalData(sql);
+            const hasNumeric = hasNumericColumn(currentContext.data);
+            
+            const containerId = 'follow-up-' + Date.now();
+            followUpState.containerId = containerId;
+            
+            let html = `<div class="follow-up-hints" id="${containerId}" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">`;
+            html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续:</div>';
+            html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+            
+            if (followUpState.availableActions.includes('summary') && isStatistical) {
+                html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
+            }
+            
+            if (followUpState.availableActions.includes('chart') && isStatistical && hasNumeric && currentContext.data.length >= 2) {
+                html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
+            }
+            
+            if (followUpState.availableActions.includes('download')) {
+                html += `<button class="suggestion-btn" onclick="triggerExcelDownload('${containerId}')">💾 下载Excel</button>`;
+            }
+            
+            html += '</div></div>';
+            addMessage(html, 'agent');
         }
         
         // 渲染图表选择按钮
