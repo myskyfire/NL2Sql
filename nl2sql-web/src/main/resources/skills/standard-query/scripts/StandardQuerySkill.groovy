@@ -744,11 +744,19 @@ ${sql}
     }
     
     /**
-     * 执行SQL并支持自动修正
+     * 执行SQL并支持自动修正（复用 SQLCorrectionService）
      */
     private def executeWithAutoFix(String sql, Long datasourceId, Long userId, String username, 
                                     int maxRetries, NL2SQLTool nl2sqlTool, SQLExecutionTool sqlExecutionTool,
                                     SkillContext context, String sessionId) {
+        // ✅ 统一使用 SQLCorrectionService 进行纠错
+        com.nl2sql.core.executor.SQLCorrectionService correctionService = null
+        try {
+            correctionService = context.getBean(com.nl2sql.core.executor.SQLCorrectionService.class)
+        } catch (Exception e) {
+            log.warn("⚠️ SQLCorrectionService 未配置，降级为原有纠错逻辑")
+        }
+        
         String currentSql = sql
         
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
@@ -765,9 +773,27 @@ ${sql}
                 
                 // 如果还有重试次数，尝试自动修正
                 if (attempt < maxRetries) {
-                    log.info("执行失败，尝试自动修正 (第{}次)", attempt + 1)
+                    log.info("执行失败，尝试自动修正 (第{}次): {}", attempt + 1, result.error)
                     publishEvent(context, sessionId, "correcting_sql", "🔧 自动修正SQL...")
-                    currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
+                    
+                    if (correctionService != null) {
+                        // ✅ 使用统一的 SQLCorrectionService
+                        com.nl2sql.core.executor.SQLCorrectionService.CorrectionResult correctionResult = 
+                            correctionService.autoCorrect(currentSql, result.error, 1)
+                        
+                        if (correctionResult.success) {
+                            currentSql = correctionResult.correctedSQL
+                            log.info("✅ SQLCorrectionService 修正成功: {}", currentSql)
+                        } else {
+                            // 降级：使用原有逻辑
+                            log.warn("⚠️ SQLCorrectionService 修正失败，降级为 LLM 修正")
+                            currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
+                        }
+                    } else {
+                        // 降级：使用原有逻辑
+                        currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
+                    }
+                    
                     log.info("修正后的SQL: {}", currentSql)
                 }
                 
@@ -775,7 +801,24 @@ ${sql}
                 if (attempt < maxRetries) {
                     log.error("执行异常，尝试自动修正 (第{}次): {}", attempt + 1, e.message)
                     publishEvent(context, sessionId, "correcting_error", "🔧 修正执行错误...")
-                    currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
+                    
+                    if (correctionService != null) {
+                        // ✅ 使用统一的 SQLCorrectionService
+                        com.nl2sql.core.executor.SQLCorrectionService.CorrectionResult correctionResult = 
+                            correctionService.autoCorrect(currentSql, e.message, 1)
+                        
+                        if (correctionResult.success) {
+                            currentSql = correctionResult.correctedSQL
+                            log.info("✅ SQLCorrectionService 修正成功: {}", currentSql)
+                        } else {
+                            // 降级：使用原有逻辑
+                            log.warn("⚠️ SQLCorrectionService 修正失败，降级为 LLM 修正")
+                            currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
+                        }
+                    } else {
+                        // 降级：使用原有逻辑
+                        currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
+                    }
                 } else {
                     throw e
                 }

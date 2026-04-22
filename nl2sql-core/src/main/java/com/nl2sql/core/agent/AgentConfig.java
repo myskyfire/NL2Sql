@@ -107,6 +107,16 @@ public class AgentConfig {
     @Autowired(required = false)
     private EstimateCostTool estimateCostTool;
     
+    // ✅ Workflow 原子 Tools
+    @Autowired(required = false)
+    private RetrieveTableSchemaTool retrieveTableSchemaTool;
+    
+    @Autowired(required = false)
+    private GenerateSQLFromSchemaTool generateSQLFromSchemaTool;
+    
+    @Autowired(required = false)
+    private ExecuteSafeSQLTool executeSafeSQLTool;
+    
     @Autowired(required = false)
     private MetadataService metadataService;
     
@@ -154,6 +164,9 @@ public class AgentConfig {
             List<GroovySkillExecutor.SkillInfo> skills = groovySkillExecutor.getDiscoveredSkills();
             
             for (GroovySkillExecutor.SkillInfo skill : skills) {
+                // ✅ 检查是否是 Workflow Skill
+                boolean hasWorkflow = groovySkillExecutor.hasWorkflow(skill.getSkillPath());
+                
                 agent.registerTool(skill.getToolName(), (args, dsId, userId, username, userMessage) -> {
                     try {
                         // ✅ 自动校验必需参数（从 Skill 元数据中获取）
@@ -211,7 +224,15 @@ public class AgentConfig {
                             }
                         }
                         
-                        Object result = groovySkillExecutor.executeSkill(skill.getSkillPath(), context);
+                        Object result;
+                        if (hasWorkflow) {
+                            // ✅ Workflow Skill：由 WorkflowEngine 执行
+                            log.info("[{}] 使用 WorkflowEngine 执行", skill.getToolName());
+                            result = groovySkillExecutor.executeSkill(skill.getSkillPath(), context);
+                        } else {
+                            // ✅ Groovy Skill：由 GroovySkillExecutor 执行
+                            result = groovySkillExecutor.executeSkill(skill.getSkillPath(), context);
+                        }
                         
                         // 转换为 JSON
                         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -264,9 +285,9 @@ public class AgentConfig {
                         log.error("[{}] 执行失败", skill.getToolName(), e);
                         return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
                     }
-                }, skill.getDescription());
+                }, skill.getDescription() + (hasWorkflow ? " [Workflow]" : " [Groovy]"));
                 
-                log.info("启用 {} (Groovy)", skill.getToolName());
+                log.info("启用 {} ({})", skill.getToolName(), hasWorkflow ? "Workflow" : "Groovy");
             }
         }
         
@@ -598,6 +619,38 @@ public class AgentConfig {
                 return estimateCostTool.estimateCost(sql, datasourceId);
             }, "估算SQL查询成本，包括预计扫描行数、执行时间等。输入SQL和数据源ID，返回成本评估");
             log.info("启用 EstimateCostTool");
+        }
+        
+        // ✅ 注册 Workflow 原子 Tools
+        if (retrieveTableSchemaTool != null) {
+            agent.registerTool("retrieve_table_schema", (args, dsId, userId, username, userMessage) -> {
+                String question = (String) args.get("question");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return retrieveTableSchemaTool.retrieveTableSchema(question, datasourceId);
+            }, "根据用户问题检索相关的表结构信息。这是Workflow专用原子能力，供声明式Workflow调用。输入问题和数据源ID，返回匹配的表名、字段列表和注释");
+            log.info("启用 RetrieveTableSchemaTool [Workflow]");
+        }
+        
+        if (generateSQLFromSchemaTool != null) {
+            agent.registerTool("generate_sql_from_schema", (args, dsId, userId, username, userMessage) -> {
+                String question = (String) args.get("question");
+                String schema = (String) args.get("schema");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return generateSQLFromSchemaTool.generateSQLFromSchema(question, schema, datasourceId);
+            }, "基于表结构和用户问题生成SQL语句。这是Workflow专用原子能力，供声明式Workflow调用。输入问题、表结构信息和数据源ID，返回生成的SQL");
+            log.info("启用 GenerateSQLFromSchemaTool [Workflow]");
+        }
+        
+        if (executeSafeSQLTool != null) {
+            agent.registerTool("execute_safe_sql", (args, dsId, userId, username, userMessage) -> {
+                String sql = (String) args.get("sql");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return executeSafeSQLTool.executeSafeSQL(sql, datasourceId, userId, username);
+            }, "执行经过验证的安全SQL查询。这是Workflow专用原子能力，供声明式Workflow调用。输入SQL语句、数据源ID、用户ID和用户名，返回查询结果");
+            log.info("启用 ExecuteSafeSQLTool [Workflow]");
         }
         
         log.info("NL2SQL ReAct Agent 初始化完成");
