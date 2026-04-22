@@ -688,6 +688,14 @@
             // ✅ 关键修复：只调用一次 addMessage
             addMessage(html, 'agent');
             
+            // ✅ 新增：如果是有数据的查询结果，显示追问提示（DeepSeek风格）
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                const followUpHtml = renderDynamicFollowUpHints(data);
+                if (followUpHtml) {
+                    addMessage(followUpHtml, 'agent');
+                }
+            }
+            
             // 如果需要自动下载
             if (data.autoDownload && data.data) {
                 setTimeout(() => {
@@ -1024,6 +1032,159 @@
                 removeTypingIndicator();
                 addMessage(`❌ 网络错误: ${error.message}`, 'agent');
             }
+        }
+        
+        // ✅ 新增：渲染动态追问提示（DeepSeek风格）
+        function renderDynamicFollowUpHints(data) {
+            if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+                return null;
+            }
+            
+            const sql = data.generatedSQL || data.sql || '';
+            const isStatistical = isStatisticalData(sql);
+            const hasNumeric = hasNumericColumn(data.data);
+            
+            let html = '<div class="follow-up-hints" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">';
+            html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续追问:</div>';
+            html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+            
+            // 规则1：只有统计数据才提供 AI 总结
+            if (isStatistical) {
+                html += '<button class="suggestion-btn" onclick="triggerAISummary()">🤖 AI总结</button>';
+            }
+            
+            // 规则2：统计数据 + 有数值字段，才提供图表生成
+            if (isStatistical && hasNumeric && data.data.length >= 2) {
+                html += '<button class="suggestion-btn" onclick="triggerChartGeneration()">📊 生成图表</button>';
+            }
+            
+            // 规则3：只要有数据就提供下载
+            html += '<button class="suggestion-btn" onclick="triggerExcelDownload()">💾 下载Excel</button>';
+            
+            html += '</div></div>';
+            return html;
+        }
+        
+        // 判断是否为统计数据（与后端逻辑一致）
+        function isStatisticalData(sql) {
+            if (!sql) return false;
+            const upperSql = sql.toUpperCase();
+            return upperSql.includes('GROUP BY') ||
+                   upperSql.includes('COUNT(') ||
+                   upperSql.includes('SUM(') ||
+                   upperSql.includes('AVG(') ||
+                   upperSql.includes('MAX(') ||
+                   upperSql.includes('MIN(');
+        }
+        
+        // 检查数据是否包含数值字段
+        function hasNumericColumn(data) {
+            if (!data || data.length === 0) return false;
+            
+            const firstRow = data[0];
+            for (const value of Object.values(firstRow)) {
+                if (typeof value === 'number') return true;
+                if (typeof value === 'string') {
+                    if (!isNaN(parseFloat(value)) && isFinite(value)) return true;
+                }
+            }
+            return false;
+        }
+        
+        // 触发AI总结（追问模式）
+        async function triggerAISummary() {
+            if (!currentContext || !currentContext.sql) {
+                addMessage('❌ 没有可总结的查询结果', 'agent');
+                return;
+            }
+            
+            // 显示用户消息
+            addMessage('🤖 请对以上查询结果进行AI分析总结', 'user');
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: '[INTENT:AI_SUMMARY] 请对以上查询结果进行AI分析总结',
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId,
+                        context: {
+                            lastQuery: currentContext.lastQuery,
+                            generatedSQL: currentContext.sql
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 触发表格生成（追问模式）
+        async function triggerChartGeneration() {
+            if (!currentContext || !currentContext.sql) {
+                addMessage('❌ 没有可生成图表的查询结果', 'agent');
+                return;
+            }
+            
+            addMessage('📊 请生成柱状图', 'user');
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': token 
+                    },
+                    body: JSON.stringify({
+                        message: '[INTENT:GENERATE_CHART] 请生成柱状图',
+                        sessionId: sessionId,
+                        datasourceId: currentContext.datasourceId,
+                        context: {
+                            chartType: 'bar',
+                            generatedSQL: currentContext.sql
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                removeTypingIndicator();
+                
+                if (result.code === 200 && result.data) {
+                    handleAgentResponse(result.data);
+                } else {
+                    addMessage(`❌ 错误: ${result.message}`, 'agent');
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addMessage(`❌ 网络错误: ${error.message}`, 'agent');
+            }
+        }
+        
+        // 触发Excel下载
+        function triggerExcelDownload() {
+            if (!currentContext || !currentContext.data) {
+                addMessage('❌ 没有可下载的数据', 'agent');
+                return;
+            }
+            
+            downloadExcel(currentContext.data, 'query_result.xlsx');
+            addMessage('✅ Excel文件已开始下载', 'agent');
         }
         
         // 渲染图表选择按钮
@@ -1867,6 +2028,12 @@
         window.submitFeedback = submitFeedback;
         window.submitFeedbackWithReason = submitFeedbackWithReason;
         window.handleStarClick = handleStarClick;
+        
+        // ✅ 新增：渲染动态追问提示（DeepSeek风格）
+        window.renderDynamicFollowUpHints = renderDynamicFollowUpHints;
+        window.triggerAISummary = triggerAISummary;
+        window.triggerChartGeneration = triggerChartGeneration;
+        window.triggerExcelDownload = triggerExcelDownload;
     </script>
 </body>
 </html>
