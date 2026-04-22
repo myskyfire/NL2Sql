@@ -22,11 +22,6 @@ Write-Host ""
 # 修改下面的代理地址为你的实际代理服务器
 $PROXY_HOST = "127.0.0.1"
 $PROXY_PORT = "7890"
+$JAVA_HOME = "D:\Program Files\Java\jdk-21.0.6"
 
-java `
-  -Dhttp.proxyHost=$PROXY_HOST `
-  -Dhttp.proxyPort=$PROXY_PORT `
-  -Dhttps.proxyHost=$PROXY_HOST `
-  -Dhttps.proxyPort=$PROXY_PORT `
-  -Djava.net.useSystemProxies=true `
-  -jar target\nlp2sql-web-1.0.0.jar
+& "$JAVA_HOME\bin\java.exe" "-Dhttp.proxyHost=$PROXY_HOST" "-Dhttp.proxyPort=$PROXY_PORT" "-Dhttps.proxyHost=$PROXY_HOST" "-Dhttps.proxyPort=$PROXY_PORT" "-Djava.net.useSystemProxies=true" -jar target\nl2sql-web-1.0.0.jar
