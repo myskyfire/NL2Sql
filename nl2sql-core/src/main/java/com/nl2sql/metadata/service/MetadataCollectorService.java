@@ -1,10 +1,12 @@
 package com.nl2sql.metadata.service;
 
+import com.nl2sql.core.llm.MultiModelService;
 import com.nl2sql.metadata.entity.ColumnMetadata;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.entity.TableMetadata;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -19,6 +22,9 @@ public class MetadataCollectorService {
     
     private final JdbcTemplate localJdbcTemplate;
     private final DataSourceConfigService dataSourceConfigService;
+    
+    @Autowired(required = false)
+    private MultiModelService multiModelService;
     
     public MetadataCollectorService(JdbcTemplate jdbcTemplate, DataSourceConfigService dataSourceConfigService) {
         this.localJdbcTemplate = jdbcTemplate;
@@ -56,6 +62,18 @@ public class MetadataCollectorService {
                 
                 // 3. 保存表元数据
                 saveTableMetadata(tables);
+                
+                // ✅ 新增：异步增强表描述和列描述（不阻塞主流程）
+                enhanceTableDescriptionsAsync(datasourceId);
+                // 延迟30秒后启动列增强，确保表增强已完成
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(30000); // 等待30秒
+                        enhanceColumnDescriptionsAsync(datasourceId);
+                    } catch (InterruptedException e) {
+                        log.warn("[元数据增强] 列增强延迟启动被中断", e);
+                    }
+                }, "column-enhance-delay-thread").start();
                 
                 // 4. 采集字段和外键
                 int totalColumns = 0;
@@ -428,6 +446,254 @@ public class MetadataCollectorService {
                 log.error("关闭连接失败", e);
             }
         }
+    }
+    
+    /**
+     * ✅ 新增：异步增强表描述（使用LLM生成业务化表描述）
+     */
+    public void enhanceTableDescriptionsAsync(Long datasourceId) {
+        // 异步执行，不阻塞主流程
+        new Thread(() -> {
+            try {
+                log.info("[元数据增强] 开始为数据源 {} 执行表描述增强", datasourceId);
+                    
+                // 获取所有表
+                String sql = "SELECT table_name, table_comment FROM table_metadata WHERE datasource_id = ?";
+                List<Map<String, Object>> tables = localJdbcTemplate.queryForList(sql, datasourceId);
+                    
+                if (tables.isEmpty()) {
+                    log.warn("[元数据增强] 数据源 {} 没有表元数据", datasourceId);
+                    return;
+                }
+                    
+                log.info("[元数据增强] 共找到 {} 个表", tables.size());
+                    
+                for (Map<String, Object> table : tables) {
+                    try {
+                        String tableName = (String) table.get("table_name");
+                        String currentComment = (String) table.get("table_comment");
+                            
+                        // 获取字段信息(包含完整元数据)
+                        String colSql = "SELECT column_name, data_type, column_size, is_nullable, column_default, column_comment, is_primary_key, ordinal_position " +
+                                       "FROM column_metadata WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position";
+                        List<Map<String, Object>> columns = localJdbcTemplate.queryForList(colSql, datasourceId, tableName);
+                            
+                        if (columns.isEmpty()) {
+                            continue;
+                        }
+                            
+                        // 构建LLM提示词 - 提供完整表元数据
+                        StringBuilder prompt = new StringBuilder();
+                        prompt.append("你是一个数据库专家和业务分析师。请根据以下完整的表结构信息，生成一段简洁的业务化表描述(50字以内)。\n\n");
+                        prompt.append("=== 表基本信息 ===\n");
+                        prompt.append("表名: ").append(tableName).append("\n");
+                        prompt.append("当前描述: ").append(currentComment != null ? currentComment : "无").append("\n\n");
+                            
+                        prompt.append("=== 字段详细信息 ===\n");
+                        for (Map<String, Object> col : columns) {
+                            prompt.append(String.format("- %s (%s", 
+                                col.get("column_name"), 
+                                col.get("data_type")));
+                                
+                            // 添加字段长度
+                            if (col.get("column_size") != null) {
+                                prompt.append(", 长度:").append(col.get("column_size"));
+                            }
+                                
+                            // 是否主键
+                            if ("1".equals(String.valueOf(col.get("is_primary_key")))) {
+                                prompt.append(", [主键]");
+                            }
+                                
+                            // 是否可空
+                            if ("0".equals(String.valueOf(col.get("is_nullable")))) {
+                                prompt.append(", 非空");
+                            }
+                                
+                            // 默认值
+                            if (col.get("column_default") != null) {
+                                prompt.append(", 默认:").append(col.get("column_default"));
+                            }
+                                
+                            prompt.append(")");
+                                
+                            // 字段说明
+                            if (col.get("column_comment") != null && !col.get("column_comment").toString().isEmpty()) {
+                                prompt.append(": ").append(col.get("column_comment"));
+                            } else {
+                                prompt.append(": 无说明");
+                            }
+                                
+                            prompt.append("\n");
+                        }
+                            
+                        prompt.append("\n=== 生成要求 ===\n");
+                        prompt.append("1. **识别核心业务指标**: 从字段中识别关键业务概念(如订单量、销售额、用户数、库存量等)\n");
+                        prompt.append("2. **说明表的业务用途**: 这张表在业务系统中扮演什么角色\n");
+                        prompt.append("3. **突出关联关系**: 如果有外键或关联字段,说明与其他表的关系\n");
+                        prompt.append("4. **包含检索关键词**: 确保描述包含用户可能查询的业务术语\n");
+                        prompt.append("5. **简洁专业**: 50字以内,便于向量检索匹配\n");
+                        prompt.append("6. **只返回描述文本**: 不要任何解释、前缀或其他内容\n\n");
+                        prompt.append("生成的描述:");
+                            
+                        // 调用LLM生成描述
+                        String enhancedDesc = callLLM(prompt.toString());
+                        if (enhancedDesc != null && enhancedDesc.length() > 10) {
+                            updateTableComment(datasourceId, tableName, enhancedDesc);
+                            log.info("[元数据增强] 表 {} 描述已更新: {}", tableName, enhancedDesc);
+                        }
+                            
+                    } catch (Exception e) {
+                        log.warn("[元数据增强] 表增强失败: {}", e.getMessage());
+                    }
+                }
+                    
+                log.info("[元数据增强] 完成");
+                    
+            } catch (Exception e) {
+                log.error("[元数据增强] 异常", e);
+            }
+        }, "metadata-enhance-thread").start();
+    }
+        
+    /**
+     * ✅ 新增：异步增强列描述（使用LLM生成业务化字段注释）
+     */
+    public void enhanceColumnDescriptionsAsync(Long datasourceId) {
+        // 异步执行，不阻塞主流程
+        new Thread(() -> {
+            try {
+                log.info("[列元数据增强] 开始为数据源 {} 执行字段描述增强", datasourceId);
+                    
+                // 获取所有表
+                String tableSql = "SELECT table_name, table_comment FROM table_metadata WHERE datasource_id = ?";
+                List<Map<String, Object>> tables = localJdbcTemplate.queryForList(tableSql, datasourceId);
+                    
+                if (tables.isEmpty()) {
+                    log.warn("[列元数据增强] 数据源 {} 没有表元数据", datasourceId);
+                    return;
+                }
+                    
+                int totalEnhanced = 0;
+                    
+                for (Map<String, Object> table : tables) {
+                    String tableName = (String) table.get("table_name");
+                    String tableComment = (String) table.get("table_comment");
+                        
+                    try {
+                        // 获取字段信息
+                        String colSql = "SELECT column_name, data_type, column_size, is_nullable, column_default, column_comment, is_primary_key " +
+                                       "FROM column_metadata WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position";
+                        List<Map<String, Object>> columns = localJdbcTemplate.queryForList(colSql, datasourceId, tableName);
+                            
+                        if (columns.isEmpty()) {
+                            continue;
+                        }
+                            
+                        // 对每个字段调用LLM增强
+                        for (Map<String, Object> col : columns) {
+                            String columnName = (String) col.get("column_name");
+                            String currentComment = (String) col.get("column_comment");
+                            String dataType = (String) col.get("data_type");
+                                
+                            // 如果已有注释且不为空，跳过（保留手动修改）
+                            if (currentComment != null && !currentComment.trim().isEmpty() && !currentComment.equals("无说明")) {
+                                continue;
+                            }
+                                
+                            try {
+                                // 构建LLM提示词
+                                StringBuilder prompt = new StringBuilder();
+                                prompt.append("你是一个数据库专家。请根据以下信息，为该字段生成一个简洁的中文业务注释(20字以内)。\n\n");
+                                prompt.append("表名: ").append(tableName).append("\n");
+                                if (tableComment != null && !tableComment.trim().isEmpty()) {
+                                    prompt.append("表说明: ").append(tableComment).append("\n");
+                                }
+                                prompt.append("字段名: ").append(columnName).append("\n");
+                                prompt.append("数据类型: ").append(dataType).append("\n");
+                                    
+                                if (col.get("column_size") != null) {
+                                    prompt.append("字段长度: ").append(col.get("column_size")).append("\n");
+                                }
+                                if ("1".equals(String.valueOf(col.get("is_primary_key")))) {
+                                    prompt.append("约束: 主键\n");
+                                }
+                                if ("0".equals(String.valueOf(col.get("is_nullable")))) {
+                                    prompt.append("约束: 非空\n");
+                                }
+                                if (col.get("column_default") != null) {
+                                    prompt.append("默认值: ").append(col.get("column_default")).append("\n");
+                                }
+                                    
+                                prompt.append("\n要求:\n");
+                                prompt.append("1. 根据字段名推测业务含义(如order_amount→订单金额,user_name→用户名)\n");
+                                prompt.append("2. 结合表说明理解字段的业务场景\n");
+                                prompt.append("3. 简洁准确,20字以内\n");
+                                prompt.append("4. 只返回注释文本,不要其他内容\n\n");
+                                prompt.append("生成的注释:");
+                                    
+                                // 调用LLM
+                                String enhancedComment = callLLM(prompt.toString());
+                                if (enhancedComment != null && enhancedComment.length() > 2 && enhancedComment.length() <= 20) {
+                                    updateColumnComment(datasourceId, tableName, columnName, enhancedComment);
+                                    totalEnhanced++;
+                                    log.debug("[列元数据增强] {}.{} → {}", tableName, columnName, enhancedComment);
+                                }
+                                    
+                                // 避免频繁调用LLM
+                                Thread.sleep(500);
+                                    
+                            } catch (Exception e) {
+                                log.warn("[列元数据增强] 字段 {}.{} 增强失败: {}", tableName, columnName, e.getMessage());
+                            }
+                        }
+                            
+                    } catch (Exception e) {
+                        log.warn("[列元数据增强] 表 {} 处理失败: {}", tableName, e.getMessage());
+                    }
+                }
+                    
+                log.info("[列元数据增强] 完成，共增强 {} 个字段", totalEnhanced);
+                    
+            } catch (Exception e) {
+                log.error("[列元数据增强] 异常", e);
+            }
+        }, "column-enhance-thread").start();
+    }
+    
+    /**
+     * 调用LLM生成表描述
+     */
+    private String callLLM(String prompt) {
+        if (multiModelService == null) {
+            log.warn("[元数据增强] MultiModelService未注入,跳过LLM调用");
+            return null;
+        }
+        
+        try {
+            // 使用Ollama本地模型 - 直接调用llmService
+            String response = multiModelService.getLlmService().generateAnswer(prompt);
+            return response != null ? response.trim() : null;
+        } catch (Exception e) {
+            log.error("[元数据增强] LLM调用失败", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 更新表注释
+     */
+    private void updateTableComment(Long datasourceId, String tableName, String comment) {
+        String sql = "UPDATE table_metadata SET table_comment = ? WHERE datasource_id = ? AND table_name = ?";
+        localJdbcTemplate.update(sql, comment, datasourceId, tableName);
+    }
+    
+    /**
+     * 更新字段注释
+     */
+    private void updateColumnComment(Long datasourceId, String tableName, String columnName, String comment) {
+        String sql = "UPDATE column_metadata SET column_comment = ? WHERE datasource_id = ? AND table_name = ? AND column_name = ?";
+        localJdbcTemplate.update(sql, comment, datasourceId, tableName, columnName);
     }
     
     @Data

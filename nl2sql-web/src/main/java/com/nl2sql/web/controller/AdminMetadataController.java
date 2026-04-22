@@ -143,6 +143,52 @@ public class AdminMetadataController {
     }
     
     /**
+     * ✅ 新增：元数据增强 - 使用LLM生成业务化表描述
+     */
+    @PostMapping("/metadata/enhance/{datasourceId}")
+    public Result<Map<String, Object>> enhanceMetadata(@PathVariable Long datasourceId) {
+        try {
+            log.info("[元数据增强] 开始为数据源 {} 执行表描述增强", datasourceId);
+            
+            // 调用异步增强方法
+            metadataCollectorService.enhanceTableDescriptionsAsync(datasourceId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "STARTED");
+            response.put("message", "元数据增强任务已启动，将在后台异步执行");
+            response.put("note", "增强完成后请重启应用以重新加载向量索引");
+            
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[元数据增强] 启动失败", e);
+            return Result.error("增强失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ 新增：列元数据增强 - 使用LLM生成字段注释
+     */
+    @PostMapping("/metadata/enhance-columns/{datasourceId}")
+    public Result<Map<String, Object>> enhanceColumnMetadata(@PathVariable Long datasourceId) {
+        try {
+            log.info("[列元数据增强] 开始为数据源 {} 执行字段注释增强", datasourceId);
+            
+            // 调用异步增强方法
+            metadataCollectorService.enhanceColumnDescriptionsAsync(datasourceId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "STARTED");
+            response.put("message", "列元数据增强任务已启动，将在后台异步执行（跳过已有注释的字段）");
+            response.put("note", "增强完成后可在元数据管理中查看结果");
+            
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[列元数据增强] 启动失败", e);
+            return Result.error("增强失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 查询已同步的元数据（所有数据源）
      */
     @GetMapping("/metadata/list")

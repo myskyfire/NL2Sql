@@ -22,6 +22,13 @@ public class MultiModelService {
     }
     
     /**
+     * 获取LLMService实例（用于元数据增强等场景）
+     */
+    public LLMService getLlmService() {
+        return llmService;
+    }
+    
+    /**
      * 使用代码模型生成SQL（RAG增强版）
      */
     public String generateSQLWithRAG(String prompt, String userQuery) {
