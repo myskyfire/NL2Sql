@@ -1005,22 +1005,25 @@
             const isStatistical = isStatisticalData(sql);
             const hasNumeric = hasNumericColumn(data.data);
             
-            let html = '<div class="follow-up-hints" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">';
+            // ✅ 生成唯一ID用于后续删除
+            const containerId = 'follow-up-' + Date.now();
+            
+            let html = `<div class="follow-up-hints" id="${containerId}" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">`;
             html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续追问:</div>';
             html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
             
             // 规则1：只有统计数据才提供 AI 总结
             if (isStatistical) {
-                html += '<button class="suggestion-btn" onclick="triggerAISummary()">🤖 AI总结</button>';
+                html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
             }
             
             // 规则2：统计数据 + 有数值字段，才提供图表生成
             if (isStatistical && hasNumeric && data.data.length >= 2) {
-                html += '<button class="suggestion-btn" onclick="triggerChartGeneration()">📊 生成图表</button>';
+                html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
             }
             
             // 规则3：只要有数据就提供下载
-            html += '<button class="suggestion-btn" onclick="triggerExcelDownload()">💾 下载Excel</button>';
+            html += `<button class="suggestion-btn" onclick="triggerExcelDownload('${containerId}')">💾 下载Excel</button>`;
             
             html += '</div></div>';
             return html;
@@ -1038,6 +1041,16 @@
                    upperSql.includes('MIN(');
         }
         
+        // ✅ 删除追问提示容器
+        function removeFollowUpHints(containerId) {
+            if (!containerId) return;
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.remove();
+                console.log('[追问提示] 已删除:', containerId);
+            }
+        }
+        
         // 检查数据是否包含数值字段
         function hasNumericColumn(data) {
             if (!data || data.length === 0) return false;
@@ -1053,11 +1066,14 @@
         }
         
         // 触发AI总结（追问模式）
-        async function triggerAISummary() {
+        async function triggerAISummary(containerId) {
             if (!currentContext || !currentContext.sql) {
                 addMessage('❌ 没有可总结的查询结果', 'agent');
                 return;
             }
+            
+            // ✅ 点击后立即删除所有追问按钮
+            removeFollowUpHints(containerId);
             
             // 显示用户消息
             addMessage('🤖 请对以上查询结果进行AI分析总结', 'user');
@@ -1096,11 +1112,14 @@
         }
         
         // 触发表格生成（追问模式）
-        async function triggerChartGeneration() {
+        async function triggerChartGeneration(containerId) {
             if (!currentContext || !currentContext.sql) {
                 addMessage('❌ 没有可生成图表的查询结果', 'agent');
                 return;
             }
+            
+            // ✅ 点击后立即删除所有追问按钮
+            removeFollowUpHints(containerId);
             
             addMessage('📊 请生成柱状图', 'user');
             showTypingIndicator();
@@ -1138,11 +1157,14 @@
         }
         
         // 触发Excel下载
-        function triggerExcelDownload() {
+        function triggerExcelDownload(containerId) {
             if (!currentContext || !currentContext.data) {
                 addMessage('❌ 没有可下载的数据', 'agent');
                 return;
             }
+            
+            // ✅ 点击后立即删除所有追问按钮
+            removeFollowUpHints(containerId);
             
             downloadExcel(currentContext.data, 'query_result.xlsx');
             addMessage('✅ Excel文件已开始下载', 'agent');
