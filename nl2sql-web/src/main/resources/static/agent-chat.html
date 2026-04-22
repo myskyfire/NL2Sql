@@ -640,50 +640,11 @@
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
             }
             
-            // 显示图表推荐
-            if (data.chartRecommendation) {
-                html += `<div class="ai-summary" style="background:linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);border-left-color:#2196f3;"><strong>📊 图表推荐:</strong><br>${escapeHtml(data.chartRecommendation)}</div>`;
-                
-                // 解析推荐的图表类型，动态生成按钮
-                const chartTypes = parseRecommendedChartTypes(data.chartRecommendation);
-                if (chartTypes.length > 0) {
-                    html += '<div class="follow-up-suggestions">';
-                    chartTypes.forEach(chartType => {
-                        const typeConfig = getChartTypeConfig(chartType);
-                        html += `<button class="suggestion-btn" onclick="generateChartWithType('${chartType}')">${typeConfig.icon} ${typeConfig.name}</button>`;
-                    });
-                    html += '</div>';
-                }
-            }
+            // ❌ 已移除：图表推荐按钮（改为追问模式）
+            // if (data.chartRecommendation) { ... }
             
-            // ✅ 显示智能追问建议（由后端根据数据特征动态生成）
-            if (data.followUpSuggestions && data.followUpSuggestions.length > 0) {
-                console.log('[追问建议] 数据结构:', data.followUpSuggestions);
-                html += '<div class="follow-up-suggestions">';
-                data.followUpSuggestions.forEach((suggestion, index) => {
-                    console.log('[追问建议] 第' + index + '个:', suggestion);
-                    // 存储追问数据到全局变量
-                    window.suggestionData = window.suggestionData || {};
-                    
-                    // 兼容两种格式：对象数组和字符串数组
-                    let suggestionObj;
-                    let buttonText;
-                    
-                    if (typeof suggestion === 'string') {
-                        // 字符串数组格式
-                        suggestionObj = { text: suggestion, action: 'default' };
-                        buttonText = suggestion;
-                    } else {
-                        // 对象数组格式
-                        suggestionObj = suggestion;
-                        buttonText = suggestion.text || suggestion;
-                    }
-                    
-                    window.suggestionData[index] = suggestionObj;
-                    html += `<button class="suggestion-btn" onclick="handleSuggestionClick(${index})">${escapeHtml(buttonText)}</button>`;
-                });
-                html += '</div>';
-            }
+            // ❌ 已移除：后端followUpSuggestions按钮（改为追问模式）
+            // if (data.followUpSuggestions && ...) { ... }
             
             // ✅ 关键修复：只调用一次 addMessage
             addMessage(html, 'agent');
