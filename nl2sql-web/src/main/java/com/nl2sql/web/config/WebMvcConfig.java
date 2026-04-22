@@ -40,5 +40,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addResourceHandler("/.well-known/**")
             .addResourceLocations("classpath:/static/")
             .setCachePeriod(0);
+        
+        // ✅ 忽略 appspecific 目录请求
+        registry.addResourceHandler("/appspecific/**")
+            .addResourceLocations("classpath:/static/")
+            .setCachePeriod(0);
     }
 }
