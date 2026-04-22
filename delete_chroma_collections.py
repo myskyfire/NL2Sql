@@ -15,7 +15,8 @@ def delete_nl2sql_collections():
     
     # 需要删除的集合列表
     collections_to_delete = [
-        "NL2SQL_query_cache",  # 注意是大写
+        "NL2SQL_query_cache",  # QueryCacheVectorService使用
+        "NL2SQL_rag",          # RAG使用
     ]
     
     print(f"连接到 Chroma: {CHROMA_URL}")

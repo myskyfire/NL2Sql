@@ -645,6 +645,19 @@
             // ✅ 关键新增：如果响应中包含图表配置，直接渲染图表
             if (data.echartsConfig && data.chartType) {
                 console.log('[查询成功] 检测到图表配置:', data.chartType);
+                
+                // ✅ 先添加SQL和数据表格
+                if (data.generatedSQL || data.sql) {
+                    const sqlToDisplay = data.generatedSQL || data.sql;
+                    html += `<div class="sql-display"><strong>📝 执行的 SQL:</strong><br>${escapeHtml(sqlToDisplay)}</div>`;
+                }
+                
+                if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                    html += await renderDataTable(data.data);
+                    html += `<div style="margin-top:8px;font-size:13px;color:#666;">✅ 共 ${data.rowCount || data.data.length} 条记录</div>`;
+                }
+                
+                // 再添加图表
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
                 addMessage(html, 'agent');
                 
