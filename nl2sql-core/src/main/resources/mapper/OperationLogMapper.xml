@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.auth.mapper.OperationLogMapper">
+    
+    <!-- 插入操作日志 -->
+    <insert id="insertOperationLog">
+        INSERT INTO operation_logs (user_id, username, operation, details, ip_address)
+        VALUES (#{userId}, #{username}, #{operation}, #{details}, #{ipAddress})
+    </insert>
+    
+</mapper>

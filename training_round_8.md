@@ -1,17 +1,44 @@
 # NL2SQL Training - Round 8
 
-**Date**: 2026-04-21 09:08:47
-**Average Score**: 2.30 / 5.0
+**Date**: 2026-04-22 09:16:00
+**Test Cases**: 30
+**Average Score**: 1.00 / 5.0
 
-| # | Question | Score | Expected SQL | Actual SQL | Issues |
-|---|----------|-------|--------------|------------|--------|
-| 1 | 河南省用户的订单 | 5 | ```SELECT o.* FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '河南省'``` | ```SELECT COUNT(*) AS '河南省份用户订单数量' FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '河南省';``` |  |
-| 2 | 待支付订单数量 | 5 | ```SELECT COUNT(*) FROM orders WHERE status = 'pending'``` | ```SELECT COUNT(*) AS '待支付订单数量' FROM orders WHERE status = 'pending';``` |  |
-| 3 | 江苏省用户订单数量 | 5 | ```SELECT COUNT(*) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '江苏省'``` | ```SELECT users.province AS '省份', COUNT(orders.id) AS '订单数量' FROM orders JOIN user_addresses ON orders.user_id = user_addresses.user_id AND user_addresses.is_default = 1 JOIN users ON orders.user_id = users.id WHERE users.province = '江苏' GROUP BY users.province;``` |  |
-| 4 | 冯十的订单 | 1 | ```SELECT * FROM orders WHERE user_id = 18``` | ```Exception: HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=180)``` | HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=180) |
-| 5 | 订单数超过5次的用户 | 1 | ```SELECT u.real_name, COUNT(o.id) as order_count FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING order_count > 5``` | ```SELECT user_id AS '用户ID', COUNT(*) AS '订单数量' FROM orders GROUP BY user_id HAVING COUNT(*) > 5 LIMIT 10;``` | Missing tables: users |
-| 6 | 四川省用户购买的订单总额 | 1 | ```SELECT SUM(o.total_amount) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '四川省'``` | ```SELECT DATE_FORMAT(orders.created_at, '%Y-%m-%d') AS '下单时间', SUM(orders.total_amount) AS '订单总额' FROM orders WHERE orders.shipping_address LIKE '%四川省%' GROUP BY DATE_FORMAT(orders.created_at, '%Y-%m-%d') ORDER BY DATE_FORMAT(orders.created_at, '%Y-%m-%d');``` | Missing tables: user_addresses |
-| 7 | 李四的订单列表 | 2 | ```SELECT o.order_no, o.status FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '李四'``` | ```SELECT o.id AS '订单ID', o.order_no AS '订单号', o.user_id AS '用户ID', o.total_amount AS '总金额', o.discount_amount AS '优惠金额', o.actual_amount AS '实付金额', o.status AS '状态', o.payment_method AS '支付方式', o.payment_time AS '支付时间', o.shipping_address AS '收货地址', o.receiver_name AS '收货人', o.receiver_phone AS '收货人电话', o.created_at AS '下单时间', o.paid_at AS '支付时间', o.shipped_at AS '发货时间', o.completed_at AS '完成时间' FROM orders o WHERE o.user_id = (SELECT user_id FROM users WHERE username = '李四') LIMIT 100;``` | Missing function: JOIN |
-| 8 | 张三购买的商品列表 | 1 | ```SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '张三'``` | ```SELECT oi.id AS '明细ID', oi.order_id AS '订单ID', oi.product_name AS '商品名称', oi.product_spec AS '商品规格', oi.quantity AS '购买数量', oi.unit_price AS '商品单价', oi.subtotal AS '小计金额' FROM orders o JOIN order_items oi ON o.id = oi.order_id WHERE o.user_id IN (SELECT u.id FROM users u WHERE u.username LIKE '%zhangsan%') LIMIT 10;``` | Missing tables: products |
-| 9 | 上海市用户的订单 | 1 | ```SELECT o.* FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.city = '上海市'``` | ```SELECT COUNT(*) AS '上海城市用户订单数量' FROM orders WHERE shipping_address LIKE '%上海市%' AND status IN ('paid', 'shipped', 'completed') GROUP BY user_id;``` | Missing tables: user_addresses |
-| 10 | 李四购买的商品 | 1 | ```SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '李四'``` | ```SELECT o.id AS '订单ID', o.order_no AS '订单号', o.user_id AS '用户ID', o.total_amount AS '总金额', o.discount_amount AS '优惠金额', o.actual_amount AS '实付金额', o.status AS '状态', o.payment_method AS '支付方式', o.payment_time AS '支付时间', o.shipping_address AS '收货地址', o.receiver_name AS '收货人', o.receiver_phone AS '收货人电话', o.created_at AS '下单时间', o.paid_at AS '支付时间', o.shipped_at AS '发货时间', o.completed_at AS '完成时间' FROM orders o JOIN users u ON o.user_id = u.id WHERE u.username = '李四' LIMIT 100;``` | Missing tables: order_items, products |
+## Scoring Breakdown
+- **EX** (Execution Accuracy): 40% weight
+- **CM** (Component Match): 30% weight
+- **TC** (Table Coverage): 20% weight
+- **FC** (Function Coverage): 10% weight
+
+| # | Question | Score | Reason | Details |
+|---|----------|-------|--------|---------|
+| 1 | 北京市用户订单数量 | 1⭐ | N/A |  |
+| 2 | 电脑办公类商品销售总额 | 1⭐ | N/A |  |
+| 3 | 查询用户ID为19的订单 | 1⭐ | N/A |  |
+| 4 | 康师傅红茶信息 | 1⭐ | N/A |  |
+| 5 | 订单金额大于5000的数量 | 1⭐ | N/A |  |
+| 6 | 查询已完成订单 | 1⭐ | N/A |  |
+| 7 | 查询用户ID为3的订单 | 1⭐ | N/A |  |
+| 8 | 查询用户ID为4的订单 | 1⭐ | N/A |  |
+| 9 | 查询用户ID为2的订单 | 1⭐ | N/A |  |
+| 10 | 陈一购买的商品 | 1⭐ | N/A |  |
+| 11 | 订单金额最低的前5个订单 | 1⭐ | N/A |  |
+| 12 | 湖北省平均订单金额 | 1⭐ | N/A |  |
+| 13 | 周八购买的商品 | 1⭐ | N/A |  |
+| 14 | 订单数大于2的用户及其订单总额 | 1⭐ | N/A |  |
+| 15 | 总退款金额 | 1⭐ | N/A |  |
+| 16 | 每个分类的平均价格 | 1⭐ | N/A |  |
+| 17 | 华为Mate 60 Pro所属分类 | 1⭐ | N/A |  |
+| 18 | 每个分类销售额 | 1⭐ | N/A |  |
+| 19 | 手机数码类商品销售总额 | 1⭐ | N/A |  |
+| 20 | 已完成的退货数 | 1⭐ | N/A |  |
+| 21 | 唐九的订单 | 1⭐ | N/A |  |
+| 22 | 订单金额最高的前5个订单 | 1⭐ | N/A |  |
+| 23 | 上海市用户购买的订单总额 | 1⭐ | N/A |  |
+| 24 | 家用电器类商品均价 | 1⭐ | N/A |  |
+| 25 | 河南省用户订单数量 | 1⭐ | N/A |  |
+| 26 | 不同状态订单最小金额 | 1⭐ | N/A |  |
+| 27 | 查询用户ID为1的订单 | 1⭐ | N/A |  |
+| 28 | 价格低于1000的商品数 | 1⭐ | N/A |  |
+| 29 | 高五买过几次订单 | 1⭐ | N/A |  |
+| 30 | 深圳市平均订单金额 | 1⭐ | N/A |  |

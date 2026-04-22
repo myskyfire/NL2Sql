@@ -1,17 +1,44 @@
 # NL2SQL Training - Round 3
 
-**Date**: 2026-04-21 08:47:45
-**Average Score**: 2.30 / 5.0
+**Date**: 2026-04-22 09:16:00
+**Test Cases**: 30
+**Average Score**: 1.00 / 5.0
 
-| # | Question | Score | Expected SQL | Actual SQL | Issues |
-|---|----------|-------|--------------|------------|--------|
-| 1 | 江苏省用户购买的订单总额 | 1 | ```SELECT SUM(o.total_amount) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '江苏省'``` | ```SELECT u.province AS '省份', SUM(o.actual_amount) AS '订单总金额' FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '江苏' GROUP BY u.province;``` | Missing tables: user_addresses |
-| 2 | 成都市用户数量 | 5 | ```SELECT COUNT(*) FROM user_addresses WHERE city = '成都市'``` | ```SELECT COUNT(*) AS '成都城市用户数量' FROM user_addresses ua WHERE ua.province = '四川省' AND ua.city = '成都市';``` |  |
-| 3 | 华为Mate 60 Pro所属分类 | 2 | ```SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '华为Mate 60 Pro'``` | ```SELECT category_name AS '分类名称' FROM product_categories WHERE id IN (SELECT category_id FROM products WHERE product_name LIKE '%华为Mate 60 Pro%') LIMIT 1``` | Missing function: JOIN |
-| 4 | 上海市用户订单数量 | 1 | ```SELECT COUNT(*) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.city = '上海市'``` | ```SELECT COUNT(*) AS '上海城市用户订单数量' FROM orders WHERE shipping_address LIKE '%上海市%' AND status IN ('paid', 'shipped', 'completed');``` | Missing tables: user_addresses |
-| 5 | 用户孙七的地址 | 5 | ```SELECT ua.province, ua.city FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '孙七'``` | ```SELECT ua.receiver_name AS '收货人姓名', ua.receiver_phone AS '收货人电话', ua.province AS '省份', ua.city AS '城市', ua.district AS '区县', ua.detail_address AS '详细地址', ua.is_default AS '是否默认地址' FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.username = '孙七';``` |  |
-| 6 | 小米14 Pro的分类 | 1 | ```SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '小米14 Pro'``` | ```SELECT category_name AS '分类名称', COUNT(*) AS '产品数量' FROM product_categories pc WHERE 1=1 AND (pc.parent_id = 0 OR pc.id IN ( SELECT pc2.id FROM product_categories pc2 WHERE pc2.parent_id = pc.id )) GROUP BY pc.category_name ORDER BY category_name ASC LIMIT 10;``` | Missing tables: products |
-| 7 | 杭州市用户数量 | 1 | ```SELECT COUNT(*) FROM user_addresses WHERE city = '杭州市'``` | ```SELECT u.province AS '省份', COUNT(u.id) AS '用户数量' FROM users u JOIN orders o ON u.id = o.user_id WHERE u.city = '杭州' GROUP BY u.province;``` | Missing tables: user_addresses |
-| 8 | 武汉市用户数量 | 1 | ```SELECT COUNT(*) FROM user_addresses WHERE city = '武汉市'``` | ```SELECT COUNT(*) AS '武汉城市用户数量' FROM users u WHERE u.city = '武汉市';``` | Missing tables: user_addresses |
-| 9 | 不同状态订单总额 | 5 | ```SELECT status, SUM(total_amount) FROM orders GROUP BY status``` | ```SELECT status AS '订单状态', SUM(actual_amount) AS '订单总额' FROM orders GROUP BY status;``` |  |
-| 10 | 孙七的订单总金额 | 1 | ```SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '孙七'``` | ```Invalid Response``` | No SQL generated |
+## Scoring Breakdown
+- **EX** (Execution Accuracy): 40% weight
+- **CM** (Component Match): 30% weight
+- **TC** (Table Coverage): 20% weight
+- **FC** (Function Coverage): 10% weight
+
+| # | Question | Score | Reason | Details |
+|---|----------|-------|--------|---------|
+| 1 | 广东省用户下的订单 | 1⭐ | N/A |  |
+| 2 | 高五的订单总金额 | 1⭐ | N/A |  |
+| 3 | 查询用户ID为19的订单 | 1⭐ | N/A |  |
+| 4 | 周八的订单 | 1⭐ | N/A |  |
+| 5 | 每个分类的最低价格 | 1⭐ | N/A |  |
+| 6 | 湖南省用户订单数量 | 1⭐ | N/A |  |
+| 7 | 订单总数 | 1⭐ | N/A |  |
+| 8 | 山东省用户数量 | 1⭐ | N/A |  |
+| 9 | 李四买过几次订单 | 1⭐ | N/A |  |
+| 10 | 林二买过几次订单 | 1⭐ | N/A |  |
+| 11 | 服装服饰类商品销售总额 | 1⭐ | N/A |  |
+| 12 | 武汉市注册用户数量 | 1⭐ | N/A |  |
+| 13 | 平均订单金额 | 1⭐ | N/A |  |
+| 14 | 苹果iPad Air价格 | 1⭐ | N/A |  |
+| 15 | 冯十的订单总金额 | 1⭐ | N/A |  |
+| 16 | 手机数码类商品均价 | 1⭐ | N/A |  |
+| 17 | 华硕ROG游戏本分类 | 1⭐ | N/A |  |
+| 18 | 查询用户ID为4的订单总金额 | 1⭐ | N/A |  |
+| 19 | 小米14的分类 | 1⭐ | N/A |  |
+| 20 | 三星Galaxy S24价格 | 1⭐ | N/A |  |
+| 21 | 四川省平均订单金额 | 1⭐ | N/A |  |
+| 22 | 手机数码类商品列表 | 1⭐ | N/A |  |
+| 23 | 电脑办公类商品销售总额 | 1⭐ | N/A |  |
+| 24 | 上架商品数量 | 1⭐ | N/A |  |
+| 25 | 吴九的订单 | 1⭐ | N/A |  |
+| 26 | 联想ThinkPad X1分类 | 1⭐ | N/A |  |
+| 27 | 深圳市用户订单数量 | 1⭐ | N/A |  |
+| 28 | 福建省用户数量 | 1⭐ | N/A |  |
+| 29 | 消费超过50000的用户 | 1⭐ | N/A |  |
+| 30 | 北京市平均订单金额 | 1⭐ | N/A |  |

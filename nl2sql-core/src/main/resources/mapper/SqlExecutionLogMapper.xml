@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.core.executor.mapper.SqlExecutionLogMapper">
+    
+    <!-- 插入SQL执行日志 -->
+    <insert id="insertSqlExecutionLog">
+        INSERT INTO sql_execution_logs
+            (user_id, username, session_id, question, generated_sql, datasource_id,
+             datasource_name, execution_time_ms, row_count, status, error_message, ip_address, created_at)
+        VALUES
+            (#{userId}, #{username}, #{sessionId}, #{question}, #{generatedSql}, #{datasourceId},
+             #{datasourceName}, #{executionTime}, #{rowCount}, #{status}, #{errorMessage}, #{ipAddress}, NOW())
+    </insert>
+    
+</mapper>

@@ -253,7 +253,15 @@ Response:
 ```bash
 # 创建数据库并导入测试数据
 mysql -u root -p < init_complete_database.sql
+
+# ⚠️ 重要：为RAG反馈表添加FULLTEXT索引（支持低分示例全文搜索）
+mysql -u root -p nl2sql_meta_db -e "ALTER TABLE rag_feedback ADD FULLTEXT INDEX idx_question_fulltext (question);"
 ```
+
+**说明**:
+- `rag_feedback`表的FULLTEXT索引用于低分SQL示例的语义检索
+- 如未添加索引，系统会自动降级到LIKE模糊匹配（性能略低但功能正常）
+- 生产环境建议在维护窗口期执行此操作
 
 #### Step 2: 启动依赖服务
 

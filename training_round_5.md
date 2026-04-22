@@ -1,17 +1,44 @@
 # NL2SQL Training - Round 5
 
-**Date**: 2026-04-21 08:55:04
-**Average Score**: 3.00 / 5.0
+**Date**: 2026-04-22 09:16:00
+**Test Cases**: 30
+**Average Score**: 1.00 / 5.0
 
-| # | Question | Score | Expected SQL | Actual SQL | Issues |
-|---|----------|-------|--------------|------------|--------|
-| 1 | 赵六的订单总金额 | 5 | ```SELECT SUM(total_amount) FROM orders WHERE user_id = 4``` | ```SELECT SUM(actual_amount) AS '订单总金额' FROM orders WHERE user_id IN ( SELECT id FROM users WHERE receiver_name = '赵六' ) GROUP BY user_id``` |  |
-| 2 | 每个分类的平均价格 | 5 | ```SELECT category_id, AVG(price) FROM products GROUP BY category_id``` | ```SELECT pc.category_name AS '分类名称', AVG(oi.subtotal) AS '平均金额' FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories pc ON p.category_id = pc.id GROUP BY pc.category_name;``` |  |
-| 3 | 销售额最高的分类 | 5 | ```SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY revenue DESC LIMIT 1``` | ```SELECT pc.category_name AS '分类名称', SUM(oi.quantity) AS '销售数量', SUM(oi.subtotal) AS '销售额' FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories pc ON p.category_id = pc.id WHERE o.status = 'completed' GROUP BY pc.category_name ORDER BY `销售额` DESC LIMIT 1;``` |  |
-| 4 | 河南省用户订单数量 | 1 | ```SELECT COUNT(*) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '河南省'``` | ```SELECT COUNT(*) AS '河南省份用户订单数量' FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '河南省';``` | Missing tables: user_addresses |
-| 5 | 不同状态订单总额 | 5 | ```SELECT status, SUM(total_amount) FROM orders GROUP BY status``` | ```SELECT status AS '订单状态', SUM(actual_amount) AS '订单总额' FROM orders GROUP BY status;``` |  |
-| 6 | 服装服饰类商品销售总额 | 1 | ```SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '服装服饰'``` | ```SELECT product_name AS '商品名称', SUM(subtotal) AS '服装服饰类商品销售总额' FROM order_items WHERE product_spec LIKE '%服装%' OR product_spec LIKE '%服饰%' GROUP BY product_name;``` | Missing tables: products, product_categories |
-| 7 | 四川省用户购买的订单总额 | 1 | ```SELECT SUM(o.total_amount) FROM orders o JOIN user_addresses ua ON o.user_id = ua.user_id WHERE ua.province = '四川省'``` | ```SELECT DATE_FORMAT(orders.created_at, '%Y-%m-%d') AS '下单时间', SUM(orders.total_amount) AS '订单总额' FROM orders WHERE orders.shipping_address LIKE '%四川省%' GROUP BY DATE_FORMAT(orders.created_at, '%Y-%m-%d') ORDER BY DATE_FORMAT(orders.created_at, '%Y-%m-%d');``` | Missing tables: user_addresses |
-| 8 | 小米14 Pro的分类 | 1 | ```SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '小米14 Pro'``` | ```SELECT category_name AS '分类名称', COUNT(*) AS '产品数量' FROM product_categories pc WHERE 1=1 AND (pc.parent_id = 0 OR pc.id IN ( SELECT pc2.id FROM product_categories pc2 WHERE pc2.parent_id = pc.id )) GROUP BY pc.category_name ORDER BY category_name ASC LIMIT 10;``` | Missing tables: products |
-| 9 | iPhone 15 Pro的分类名称 | 1 | ```SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'iPhone 15 Pro'``` | ```SELECT category_name AS '分类名称' FROM product_categories WHERE category_name = 'iPhone 15 Pro' LIMIT 1;``` | Missing tables: products |
-| 10 | 每个分类销售额 | 5 | ```SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name``` | ```SELECT pc.category_name AS '分类名称', SUM(oi.subtotal) AS '订单总金额' FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories pc ON p.category_id = pc.id GROUP BY pc.id, pc.category_name LIMIT 10;``` |  |
+## Scoring Breakdown
+- **EX** (Execution Accuracy): 40% weight
+- **CM** (Component Match): 30% weight
+- **TC** (Table Coverage): 20% weight
+- **FC** (Function Coverage): 10% weight
+
+| # | Question | Score | Reason | Details |
+|---|----------|-------|--------|---------|
+| 1 | 孙七的地址列表 | 1⭐ | N/A |  |
+| 2 | 电脑办公类商品总数 | 1⭐ | N/A |  |
+| 3 | 每个状态订单数量 | 1⭐ | N/A |  |
+| 4 | 周八的订单 | 1⭐ | N/A |  |
+| 5 | 吴九的订单 | 1⭐ | N/A |  |
+| 6 | 湖北省用户下的订单 | 1⭐ | N/A |  |
+| 7 | 湖南省用户订单数量 | 1⭐ | N/A |  |
+| 8 | 曹一购买的商品 | 1⭐ | N/A |  |
+| 9 | 薛二的订单 | 1⭐ | N/A |  |
+| 10 | 服装服饰类商品均价 | 1⭐ | N/A |  |
+| 11 | 小米14的分类 | 1⭐ | N/A |  |
+| 12 | 浙江省平均订单金额 | 1⭐ | N/A |  |
+| 13 | 四川省用户订单数量 | 1⭐ | N/A |  |
+| 14 | 百草味坚果信息 | 1⭐ | N/A |  |
+| 15 | 服装服饰类商品销售总额 | 1⭐ | N/A |  |
+| 16 | 曹一的订单总金额 | 1⭐ | N/A |  |
+| 17 | 最高订单金额 | 1⭐ | N/A |  |
+| 18 | 吴九的订单总金额 | 1⭐ | N/A |  |
+| 19 | 查询用户ID为4的订单总金额 | 1⭐ | N/A |  |
+| 20 | 库存大于100的商品 | 1⭐ | N/A |  |
+| 21 | 福建省用户购买的订单总额 | 1⭐ | N/A |  |
+| 22 | 厦门市注册用户数量 | 1⭐ | N/A |  |
+| 23 | 曹一的订单 | 1⭐ | N/A |  |
+| 24 | 四川省用户购买的订单总额 | 1⭐ | N/A |  |
+| 25 | 订单金额大于5000的数量 | 1⭐ | N/A |  |
+| 26 | 河南省用户下的订单 | 1⭐ | N/A |  |
+| 27 | 陈一买过几次订单 | 1⭐ | N/A |  |
+| 28 | 电脑办公类商品均价 | 1⭐ | N/A |  |
+| 29 | 福建省用户下的订单 | 1⭐ | N/A |  |
+| 30 | 男士休闲裤信息 | 1⭐ | N/A |  |

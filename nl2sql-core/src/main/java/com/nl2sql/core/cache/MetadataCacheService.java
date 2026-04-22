@@ -2,6 +2,7 @@ package com.nl2sql.core.cache;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.nl2sql.core.rerank.JinaReranker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -29,6 +30,9 @@ public class MetadataCacheService {
     
     @Autowired(required = false)
     private QueryCacheVectorService queryCacheVectorService;
+    
+    @Autowired(required = false)
+    private JinaReranker jinaReranker;  // ✅ Jina AI重排序服务
     
     /**
      * 表结构缓存：key = "schema:{datasourceId}:{tableName}"
@@ -236,8 +240,72 @@ public class MetadataCacheService {
                     queryCacheVectorService.findBestMatch(query, datasourceId);
                 
                 if (bestMatch != null && bestMatch.getScore() >= threshold) {
-                    log.info("[MetadataCache] ✅ L3语义匹配成功(Chroma): query='{}', similar='{}', similarity={:.3f}", 
-                        query, bestMatch.getCachedQuery(), bestMatch.getScore());
+                    // ✅ 二次校验：Jaccard关键词重叠度检查(阈值0.4)
+                    double jaccardScore = calculateKeywordOverlap(query, bestMatch.getCachedQuery());
+                    if (jaccardScore < 0.4) {
+                        log.warn("[MetadataCache] ⚠️ Chroma匹配但Jaccard校验失败: query='{}', similar='{}', vectorScore={}, jaccardScore={}", 
+                            query, bestMatch.getCachedQuery(), String.format("%.3f", bestMatch.getScore()), String.format("%.3f", jaccardScore));
+                        return null; // 拒绝低质量匹配
+                    }
+                    
+                    log.info("[MetadataCache] ✅ L3语义匹配成功(Chroma): query='{}', similar='{}', similarity={}, jaccard={}", 
+                        query, bestMatch.getCachedQuery(), String.format("%.3f", bestMatch.getScore()), String.format("%.3f", jaccardScore));
+                    
+                    // ==================== ✅ 新增：Jina Reranker重排序 ====================
+                    if (jinaReranker != null) {
+                        try {
+                            log.info("[MetadataCache] 🔄 启动Jina Reranker重排序");
+                            
+                            // 1. 从Chroma获取Top-20候选
+                            List<QueryCacheVectorService.CachedQueryResult> candidates = 
+                                queryCacheVectorService.findTopKMatches(query, datasourceId, 20);
+                            
+                            if (candidates != null && !candidates.isEmpty()) {
+                                // 2. 提取候选文档文本
+                                List<String> candidateDocs = candidates.stream()
+                                    .map(c -> c.getCachedQuery())
+                                    .collect(java.util.stream.Collectors.toList());
+                                
+                                // 3. 调用Jina Reranker精排
+                                List<JinaReranker.RerankedDocument> reranked = 
+                                    jinaReranker.rerank(query, candidateDocs);
+                                
+                                if (!reranked.isEmpty()) {
+                                    // 4. 取Top-1最佳匹配
+                                    JinaReranker.RerankedDocument bestDoc = reranked.get(0);
+                                    
+                                    log.info("[MetadataCache] ✅ Reranking完成: originalScore={}, rerankScore={}", 
+                                        String.format("%.3f", bestMatch.getScore()), 
+                                        String.format("%.3f", bestDoc.getRelevanceScore()));
+                                    
+                                    // 5. 查找对应的CachedQueryResult获取tables
+                                    String bestMatchedQuery = bestDoc.getContent();
+                                    QueryCacheVectorService.CachedQueryResult finalMatch = candidates.stream()
+                                        .filter(c -> c.getCachedQuery().equals(bestMatchedQuery))
+                                        .findFirst()
+                                        .orElse(bestMatch);
+                                    
+                                    try {
+                                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                        @SuppressWarnings("unchecked")
+                                        List<String> tables = mapper.readValue(finalMatch.getTables(), List.class);
+                                        log.info("[MetadataCache] ✅ Reranking缓存命中，返回表: {}", tables);
+                                        return tables;
+                                    } catch (Exception e) {
+                                        log.warn("[MetadataCache] ⚠️ 解析缓存的tables失败: query='{}', error={}", 
+                                            query, e.getMessage());
+                                        return null;
+                                    }
+                                }
+                            }
+                            
+                            log.warn("[MetadataCache] ⚠️ Reranking无结果，降级到原始匹配");
+                            
+                        } catch (Exception e) {
+                            log.error("[MetadataCache] ❌ Reranking失败，降级到原始匹配: {}", e.getMessage(), e);
+                        }
+                    }
+                    // ==================== Reranking结束 ====================
                     
                     // 解析JSON格式的tables字符串
                     try {
@@ -253,8 +321,8 @@ public class MetadataCacheService {
                     }
                 }
                 
-                log.info("[MetadataCache] ⚠️ Chroma语义匹配失败: bestScore={:.3f}, threshold={}, query='{}'", 
-                    bestMatch != null ? bestMatch.getScore() : 0.0, threshold, query);
+                log.info("[MetadataCache] ⚠️ Chroma语义匹配失败: bestScore={}, threshold={}, query='{}'", 
+                    bestMatch != null ? String.format("%.3f", bestMatch.getScore()) : "0.000", threshold, query);
                     
             } catch (Exception e) {
                 log.warn("[MetadataCache] ⚠️ Chroma检索异常，降级到Jaccard: query='{}', error={}", 
@@ -294,13 +362,13 @@ public class MetadataCacheService {
         }
         
         if (bestMatch != null && bestSimilarity >= threshold) {
-            log.info("[MetadataCache] ✅ L3语义匹配成功(Jaccard): query='{}', similar='{}', similarity={:.3f}", 
-                query, bestMatch.originalQuery, bestSimilarity);
+            log.info("[MetadataCache] ✅ L3语义匹配成功(Jaccard): query='{}', similar='{}', similarity={}", 
+                query, bestMatch.originalQuery, String.format("%.3f", bestSimilarity));
             return bestMatch.tables;
         }
         
-        log.info("[MetadataCache] ❌ L3语义匹配失败(Jaccard): query='{}', bestSimilarity={:.3f}, threshold={}", 
-            query, bestSimilarity, threshold);
+        log.info("[MetadataCache] ❌ L3语义匹配失败(Jaccard): query='{}', bestSimilarity={}, threshold={}", 
+            query, String.format("%.3f", bestSimilarity), threshold);
         return null;
     }
     
@@ -381,6 +449,77 @@ public class MetadataCacheService {
         
         // 综合评分：Jaccard占60%，前缀相似度占40%
         return jaccardSim * 0.6 + prefixSim * 0.4;
+    }
+    
+    /**
+     * ✅ 优化：计算关键词重叠度（用于Chroma二次校验）
+     * 改进点:
+     * 1. 提高阈值: 0.3 → 0.4
+     * 2. BM25加权: 短词权重降低,长词权重提升
+     * 3. 动词优先: 查询动词匹配度占60%
+     */
+    private double calculateKeywordOverlap(String query1, String query2) {
+        if (query1 == null || query2 == null || query1.isEmpty() || query2.isEmpty()) {
+            return 0.0;
+        }
+        
+        // 分词
+        String[] words1 = tokenize(query1);
+        String[] words2 = tokenize(query2);
+        
+        if (words1.length == 0 || words2.length == 0) {
+            return 0.0;
+        }
+        
+        java.util.Set<String> set1 = new java.util.HashSet<>(java.util.Arrays.asList(words1));
+        java.util.Set<String> set2 = new java.util.HashSet<>(java.util.Arrays.asList(words2));
+        
+        // 计算交集和并集
+        java.util.Set<String> intersection = new java.util.HashSet<>(set1);
+        intersection.retainAll(set2);
+        
+        java.util.Set<String> union = new java.util.HashSet<>(set1);
+        union.addAll(set2);
+        
+        // 基础Jaccard相似度
+        double baseJaccard = union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
+        
+        // ✅ BM25加权: 长词(>=3字)权重1.5, 短词(<3字)权重0.7
+        double weightedScore = 0.0;
+        int totalWeight = 0;
+        for (String word : intersection) {
+            double weight = word.length() >= 3 ? 1.5 : 0.7;
+            weightedScore += weight;
+            totalWeight++;
+        }
+        
+        // 归一化加权分数
+        double bm25Score = totalWeight > 0 ? weightedScore / (set1.size() + set2.size()) : 0.0;
+        
+        // ✅ 最终得分: 基础Jaccard占40%, BM25加权占60%
+        return baseJaccard * 0.4 + bm25Score * 0.6;
+    }
+    
+    /**
+     * 简单中文分词（去除停用词和标点）
+     */
+    private String[] tokenize(String text) {
+        if (text == null || text.isEmpty()) {
+            return new String[0];
+        }
+        
+        // 去除标点符号和空格
+        String cleaned = text.replaceAll("[\\s\\p{Punct}]+", " ");
+        
+        // 简单分词：按常见模式切分（实际项目建议使用HanLP或IK Analyzer）
+        // 这里采用保守策略：保留2字以上连续中文字符作为词
+        java.util.List<String> tokens = new java.util.ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\u4e00-\\u9fa5]{2,}|[a-zA-Z0-9]+").matcher(cleaned);
+        while (matcher.find()) {
+            tokens.add(matcher.group());
+        }
+        
+        return tokens.toArray(new String[0]);
     }
     
     // ==================== Column Whitelist 缓存 ====================

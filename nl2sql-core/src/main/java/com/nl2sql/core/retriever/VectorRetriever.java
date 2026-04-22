@@ -182,8 +182,8 @@ public class VectorRetriever {
             if (entry.getValue() >= similarityThreshold) {
                 result.add(entry.getKey());
             } else {
-                log.info("[VectorRetriever] 过滤低相关性表: {} (相似度: {:.3f} < 阈值: {:.3f})", 
-                    entry.getKey(), entry.getValue(), similarityThreshold);
+                log.info("[VectorRetriever] 过滤低相关性表: {} (相似度: {} < 阈值: {})", 
+                    entry.getKey(), String.format("%.3f", entry.getValue()), String.format("%.3f", similarityThreshold));
                 break; // 由于已排序，后续表的相关性更低，直接跳出
             }
         }

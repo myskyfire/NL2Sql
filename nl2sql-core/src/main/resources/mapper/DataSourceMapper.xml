@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.core.datasource.mapper.DataSourceMapper">
+    
+    <!-- 查询所有数据源 -->
+    <select id="findAllDataSources" resultType="java.util.HashMap">
+        SELECT id, name, db_type, host, port, database_name, username, password_encrypted
+        FROM datasources
+        WHERE is_active = 1
+        ORDER BY created_at DESC
+    </select>
+    
+</mapper>

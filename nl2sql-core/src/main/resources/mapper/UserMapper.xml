@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.auth.mapper.UserMapper">
+    
+    <!-- 根据用户名查询用户 -->
+    <select id="findByUsername" resultType="java.util.HashMap">
+        SELECT id, username, password, real_name, role, status
+        FROM users
+        WHERE username = #{username}
+    </select>
+    
+    <!-- 更新最后登录时间 -->
+    <update id="updateLastLoginAt">
+        UPDATE users SET last_login_at = NOW() WHERE id = #{userId}
+    </update>
+    
+    <!-- 根据ID查询角色 -->
+    <select id="findRoleById" resultType="string">
+        SELECT role FROM users WHERE id = #{id}
+    </select>
+    
+    <!-- 插入新用户 -->
+    <insert id="insertUser">
+        INSERT INTO users (username, password, real_name, role, status, created_at)
+        VALUES (#{username}, #{password}, #{realName}, #{role}, 1, NOW())
+    </insert>
+    
+    <!-- 更新密码 -->
+    <update id="updatePassword">
+        UPDATE users SET password = #{password}, updated_at = NOW() WHERE id = #{id}
+    </update>
+    
+    <!-- 查询所有用户列表 -->
+    <select id="findAllUsers" resultType="java.util.HashMap">
+        SELECT id, username, real_name, email, role, status, created_at, last_login_at
+        FROM users
+        ORDER BY created_at DESC
+    </select>
+    
+</mapper>

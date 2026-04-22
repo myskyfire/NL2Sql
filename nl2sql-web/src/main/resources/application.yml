@@ -139,6 +139,20 @@ chroma:
   url: http://[::1]:8000  # ⚠️ Chroma 绑定在 IPv6 localhost
   collection-name: NL2SQL_rag
 
+# Ollama Embedding Configuration - 支持多种嵌入模型
+ollama:
+  base-url: http://localhost:11434
+  embedding-model: bge-m3  # 可切换: bge-m3 | text-embedding-ada-002 | m3e-base | nomic-embed-text
+
+# Reranker Configuration - Jina AI重排序服务
+reranker:
+  provider: jina  # jina | flag-embedding(本地)
+  top-k: 5        # 返回Top-K结果
+  threshold: 0.5  # 最低相关性阈值
+  jina:
+    api-key: jina_8dbdaf5c1b7d40dca36fae57943eec15EjCz5qiHqCfdJl2x7q9vfLZm84hJ# 从环境变量读取,或在此直接填写
+    model: jina-reranker-v2-base-multilingual
+
 # MyBatis Plus Configuration
 mybatis-plus:
   configuration:
@@ -148,6 +162,8 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+  # ✅ Mapper XML文件位置
+  mapper-locations: classpath*:mapper/**/*.xml
 
 # Logging
 logging:

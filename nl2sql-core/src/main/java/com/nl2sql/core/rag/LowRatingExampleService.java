@@ -1,9 +1,9 @@
 package com.nl2sql.core.rag;
 
+import com.nl2sql.core.rag.mapper.RagFeedbackMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,7 +17,7 @@ import java.util.List;
 public class LowRatingExampleService {
     
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private RagFeedbackMapper ragFeedbackMapper;
     
     /**
      * 查找与当前问题相似的低分示例
@@ -31,27 +31,8 @@ public class LowRatingExampleService {
             String question, double similarityThreshold, int limit) {
         
         try {
-            // 使用FULLTEXT搜索找到相似问题的低分反馈
-            String sql = "SELECT question, generated_sql, feedback_text, rating, " +
-                        "MATCH(question) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance " +
-                        "FROM rag_feedback " +
-                        "WHERE rating <= 2 " +
-                        "AND MATCH(question) AGAINST(? IN NATURAL LANGUAGE MODE) " +
-                        "ORDER BY relevance DESC " +
-                        "LIMIT ?";
-            
-            List<LowRatingExample> examples = jdbcTemplate.query(sql, 
-                (rs, rowNum) -> {
-                    LowRatingExample example = new LowRatingExample();
-                    example.setQuestion(rs.getString("question"));
-                    example.setGeneratedSql(rs.getString("generated_sql"));
-                    example.setFeedbackText(rs.getString("feedback_text"));
-                    example.setRating(rs.getInt("rating"));
-                    example.setRelevance(rs.getDouble("relevance"));
-                    return example;
-                },
-                question, question, limit
-            );
+            // ✅ 使用MyBatis Mapper查询
+            List<LowRatingExample> examples = ragFeedbackMapper.findSimilarLowRatingExamples(question, limit);
             
             // 过滤掉相似度低于阈值的
             return examples.stream()
@@ -73,26 +54,8 @@ public class LowRatingExampleService {
      */
     public LowRatingExample checkIfSimilarToLowRating(String question, String generatedSql) {
         try {
-            // 简化版：直接检查是否有相同问题的低分反馈
-            String sql = "SELECT question, generated_sql, feedback_text, rating " +
-                        "FROM rag_feedback " +
-                        "WHERE question = ? AND rating <= 2 " +
-                        "ORDER BY created_at DESC LIMIT 1";
-            
-            List<LowRatingExample> results = jdbcTemplate.query(sql,
-                (rs, rowNum) -> {
-                    LowRatingExample example = new LowRatingExample();
-                    example.setQuestion(rs.getString("question"));
-                    example.setGeneratedSql(rs.getString("generated_sql"));
-                    example.setFeedbackText(rs.getString("feedback_text"));
-                    example.setRating(rs.getInt("rating"));
-                    example.setRelevance(1.0); // 完全匹配
-                    return example;
-                },
-                question
-            );
-            
-            return results.isEmpty() ? null : results.get(0);
+            // ✅ 使用MyBatis Mapper查询
+            return ragFeedbackMapper.checkExactMatchLowRating(question);
             
         } catch (Exception e) {
             log.error("[低分检查] 查询失败: question={}", question, e);

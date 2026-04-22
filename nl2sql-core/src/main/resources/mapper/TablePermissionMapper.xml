@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.auth.mapper.TablePermissionMapper">
+    
+    <!-- 查询用户授权的表列表 -->
+    <select id="findAuthorizedTables" resultType="string">
+        SELECT table_name FROM table_permissions
+        WHERE user_id = #{userId} AND is_active = 1
+    </select>
+    
+    <!-- 插入表权限 -->
+    <insert id="insertTablePermission">
+        INSERT INTO table_permissions (user_id, table_name, granted_by, is_active)
+        VALUES (#{userId}, #{tableName}, #{grantedBy}, 1)
+        ON DUPLICATE KEY UPDATE
+            granted_by = VALUES(granted_by),
+            is_active = 1
+    </insert>
+    
+    <!-- 停用表权限 -->
+    <update id="deactivateTablePermission">
+        UPDATE table_permissions SET is_active = 0
+        WHERE user_id = #{userId} AND table_name = #{tableName}
+    </update>
+    
+    <!-- 查询表权限列表 -->
+    <select id="findTablePermissionList" resultType="java.util.HashMap">
+        SELECT tp.id, tp.user_id, u.username, u.real_name,
+               tp.table_name, tp.granted_by, tp.is_active, tp.created_at
+        FROM table_permissions tp
+        LEFT JOIN users u ON tp.user_id = u.id
+        ORDER BY tp.created_at DESC
+    </select>
+    
+    <!-- 统计表使用情况 -->
+    <select id="countTableUsage" resultType="java.util.HashMap">
+        SELECT tp.table_name,
+               COUNT(DISTINCT tp.user_id) as user_count,
+               MAX(tp.created_at) as last_granted
+        FROM table_permissions tp
+        WHERE tp.is_active = 1
+        GROUP BY tp.table_name
+        ORDER BY user_count DESC
+    </select>
+    
+    <!-- 查询有权限的用户列表 -->
+    <select id="findUsersWithTablePermission" resultType="java.util.HashMap">
+        SELECT tp.id, tp.user_id, u.username, u.real_name, u.email, u.role,
+               tp.table_name, tp.granted_by, tp.is_active, tp.created_at
+        FROM table_permissions tp
+        LEFT JOIN users u ON tp.user_id = u.id
+        ORDER BY tp.created_at DESC
+    </select>
+    
+</mapper>

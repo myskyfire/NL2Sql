@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.core.rag.mapper.PromptVersionMapper">
+    
+    <!-- 插入Prompt版本 -->
+    <insert id="insertPromptVersion" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO prompt_versions (version_name, prompt_type, prompt_content, description, created_by)
+        VALUES (#{versionName}, #{promptType}, #{promptContent}, #{description}, #{createdBy})
+    </insert>
+    
+    <!-- 更新Prompt内容 -->
+    <update id="updatePromptContent">
+        UPDATE prompt_versions
+        SET prompt_content = #{promptContent}, description = #{description}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 重置默认版本 -->
+    <update id="resetDefaultVersion">
+        UPDATE prompt_versions SET is_default = 0 WHERE prompt_type = #{promptType}
+    </update>
+    
+    <!-- 激活版本 -->
+    <update id="activateVersion">
+        UPDATE prompt_versions
+        SET status = 'ACTIVE', is_default = 1, activated_at = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 查询默认Prompt -->
+    <select id="findDefaultPrompt" resultType="string">
+        SELECT prompt_content FROM prompt_versions
+        WHERE prompt_type = #{promptType} AND is_default = 1
+        LIMIT 1
+    </select>
+    
+    <!-- 根据ID查询版本 -->
+    <select id="findVersionById" resultType="java.util.HashMap">
+        SELECT * FROM prompt_versions WHERE id = #{id}
+    </select>
+    
+    <!-- 查询所有版本 -->
+    <select id="findAllVersions" resultType="java.util.HashMap">
+        SELECT * FROM prompt_versions ORDER BY created_at DESC
+    </select>
+    
+    <!-- 插入AB测试记录 -->
+    <insert id="insertAbTest" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO prompt_ab_tests (test_name, prompt_type, version_a_id, version_b_id, created_by)
+        VALUES (#{testName}, #{promptType}, #{versionAId}, #{versionBId}, #{createdBy})
+    </insert>
+    
+    <!-- 完成AB测试 -->
+    <update id="completeAbTest">
+        UPDATE prompt_ab_tests
+        SET status = 'COMPLETED', ended_at = NOW(), winner_version_id = #{winnerVersionId}
+        WHERE id = #{id}
+    </update>
+    
+</mapper>

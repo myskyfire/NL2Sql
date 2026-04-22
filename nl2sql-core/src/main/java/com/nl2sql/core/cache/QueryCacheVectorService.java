@@ -4,13 +4,13 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -40,14 +40,16 @@ public class QueryCacheVectorService {
     @Value("${query-cache.vector.collection-name:NL2SQL_query_cache}")
     private String collectionName;
     
-    @Value("${query-cache.vector.similarity-threshold:0.85}")
+    @Value("${query-cache.vector.similarity-threshold:0.95}")
     private double similarityThreshold;
     
     @Value("${query-cache.vector.max-results:5}")
     private int maxResults;
     
+    @Autowired(required = false)
+    private EmbeddingModel embeddingModel; // 注入OllamaEmbeddingProvider
+    
     private EmbeddingStore<TextSegment> embeddingStore;
-    private EmbeddingModel embeddingModel;
     private boolean available = false;
     
     @PostConstruct
@@ -60,8 +62,14 @@ public class QueryCacheVectorService {
         try {
             log.info("初始化查询缓存向量数据库: url={}, collection={}", chromaUrl, collectionName);
             
-            // 初始化Embedding模型（与RAG共用）
-            this.embeddingModel = new AllMiniLmL6V2EmbeddingModel();
+            // ✅ 使用注入的OllamaEmbeddingProvider (支持配置切换模型)
+            if (embeddingModel == null) {
+                log.warn("[QueryCacheVectorService] EmbeddingModel未注入，Chroma不可用");
+                this.available = false;
+                return;
+            }
+            
+            log.info("[QueryCacheVectorService] 使用Ollama嵌入模型: {}", embeddingModel.getClass().getSimpleName());
             
             // 创建专用的查询缓存集合
             this.embeddingStore = ChromaEmbeddingStore.builder()
@@ -186,8 +194,8 @@ public class QueryCacheVectorService {
                 result.setTimestamp(Long.parseLong(metadata.getString("timestamp")));
                 
                 results.add(result);
-                log.debug("[QueryCacheVectorService] 匹配项: query='{}', score={:.3f}, tables={}", 
-                    result.getCachedQuery(), result.getScore(), result.getTables());
+                log.debug("[QueryCacheVectorService] 匹配项: query='{}', score={}, tables={}", 
+                    result.getCachedQuery(), String.format("%.3f", result.getScore()), result.getTables());
             }
             
             if (filteredCount > 0) {
@@ -198,8 +206,8 @@ public class QueryCacheVectorService {
             results.sort((a, b) -> Double.compare(b.getScore(), a.getScore()));
             
             if (!results.isEmpty()) {
-                log.info("[QueryCacheVectorService] ✅ Chroma语义检索成功: found={} items, best_score={:.3f}, best_query='{}'", 
-                    results.size(), results.get(0).getScore(), results.get(0).getCachedQuery());
+                log.info("[QueryCacheVectorService] ✅ Chroma语义检索成功: found={} items, best_score={}, best_query='{}'", 
+                    results.size(), String.format("%.3f", results.get(0).getScore()), results.get(0).getCachedQuery());
             } else {
                 log.info("[QueryCacheVectorService] ⚠️ Chroma语义检索无匹配结果: query={}, threshold={}", 
                     query, similarityThreshold);
@@ -224,6 +232,78 @@ public class QueryCacheVectorService {
     public CachedQueryResult findBestMatch(String query, Long datasourceId) {
         List<CachedQueryResult> results = searchSimilarQueries(query, datasourceId);
         return results.isEmpty() ? null : results.get(0);
+    }
+    
+    /**
+     * ✅ 新增：获取Top-K匹配结果（用于Reranker）
+     * 
+     * @param query 查询文本
+     * @param datasourceId 数据源ID
+     * @param topK 返回数量
+     * @return Top-K匹配结果列表
+     */
+    public List<CachedQueryResult> findTopKMatches(String query, Long datasourceId, int topK) {
+        if (!isAvailable()) {
+            log.debug("[QueryCacheVectorService] Chroma不可用，返回空结果: query={}", query);
+            return new ArrayList<>();
+        }
+        
+        try {
+            log.info("[QueryCacheVectorService] 🔍 开始Chroma Top-{}检索: query={}, datasourceId={}", 
+                topK, query, datasourceId);
+            
+            // 生成查询向量
+            Embedding queryEmbedding = embeddingModel.embed(query).content();
+            
+            // 执行向量搜索
+            dev.langchain4j.store.embedding.EmbeddingSearchRequest request = 
+                dev.langchain4j.store.embedding.EmbeddingSearchRequest.builder()
+                    .queryEmbedding(queryEmbedding)
+                    .maxResults(topK)
+                    .minScore(similarityThreshold)
+                    .build();
+            
+            dev.langchain4j.store.embedding.EmbeddingSearchResult<TextSegment> searchResult = 
+                embeddingStore.search(request);
+            List<EmbeddingMatch<TextSegment>> matches = searchResult.matches();
+            
+            log.debug("[QueryCacheVectorService] Chroma原始匹配数: {}", matches.size());
+            
+            // 转换结果
+            List<CachedQueryResult> results = new ArrayList<>();
+            for (EmbeddingMatch<TextSegment> match : matches) {
+                Metadata metadata = match.embedded().metadata();
+                
+                // 如果指定了datasourceId，进行过滤
+                String cachedDatasourceId = metadata.getString("datasource_id");
+                if (datasourceId != null && cachedDatasourceId != null) {
+                    if (!cachedDatasourceId.equals(datasourceId.toString())) {
+                        continue;
+                    }
+                }
+                
+                CachedQueryResult result = new CachedQueryResult();
+                result.setCachedQuery(match.embedded().text());
+                result.setTables(metadata.getString("tables"));
+                result.setScore(match.score());
+                result.setTimestamp(Long.parseLong(metadata.getString("timestamp")));
+                
+                results.add(result);
+            }
+            
+            // 按相似度降序排序
+            results.sort((a, b) -> Double.compare(b.getScore(), a.getScore()));
+            
+            log.info("[QueryCacheVectorService] ✅ Chroma Top-{}检索完成: found={} items", 
+                topK, results.size());
+            
+            return results;
+            
+        } catch (Exception e) {
+            log.error("[QueryCacheVectorService] ❌ Chroma Top-K检索失败: query={}, error={}", 
+                query, e.getMessage(), e);
+            return new ArrayList<>();
+        }
     }
     
     /**

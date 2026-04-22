@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.auth.mapper.WhitelistMapper">
+    
+    <!-- 检查用户是否在白名单中 -->
+    <select id="countActiveWhitelist" resultType="int">
+        SELECT COUNT(*) FROM whitelist
+        WHERE user_id = #{userId}
+          AND is_active = 1
+          AND (expires_at IS NULL OR expires_at &gt; NOW())
+    </select>
+    
+    <!-- 插入白名单记录 -->
+    <insert id="insertWhitelist">
+        INSERT INTO whitelist (user_id, added_by, reason, expires_at, is_active)
+        VALUES (#{userId}, #{addedBy}, #{reason}, #{expiresAt}, 1)
+        ON DUPLICATE KEY UPDATE
+            added_by = VALUES(added_by),
+            reason = VALUES(reason),
+            expires_at = VALUES(expires_at),
+            is_active = 1
+    </insert>
+    
+    <!-- 停用白名单 -->
+    <update id="deactivateWhitelist">
+        UPDATE whitelist SET is_active = 0 WHERE user_id = #{userId}
+    </update>
+    
+    <!-- 查询白名单列表 -->
+    <select id="findWhitelistList" resultType="java.util.HashMap">
+        SELECT w.id, w.user_id, u.username, u.real_name,
+               w.added_by, w.reason, w.expires_at, w.is_active, w.created_at
+        FROM whitelist w
+        LEFT JOIN users u ON w.user_id = u.id
+        ORDER BY w.created_at DESC
+    </select>
+    
+</mapper>

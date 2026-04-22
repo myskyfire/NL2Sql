@@ -6,7 +6,7 @@ import mysql.connector
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-TOKEN = "a14da0f22315452f9471e5dcd7f01206"
+TOKEN = "f4bef8749a264cbcad59b2b0e634cb3f"
 API_URL = "http://localhost:8080/api/agent/chat/test"
 FEEDBACK_URL = "http://localhost:8080/api/feedback/submit"
 

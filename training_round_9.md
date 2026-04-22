@@ -1,17 +1,44 @@
 # NL2SQL Training - Round 9
 
-**Date**: 2026-04-21 09:14:26
-**Average Score**: 3.10 / 5.0
+**Date**: 2026-04-22 09:16:01
+**Test Cases**: 30
+**Average Score**: 1.00 / 5.0
 
-| # | Question | Score | Expected SQL | Actual SQL | Issues |
-|---|----------|-------|--------------|------------|--------|
-| 1 | 不同状态订单最小金额 | 5 | ```SELECT status, MIN(total_amount) FROM orders GROUP BY status``` | ```SELECT status AS '订单状态', MIN(actual_amount) AS '最小金额' FROM orders GROUP BY status;``` |  |
-| 2 | 李四的订单列表 | 2 | ```SELECT o.order_no, o.status FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '李四'``` | ```SELECT o.id AS '订单ID', o.order_no AS '订单号', o.user_id AS '用户ID', o.total_amount AS '总金额', o.discount_amount AS '优惠金额', o.actual_amount AS '实付金额', o.status AS '状态', o.payment_method AS '支付方式', o.payment_time AS '支付时间', o.shipping_address AS '收货地址', o.receiver_name AS '收货人', o.receiver_phone AS '收货人电话', o.created_at AS '下单时间', o.paid_at AS '支付时间', o.shipped_at AS '发货时间', o.completed_at AS '完成时间' FROM orders o WHERE o.user_id = (SELECT user_id FROM users WHERE username = '李四') LIMIT 100;``` | Missing function: JOIN |
-| 3 | 最低订单金额 | 1 | ```SELECT MIN(total_amount) FROM orders``` | ```Invalid Response``` | No SQL generated |
-| 4 | 薛二的订单 | 5 | ```SELECT * FROM orders WHERE user_id = 20``` | ```SELECT o.id AS '订单ID', o.order_no AS '订单号', o.user_id AS '用户ID', o.total_amount AS '订单总金额', o.discount_amount AS '优惠金额', o.actual_amount AS '实付金额(GMV)', o.status AS '订单状态', o.payment_method AS '支付方式', o.payment_time AS '支付时间', o.shipping_address AS '收货地址', o.receiver_name AS '收货人', o.receiver_phone AS '收货人电话', o.created_at AS '下单时间' FROM orders o JOIN order_items oi ON o.id = oi.order_id WHERE o.user_id = (SELECT user_id FROM users WHERE username = '薛二') LIMIT 10;``` |  |
-| 5 | 消费最少的后5个用户 | 5 | ```SELECT u.real_name, SUM(o.total_amount) as total_spent FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY total_spent ASC LIMIT 5``` | ```SELECT u.id AS '用户ID', u.username AS '用户名', COUNT(o.id) AS '订单数量', SUM(o.actual_amount) AS '实付金额' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.username ORDER BY SUM(o.actual_amount) ASC LIMIT 5;``` |  |
-| 6 | 冯十的订单 | 1 | ```SELECT * FROM orders WHERE user_id = 18``` | ```Invalid Response``` | No SQL generated |
-| 7 | 郑十的订单 | 1 | ```SELECT * FROM orders WHERE user_id = 8``` | ```Invalid Response``` | No SQL generated |
-| 8 | vivo X100 Pro的信息 | 1 | ```SELECT * FROM products WHERE product_name = 'vivo X100 Pro'``` | ```Invalid Response``` | No SQL generated |
-| 9 | 黄三的订单 | 5 | ```SELECT * FROM orders WHERE user_id = 11``` | ```SELECT o.id AS '订单ID', o.order_no AS '订单号', u.username AS '用户名', o.total_amount AS '订单总金额', o.discount_amount AS '优惠金额', o.actual_amount AS '实付金额', o.status AS '订单状态', o.payment_method AS '支付方式', o.payment_time AS '支付时间', o.shipping_address AS '收货地址', o.receiver_name AS '收货人', o.receiver_phone AS '收货人电话', o.created_at AS '下单时间', o.paid_at AS '支付时间', o.shipped_at AS '发货时间', o.completed_at AS '完成时间' FROM orders o JOIN users u ON o.user_id = u.id WHERE u.username LIKE '%huangsan%' LIMIT 10;``` |  |
-| 10 | 戴尔XPS 15分类 | 5 | ```SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '戴尔XPS 15'``` | ```SELECT c.category_name AS '分类名称', p.product_name AS '商品名称', p.brand AS '品牌', p.model AS '型号', p.specification AS '规格参数', p.description AS '商品描述', p.detail_info AS '商品详情', p.price AS '商品价格', p.cost_price AS '成本价', p.status AS '商品状态' FROM product_categories c JOIN products p ON c.id = p.category_id WHERE c.category_name LIKE '%戴尔XPS 15%' LIMIT 10;``` |  |
+## Scoring Breakdown
+- **EX** (Execution Accuracy): 40% weight
+- **CM** (Component Match): 30% weight
+- **TC** (Table Coverage): 20% weight
+- **FC** (Function Coverage): 10% weight
+
+| # | Question | Score | Reason | Details |
+|---|----------|-------|--------|---------|
+| 1 | 吴九的订单总金额 | 1⭐ | N/A |  |
+| 2 | 商品总数 | 1⭐ | N/A |  |
+| 3 | 深圳市用户下的订单 | 1⭐ | N/A |  |
+| 4 | 康师傅红茶信息 | 1⭐ | N/A |  |
+| 5 | 王五的订单详情 | 1⭐ | N/A |  |
+| 6 | 浙江省用户购买的订单总额 | 1⭐ | N/A |  |
+| 7 | 总退款金额 | 1⭐ | N/A |  |
+| 8 | 广东省平均订单金额 | 1⭐ | N/A |  |
+| 9 | 服装服饰类商品列表 | 1⭐ | N/A |  |
+| 10 | 山东省用户数量 | 1⭐ | N/A |  |
+| 11 | 北京市平均订单金额 | 1⭐ | N/A |  |
+| 12 | 黄三的订单总金额 | 1⭐ | N/A |  |
+| 13 | 成都市注册用户数量 | 1⭐ | N/A |  |
+| 14 | 各城市用户数量 | 1⭐ | N/A |  |
+| 15 | 手机数码类商品列表 | 1⭐ | N/A |  |
+| 16 | 李四的订单列表 | 1⭐ | N/A |  |
+| 17 | 高五买过几次订单 | 1⭐ | N/A |  |
+| 18 | 王五买过几次订单 | 1⭐ | N/A |  |
+| 19 | 最贵的商品 | 1⭐ | N/A |  |
+| 20 | 浙江省用户下的订单 | 1⭐ | N/A |  |
+| 21 | 李四买过几次订单 | 1⭐ | N/A |  |
+| 22 | 冯十买过几次订单 | 1⭐ | N/A |  |
+| 23 | 查询用户ID为13的订单 | 1⭐ | N/A |  |
+| 24 | MacBook Pro 14所属分类 | 1⭐ | N/A |  |
+| 25 | 北京市用户数量 | 1⭐ | N/A |  |
+| 26 | 赵六买过几次订单 | 1⭐ | N/A |  |
+| 27 | 郑十的订单 | 1⭐ | N/A |  |
+| 28 | 四川省用户购买的订单总额 | 1⭐ | N/A |  |
+| 29 | 陈一购买的商品 | 1⭐ | N/A |  |
+| 30 | 戴尔XPS 15分类 | 1⭐ | N/A |  |
