@@ -40,8 +40,15 @@ public class JinaReranker {
     @Value("${reranker.threshold:0.5}")
     private double threshold;
     
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    public JinaReranker() {
+        // ✅ 创建支持代理的HttpClient
+        this.httpClient = HttpClient.newBuilder()
+            .proxy(java.net.ProxySelector.getDefault())  // 使用系统代理
+            .build();
+    }
     
     /**
      * 重排序主方法
