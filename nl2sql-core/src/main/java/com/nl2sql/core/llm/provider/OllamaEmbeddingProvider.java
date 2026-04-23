@@ -35,7 +35,12 @@ public class OllamaEmbeddingProvider implements EmbeddingModel {
     @Value("${ollama.embedding-model:bge-m3}")
     private String embeddingModel;  // ✅ 从配置文件读取,支持动态切换
     
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    @Value("${ollama.timeout:120}")
+    private int timeout;  // ✅ 超时时间（秒），避免首次加载模型超时
+    
+    private final HttpClient httpClient = HttpClient.newBuilder()
+        .connectTimeout(java.time.Duration.ofSeconds(120))
+        .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     /**
@@ -87,6 +92,7 @@ public class OllamaEmbeddingProvider implements EmbeddingModel {
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Content-Type", "application/json")
+            .timeout(java.time.Duration.ofSeconds(timeout))  // ✅ 设置请求超时
             .POST(HttpRequest.BodyPublishers.ofString(requestBody))
             .build();
         

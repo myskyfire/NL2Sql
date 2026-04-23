@@ -71,19 +71,86 @@ public class QueryCacheVectorService {
             
             log.info("[QueryCacheVectorService] 使用Ollama嵌入模型: {}", embeddingModel.getClass().getSimpleName());
             
-            // 创建专用的查询缓存集合
-            this.embeddingStore = ChromaEmbeddingStore.builder()
-                .baseUrl(chromaUrl)
-                .collectionName(collectionName)
-                .apiVersion(ChromaApiVersion.V2)
-                .build();
+            // ✅ 关键修复：尝试创建集合，如果因维度不匹配失败，则通过HTTP API删除后重建
+            try {
+                this.embeddingStore = ChromaEmbeddingStore.builder()
+                    .baseUrl(chromaUrl)
+                    .collectionName(collectionName)
+                    .apiVersion(ChromaApiVersion.V2)
+                    .build();
+                
+                // 测试写入一条数据验证维度是否匹配
+                testEmbeddingStore();
+                
+                this.available = true;
+                log.info("[QueryCacheVectorService] Chroma向量缓存初始化成功，阈值={}", similarityThreshold);
+                
+            } catch (Exception e) {
+                if (e.getMessage() != null && e.getMessage().contains("dimension")) {
+                    log.warn("[QueryCacheVectorService] 检测到维度不匹配，尝试删除旧集合并重建: {}", e.getMessage());
+                    deleteCollectionViaHttp();
+                    
+                    // 重新创建集合
+                    this.embeddingStore = ChromaEmbeddingStore.builder()
+                        .baseUrl(chromaUrl)
+                        .collectionName(collectionName)
+                        .apiVersion(ChromaApiVersion.V2)
+                        .build();
+                    
+                    this.available = true;
+                    log.info("[QueryCacheVectorService] ✅ Chroma集合重建成功，使用新维度");
+                } else {
+                    throw e;
+                }
+            }
             
-            this.available = true;
-            log.info("[QueryCacheVectorService] Chroma向量缓存初始化成功，阈值={}", similarityThreshold);
         } catch (Exception e) {
             log.warn("[QueryCacheVectorService] Chroma向量缓存初始化失败: {}", e.getMessage());
             log.info("[QueryCacheVectorService] 将使用Jaccard降级方案");
             this.available = false;
+        }
+    }
+    
+    /**
+     * 测试 EmbeddingStore 是否可用（检测维度不匹配）
+     */
+    private void testEmbeddingStore() {
+        try {
+            // 生成一个测试向量
+            TextSegment testSegment = TextSegment.from("test");
+            Embedding testEmbedding = embeddingModel.embed(testSegment).content();
+            
+            // 尝试添加（会触发维度检查）
+            embeddingStore.add(testEmbedding, testSegment);
+            
+            // 立即删除测试数据
+            embeddingStore.removeAll(java.util.Collections.singletonList(
+                embeddingStore.search(
+                    dev.langchain4j.store.embedding.EmbeddingSearchRequest.builder()
+                        .queryEmbedding(testEmbedding)
+                        .maxResults(1)
+                        .build()
+                ).matches().get(0).embeddingId()
+            ));
+            
+        } catch (Exception e) {
+            throw new RuntimeException("维度测试失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 通过HTTP API删除集合
+     */
+    private void deleteCollectionViaHttp() {
+        try {
+            String deleteUrl = chromaUrl.replace("[::1]", "localhost") + "/api/v2/collections/" + collectionName;
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(deleteUrl).openConnection();
+            conn.setRequestMethod("DELETE");
+            int responseCode = conn.getResponseCode();
+            log.info("[QueryCacheVectorService] 删除集合响应码: {}", responseCode);
+            conn.disconnect();
+        } catch (Exception e) {
+            log.warn("[QueryCacheVectorService] 删除集合失败（可能不存在）: {}", e.getMessage());
         }
     }
     
