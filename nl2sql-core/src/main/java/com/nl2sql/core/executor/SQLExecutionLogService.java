@@ -1,7 +1,9 @@
 package com.nl2sql.core.executor;
 
+import com.nl2sql.core.mapper.ExecutionLogMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +14,9 @@ import java.util.Map;
 @Slf4j
 @Service
 public class SQLExecutionLogService {
+    
+    @Autowired(required = false)
+    private ExecutionLogMapper executionLogMapper;
     
     private final JdbcTemplate jdbcTemplate;
     
@@ -53,17 +58,38 @@ public class SQLExecutionLogService {
      */
     public void logExecution(ExecutionLog execLog) {
         try {
-            executionLogMapper.insertExecutionLog(
-                execLog.getUserId(),
-                execLog.getUsername(),
-                execLog.getSqlText(),
-                execLog.getExecutionTimeMs(),
-                execLog.getRowCount(),
-                execLog.isSlowQuery() ? 1 : 0,
-                execLog.getStatus(),
-                execLog.getErrorMessage(),
-                execLog.getIpAddress()
-            );
+            if (executionLogMapper != null) {
+                // 使用MyBatis Mapper
+                executionLogMapper.insertExecutionLog(
+                    execLog.getUserId(),
+                    execLog.getUsername(),
+                    execLog.getSqlText(),
+                    execLog.getExecutionTimeMs(),
+                    execLog.getRowCount(),
+                    execLog.isSlowQuery() ? 1 : 0,
+                    execLog.getStatus(),
+                    execLog.getErrorMessage(),
+                    execLog.getIpAddress()
+                );
+            } else {
+                // 降级到JdbcTemplate
+                String sql = "INSERT INTO sql_execution_logs (user_id, username, sql_text, execution_time_ms, " +
+                    "row_count, is_slow_query, status, error_message, ip_address, created_at) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                
+                jdbcTemplate.update(sql,
+                    execLog.getUserId(),
+                    execLog.getUsername(),
+                    execLog.getSqlText(),
+                    execLog.getExecutionTimeMs(),
+                    execLog.getRowCount(),
+                    execLog.isSlowQuery() ? 1 : 0,
+                    execLog.getStatus(),
+                    execLog.getErrorMessage(),
+                    execLog.getIpAddress()
+                );
+                log.debug("使用JdbcTemplate记录SQL执行日志（降级模式）");
+            }
             
             log.debug("SQL执行日志记录成功: userId={}, status={}", execLog.getUserId(), execLog.getStatus());
             

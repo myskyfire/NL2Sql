@@ -7,8 +7,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * SQL反馈服务
@@ -281,7 +285,7 @@ public class SQLFeedbackService {
                 
             // 3. 注入到L2模糊向量缓存（归一化key）
             String normalizedQuery = normalizeQuery(question);
-            java.util.List<String> tableList = new java.util.ArrayList<>(usedTables);
+            List<String> tableList = new ArrayList<>(usedTables);
             metadataCacheService.putFuzzyVectorRetrieval(normalizedQuery, tableList);
                 
             log.info("[表缓存注入] ✅ 已注入L2缓存: question='{}', normalized='{}', tables={}", 
@@ -315,7 +319,7 @@ public class SQLFeedbackService {
      * ✅ 从SQL中提取表名（使用JSqlParser）
      */
     private java.util.Set<String> extractTablesFromSQL(String sql) {
-        java.util.Set<String> tables = new java.util.HashSet<>();
+        Set<String> tables = new HashSet<>();
         
         if (sql == null || sql.trim().isEmpty()) {
             return tables;
@@ -436,7 +440,7 @@ public class SQLFeedbackService {
             
             if (!joinPaths.isEmpty()) {
                 String relationships = String.join("\n", joinPaths);
-                java.util.List<String> tableList = new java.util.ArrayList<>(usedTables);
+                List<String> tableList = new ArrayList<>(usedTables);
                 metadataCacheService.putRelationships(datasourceId, tableList, relationships);
                 
                 log.info("[表关联缓存] ✅ 已缓存 {} 个关联路径: {}", joinPaths.size(), joinPaths);
@@ -451,7 +455,7 @@ public class SQLFeedbackService {
      * ✅ 从 SQL 的 AS 别名中提取列名映射
      */
     private java.util.Map<String, String> extractColumnAliasMapping(String sql) {
-        java.util.Map<String, String> mapping = new java.util.HashMap<>();
+        Map<String, String> mapping = new HashMap<>();
         
         if (sql == null) return mapping;
         
@@ -484,7 +488,7 @@ public class SQLFeedbackService {
      * ✅ 从 SQL 的 JOIN 条件中提取关联路径
      */
     private List<String> extractJoinPaths(String sql) {
-        List<String> paths = new java.util.ArrayList<>();
+        List<String> paths = new ArrayList<>();
         
         if (sql == null) return paths;
         

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -113,7 +114,7 @@ public class MetadataQueryService {
      * 获取本地修改的元数据统计
      */
     public Map<String, Object> getLocalModifiedCount(Long datasourceId) {
-        Map<String, Object> result = new java.util.HashMap<>();
+        Map<String, Object> result = new HashMap<>();
         
         try {
             // 统计本地修改的表数量

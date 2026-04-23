@@ -13,8 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -222,7 +224,7 @@ public class MetadataCollectorService {
         
         // 检测可用字段（兼容不同MySQL版本）
         ResultSetMetaData rsMeta = rs.getMetaData();
-        java.util.Set<String> availableColumns = new java.util.HashSet<>();
+        Set<String> availableColumns = new HashSet<>();
         for (int i = 1; i <= rsMeta.getColumnCount(); i++) {
             availableColumns.add(rsMeta.getColumnName(i).toUpperCase());
         }

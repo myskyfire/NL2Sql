@@ -146,9 +146,16 @@
             </div>
             
             <div class="form-group">
+                <label for="databaseSelect">选择数据库</label>
+                <select id="databaseSelect" onchange="loadTablesByDatabase()">
+                    <option value="">请选择数据库</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
                 <label for="tableSelect">选择表</label>
                 <select id="tableSelect">
-                    <option value="">请选择表</option>
+                    <option value="">请先选择数据库</option>
                 </select>
             </div>
             
@@ -184,15 +191,22 @@
         <div class="card">
             <h2>📊 按表查询已授权用户</h2>
             <div class="form-group">
+                <label for="viewDatabaseSelect">选择数据库</label>
+                <select id="viewDatabaseSelect" onchange="loadTablesForView()">
+                    <option value="">请选择数据库</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label for="viewTableSelect">选择表</label>
                 <select id="viewTableSelect" onchange="loadTablePermissions()">
-                    <option value="">请选择表</option>
+                    <option value="">请先选择数据库</option>
                 </select>
             </div>
             
             <table id="tablePermissionsTable">
                 <thead>
                     <tr>
+                        <th>数据库</th>
                         <th>用户名</th>
                         <th>姓名</th>
                         <th>邮箱</th>
@@ -204,7 +218,7 @@
                     </tr>
                 </thead>
                 <tbody id="tablePermissionsBody">
-                    <tr><td colspan="8" style="text-align:center;color:#999;">请选择表查看已授权用户</td></tr>
+                    <tr><td colspan="9" style="text-align:center;color:#999;">请选择数据库和表查看已授权用户</td></tr>
                 </tbody>
             </table>
         </div>
@@ -216,13 +230,14 @@
             <table id="statsTable">
                 <thead>
                     <tr>
+                        <th>数据库</th>
                         <th>表名</th>
                         <th>授权用户数</th>
                         <th>已授权用户</th>
                     </tr>
                 </thead>
                 <tbody id="statsBody">
-                    <tr><td colspan="3" style="text-align:center;color:#999;">点击刷新按钮加载数据</td></tr>
+                    <tr><td colspan="4" style="text-align:center;color:#999;">点击刷新按钮加载数据</td></tr>
                 </tbody>
             </table>
         </div>
@@ -241,7 +256,7 @@
         // 页面加载时初始化
         window.onload = function() {
             loadUsers();
-            loadTables();
+            loadDatabases();
             loadAllPermissions();
         };
         
@@ -270,23 +285,82 @@
             }
         }
         
-        // 加载表列表
-        async function loadTables() {
+        // 加载数据库列表
+        async function loadDatabases() {
             try {
-                const response = await fetch('/api/admin/metadata/list', {
+                const response = await fetch('/api/admin/metadata/datasource/list', {
                     headers: { 'Authorization': token }
                 });
                 const result = await response.json();
                 
-                if (result.code === 200 && result.data.tables) {
-                    const tableSelect = document.getElementById('tableSelect');
-                    const viewTableSelect = document.getElementById('viewTableSelect');
+                if (result.code === 200 && result.data) {
+                    const databaseSelect = document.getElementById('databaseSelect');
+                    const viewDatabaseSelect = document.getElementById('viewDatabaseSelect');
                     
-                    Object.keys(result.data.tables).forEach(tableName => {
-                        const option1 = new Option(tableName, tableName);
-                        const option2 = new Option(tableName, tableName);
-                        tableSelect.add(option1);
-                        viewTableSelect.add(option2);
+                    result.data.forEach(ds => {
+                        const dbName = ds.databaseName || ds.name;
+                        const option1 = new Option(`${dbName} (${ds.name})`, dbName);
+                        const option2 = new Option(`${dbName} (${ds.name})`, dbName);
+                        databaseSelect.add(option1);
+                        viewDatabaseSelect.add(option2);
+                    });
+                }
+            } catch (error) {
+                console.error('加载数据库列表失败:', error);
+            }
+        }
+        
+        // 根据数据库加载表列表
+        async function loadTablesByDatabase() {
+            const databaseName = document.getElementById('databaseSelect').value;
+            const tableSelect = document.getElementById('tableSelect');
+            
+            // 清空表选择
+            tableSelect.innerHTML = '<option value="">请选择表</option>';
+            
+            if (!databaseName) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/metadata/tables?databaseName=${encodeURIComponent(databaseName)}`, {
+                    headers: { 'Authorization': token }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    result.data.forEach(tableName => {
+                        const option = new Option(tableName, tableName);
+                        tableSelect.add(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载表列表失败:', error);
+            }
+        }
+        
+        // 为查看权限加载表列表
+        async function loadTablesForView() {
+            const databaseName = document.getElementById('viewDatabaseSelect').value;
+            const viewTableSelect = document.getElementById('viewTableSelect');
+            
+            // 清空表选择
+            viewTableSelect.innerHTML = '<option value="">请选择表</option>';
+            
+            if (!databaseName) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/metadata/tables?databaseName=${encodeURIComponent(databaseName)}`, {
+                    headers: { 'Authorization': token }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    result.data.forEach(tableName => {
+                        const option = new Option(tableName, tableName);
+                        viewTableSelect.add(option);
                     });
                 }
             } catch (error) {
@@ -345,26 +419,33 @@
         }
         
         // 快速授权
-        function quickGrant(tableName) {
-            document.getElementById('tableSelect').value = tableName;
-            document.querySelector('.card').scrollIntoView({ behavior: 'smooth' });
-            showMessage(`已选择表: ${tableName}，请选择用户后点击授权`, 'success');
+        function quickGrant(tableName, databaseName) {
+            document.getElementById('databaseSelect').value = databaseName;
+            loadTablesByDatabase().then(() => {
+                document.getElementById('tableSelect').value = tableName;
+                document.querySelector('.card:nth-child(2)').scrollIntoView({ behavior: 'smooth' });
+                showMessage(`已选择表: ${databaseName}.${tableName}，请选择用户后点击授权`, 'success');
+            });
         }
         
         // 查看表的已授权用户
-        function viewTableUsers(tableName) {
-            document.getElementById('viewTableSelect').value = tableName;
-            loadTablePermissions();
-            document.querySelectorAll('.card')[3].scrollIntoView({ behavior: 'smooth' });
+        function viewTableUsers(tableName, databaseName) {
+            document.getElementById('viewDatabaseSelect').value = databaseName;
+            loadTablesForView().then(() => {
+                document.getElementById('viewTableSelect').value = tableName;
+                loadTablePermissions();
+                document.querySelectorAll('.card')[3].scrollIntoView({ behavior: 'smooth' });
+            });
         }
         
         // 授权
         async function grantPermission() {
             const userId = document.getElementById('userSelect').value;
+            const databaseName = document.getElementById('databaseSelect').value;
             const tableName = document.getElementById('tableSelect').value;
             
-            if (!userId || !tableName) {
-                showMessage('请选择用户和表', 'error');
+            if (!userId || !databaseName || !tableName) {
+                showMessage('请选择用户、数据库和表', 'error');
                 return;
             }
             
@@ -375,7 +456,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': token
                     },
-                    body: JSON.stringify({ userId, tableName })
+                    body: JSON.stringify({ userId, databaseName, tableName })
                 });
                 
                 const result = await response.json();
@@ -394,8 +475,8 @@
         }
         
         // 撤销权限
-        async function revokePermission(userId, tableName) {
-            if (!confirm(`确定要撤销用户对 ${tableName} 的访问权限吗？`)) {
+        async function revokePermission(userId, databaseName, tableName) {
+            if (!confirm(`确定要撤销用户对 ${databaseName}.${tableName} 的访问权限吗？`)) {
                 return;
             }
             
@@ -406,7 +487,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': token
                     },
-                    body: JSON.stringify({ userId, tableName })
+                    body: JSON.stringify({ userId, databaseName, tableName })
                 });
                 
                 const result = await response.json();
@@ -451,11 +532,12 @@
                     
                     tbody.innerHTML = result.data.map(perm => `
                         <tr>
+                            <td>${perm.databaseName}</td>
                             <td>${perm.tableName}</td>
                             <td>${new Date(perm.grantedAt).toLocaleString('zh-CN')}</td>
                             <td><span class="badge ${perm.isActive ? 'badge-success' : 'badge-warning'}">${perm.isActive ? '有效' : '已撤销'}</span></td>
                             <td>
-                                ${perm.isActive ? `<button class="btn btn-danger" onclick="revokePermission(${perm.userId}, '${perm.tableName}')">撤销</button>` : '-'}
+                                ${perm.isActive ? `<button class="btn btn-danger" onclick="revokePermission(${perm.userId}, '${perm.databaseName}', '${perm.tableName}')">撤销</button>` : '-'}
                             </td>
                         </tr>
                     `).join('');
@@ -467,16 +549,17 @@
         
         // 按表查询已授权用户
         async function loadTablePermissions() {
+            const databaseName = document.getElementById('viewDatabaseSelect').value;
             const tableName = document.getElementById('viewTableSelect').value;
             
-            if (!tableName) {
+            if (!databaseName || !tableName) {
                 document.getElementById('tablePermissionsBody').innerHTML = 
-                    '<tr><td colspan="8" style="text-align:center;color:#999;">请选择表查看已授权用户</td></tr>';
+                    '<tr><td colspan="9" style="text-align:center;color:#999;">请选择数据库和表查看已授权用户</td></tr>';
                 return;
             }
             
             try {
-                const response = await fetch(`/api/auth/table-permission/table/${encodeURIComponent(tableName)}`, {
+                const response = await fetch(`/api/auth/table-permission/table/${encodeURIComponent(tableName)}?databaseName=${encodeURIComponent(databaseName)}`, {
                     headers: { 'Authorization': token }
                 });
                 
@@ -486,12 +569,13 @@
                     const tbody = document.getElementById('tablePermissionsBody');
                     
                     if (result.data.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">该表暂无已授权用户</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">该表暂无已授权用户</td></tr>';
                         return;
                     }
                     
                     tbody.innerHTML = result.data.map(perm => `
                         <tr>
+                            <td>${perm.databaseName || databaseName}</td>
                             <td>${perm.username}</td>
                             <td>${perm.realName || '-'}</td>
                             <td>${perm.email || '-'}</td>
@@ -500,7 +584,7 @@
                             <td>${new Date(perm.grantedAt).toLocaleString('zh-CN')}</td>
                             <td><span class="badge badge-success">有效</span></td>
                             <td>
-                                <button class="btn btn-danger" onclick="revokePermission(${perm.userId}, '${perm.tableName}')">撤销</button>
+                                <button class="btn btn-danger" onclick="revokePermission(${perm.userId}, '${perm.databaseName || databaseName}', '${perm.tableName}')">撤销</button>
                             </td>
                         </tr>
                     `).join('');
@@ -529,6 +613,7 @@
                     
                     tbody.innerHTML = result.data.map(stat => `
                         <tr>
+                            <td>${stat.database_name}</td>
                             <td>${stat.table_name}</td>
                             <td>${stat.user_count}</td>
                             <td>${stat.usernames || '-'}</td>

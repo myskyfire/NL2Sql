@@ -25,4 +25,20 @@
         LIMIT 1
     </select>
     
+    <!-- 更新知识库质量评分（降级相似示例） -->
+    <update id="degradeKnowledgeQuality">
+        UPDATE rag_knowledge_base 
+        SET quality_score = GREATEST(quality_score - #{degradation}, 0),
+            usage_count = usage_count + 1
+        WHERE sql_example LIKE #{tableNamePattern}
+           OR question LIKE #{keywordsPattern}
+    </update>
+    
+    <!-- 标记负面示例（追加错误分类） -->
+    <update id="markNegativeExample">
+        UPDATE rag_feedback 
+        SET feedback_text = CONCAT(IFNULL(feedback_text, ''), '|ERROR_CATEGORIES:', #{categoriesStr})
+        WHERE id = #{feedbackId}
+    </update>
+    
 </mapper>

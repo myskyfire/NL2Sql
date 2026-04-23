@@ -1,9 +1,11 @@
 package com.nl2sql.web.controller;
 
+import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.core.rag.PromptLearningService;
 import com.nl2sql.core.rag.dto.ABTestRequest;
 import com.nl2sql.core.rag.dto.PromptVersionRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -28,14 +30,21 @@ public class PromptLearningController {
      * 创建Prompt版本
      */
     @PostMapping("/versions")
-    public Result<Long> createVersion(@RequestBody PromptVersionRequest request) {
+    public Result<Long> createVersion(
+            @RequestBody PromptVersionRequest request,
+            HttpServletRequest httpRequest) {
         try {
+            Long userId = getCurrentUserId(httpRequest);
+            if (userId == null) {
+                return Result.error("未登录或Token无效");
+            }
+            
             Long id = promptLearningService.createPromptVersion(
                 request.getVersionName(),
                 request.getPromptType(),
                 request.getPromptContent(),
                 request.getDescription(),
-                1L // TODO: 从SecurityContext获取
+                userId
             );
             
             // 如果设为默认，立即激活
@@ -121,8 +130,15 @@ public class PromptLearningController {
      * 创建A/B测试
      */
     @PostMapping("/ab-tests")
-    public Result<Long> createABTest(@RequestBody ABTestRequest request) {
+    public Result<Long> createABTest(
+            @RequestBody ABTestRequest request,
+            HttpServletRequest httpRequest) {
         try {
+            Long userId = getCurrentUserId(httpRequest);
+            if (userId == null) {
+                return Result.error("未登录或Token无效");
+            }
+            
             Long id = promptLearningService.createABTest(
                 request.getTestName(),
                 request.getPromptType(),
@@ -130,7 +146,7 @@ public class PromptLearningController {
                 request.getVersionBId(),
                 request.getTrafficSplit(),
                 request.getMinSamples(),
-                1L // TODO: 从SecurityContext获取
+                userId
             );
             return Result.success(id);
         } catch (Exception e) {
@@ -213,5 +229,16 @@ public class PromptLearningController {
             log.error("获取版本统计失败", e);
             return Result.error("获取失败: " + e.getMessage());
         }
+    }
+    
+    /**
+     * 从HttpServletRequest获取当前用户ID
+     */
+    private Long getCurrentUserId(HttpServletRequest request) {
+        Object userInfoObj = request.getAttribute("userInfo");
+        if (userInfoObj instanceof AuthService.UserInfo) {
+            return ((AuthService.UserInfo) userInfoObj).getUserId();
+        }
+        return null;
     }
 }

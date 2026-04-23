@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -49,7 +52,7 @@ public class ExcelExportService {
             dataStyle.setBorderRight(BorderStyle.THIN);
             
             // 获取列名
-            List<String> columns = new java.util.ArrayList<>(data.get(0).keySet());
+            List<String> columns = new ArrayList<>(data.get(0).keySet());
             
             // 创建表头行
             Row headerRow = sheet.createRow(0);
@@ -112,7 +115,7 @@ public class ExcelExportService {
      * 生成文件名
      */
     public String generateFileName(String prefix) {
-        String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
         return prefix + "_" + timestamp + ".xlsx";
     }
 }

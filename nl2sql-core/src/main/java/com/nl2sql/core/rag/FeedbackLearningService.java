@@ -1,6 +1,7 @@
 package com.nl2sql.core.rag;
 
 import com.nl2sql.core.llm.LLMService;
+import com.nl2sql.core.rag.mapper.RagFeedbackMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,6 +33,9 @@ public class FeedbackLearningService {
     
     @Autowired(required = false)
     private com.nl2sql.core.cache.MetadataCacheService metadataCacheService;
+    
+    @Autowired(required = false)
+    private RagFeedbackMapper ragFeedbackMapper;
     
     /**
      * 处理低分反馈，触发Agent学习修正
@@ -147,15 +151,27 @@ public class FeedbackLearningService {
             // 查找相似的SQL示例
             String similarSqlPattern = generateSqlPattern(generatedSql);
             
-            String updateSql = "UPDATE rag_knowledge_base SET quality_score = GREATEST(quality_score - ?, 0), " +
-                              "usage_count = usage_count + 1 " +
-                              "WHERE sql_example LIKE ? OR question LIKE ?";
+            float degradation = calculateDegradation(rating);
+            String tableNamePattern = "%" + extractTableName(generatedSql) + "%";
+            String keywordsPattern = "%" + extractKeywords(question) + "%";
             
-            int affectedRows = jdbcTemplate.update(updateSql, 
-                calculateDegradation(rating),
-                "%" + extractTableName(generatedSql) + "%",
-                "%" + extractKeywords(question) + "%"
-            );
+            int affectedRows = 0;
+            if (ragFeedbackMapper != null) {
+                // 使用MyBatis Mapper
+                affectedRows = ragFeedbackMapper.degradeKnowledgeQuality(
+                    degradation,
+                    tableNamePattern,
+                    keywordsPattern
+                );
+            } else {
+                // 降级到JdbcTemplate
+                String updateSql = "UPDATE rag_knowledge_base SET quality_score = GREATEST(quality_score - ?, 0), " +
+                                  "usage_count = usage_count + 1 " +
+                                  "WHERE sql_example LIKE ? OR question LIKE ?";
+                
+                affectedRows = jdbcTemplate.update(updateSql, degradation, tableNamePattern, keywordsPattern);
+                log.debug("[反馈学习] 使用JdbcTemplate执行降级（降级模式）");
+            }
             
             log.info("[反馈学习] 降低 {} 个相似示例的质量评分", affectedRows);
             
@@ -171,12 +187,21 @@ public class FeedbackLearningService {
         try {
             String categoriesStr = String.join(",", errorCategories);
             
-            String updateSql = "UPDATE rag_feedback SET feedback_text = CONCAT(IFNULL(feedback_text, ''), '|ERROR_CATEGORIES:', ?) " +
-                              "WHERE id = ?";
+            int affectedRows = 0;
+            if (ragFeedbackMapper != null) {
+                // 使用MyBatis Mapper
+                affectedRows = ragFeedbackMapper.markNegativeExample(categoriesStr, feedbackId);
+            } else {
+                // 降级到JdbcTemplate
+                String updateSql = "UPDATE rag_feedback SET feedback_text = CONCAT(IFNULL(feedback_text, ''), '|ERROR_CATEGORIES:', ?) " +
+                                  "WHERE id = ?";
+                
+                affectedRows = jdbcTemplate.update(updateSql, categoriesStr, feedbackId);
+                log.debug("[反馈学习] 使用JdbcTemplate标记负面示例（降级模式）");
+            }
             
-            jdbcTemplate.update(updateSql, categoriesStr, feedbackId);
-            
-            log.info("[反馈学习] 已标记负面示例: feedbackId={}, categories={}", feedbackId, categoriesStr);
+            log.info("[反馈学习] 已标记负面示例: feedbackId={}, categories={}, affectedRows={}", 
+                feedbackId, categoriesStr, affectedRows);
             
         } catch (Exception e) {
             log.error("[反馈学习] 标记负面示例失败", e);

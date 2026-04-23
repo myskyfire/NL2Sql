@@ -194,9 +194,15 @@ public class AuthController {
             return Result.error("权限不足，仅管理员可操作");
         }
         
+        // 验证必填字段
+        if (request.getDatabaseName() == null || request.getDatabaseName().trim().isEmpty()) {
+            return Result.error("数据库名不能为空");
+        }
+        
         boolean success = authService.grantTablePermission(
             userInfo.getUserId(),
             request.getUserId(),
+            request.getDatabaseName(),
             request.getTableName()
         );
         
@@ -225,9 +231,15 @@ public class AuthController {
             return Result.error("权限不足，仅管理员可操作");
         }
         
+        // 验证必填字段
+        if (request.getDatabaseName() == null || request.getDatabaseName().trim().isEmpty()) {
+            return Result.error("数据库名不能为空");
+        }
+        
         boolean success = authService.revokeTablePermission(
             userInfo.getUserId(),
             request.getUserId(),
+            request.getDatabaseName(),
             request.getTableName()
         );
         
@@ -287,7 +299,8 @@ public class AuthController {
     @GetMapping("/table-permission/table/{tableName}")
     public Result<List<AuthService.TablePermission>> getPermissionsByTable(
         @RequestHeader("Authorization") String token,
-        @PathVariable String tableName
+        @PathVariable String tableName,
+        @RequestParam(required = false) String databaseName
     ) {
         AuthService.UserInfo userInfo = authService.validateToken(token);
         
@@ -299,7 +312,7 @@ public class AuthController {
             return Result.error("权限不足");
         }
         
-        List<AuthService.TablePermission> permissions = authService.getPermissionsByTable(tableName);
+        List<AuthService.TablePermission> permissions = authService.getPermissionsByTable(databaseName, tableName);
         return Result.success(permissions);
     }
     
@@ -408,6 +421,7 @@ public class AuthController {
     @Data
     public static class TablePermissionRequest {
         private Long userId;
+        private String databaseName;
         private String tableName;
     }
     

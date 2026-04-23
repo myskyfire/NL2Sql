@@ -9,7 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * RAG知识库管理Controller
@@ -100,11 +102,58 @@ public class RagManagementController {
     @GetMapping("/stats")
     public Result<Object> getStats() {
         try {
-            // TODO: 实现统计查询
-            return Result.success("统计功能待实现");
+            java.util.Map<String, Object> stats = ragKnowledgeBaseService.getStatistics();
+            return Result.success(stats);
         } catch (Exception e) {
             log.error("获取统计信息失败", e);
             return Result.error("获取统计信息失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 查询知识库列表（支持搜索、分页）
+     */
+    @GetMapping("/knowledge-list")
+    public Result<Object> getKnowledgeList(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        try {
+            int offset = page * pageSize;
+            java.util.List<RagKnowledgeBaseService.KnowledgeItem> list = 
+                ragKnowledgeBaseService.queryKnowledgeList(keyword, offset, pageSize);
+            
+            long total = ragKnowledgeBaseService.getKnowledgeCount(keyword);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("list", list);
+            result.put("total", total);
+            result.put("page", page);
+            result.put("pageSize", pageSize);
+            result.put("totalPages", (int) Math.ceil((double) total / pageSize));
+            
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("查询知识库列表失败", e);
+            return Result.error("查询列表失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 删除知识库条目
+     */
+    @DeleteMapping("/knowledge/{id}")
+    public Result<String> deleteKnowledge(@PathVariable Long id) {
+        try {
+            boolean success = ragKnowledgeBaseService.deleteKnowledge(id);
+            if (success) {
+                return Result.success("删除成功");
+            } else {
+                return Result.error("删除失败，记录不存在");
+            }
+        } catch (Exception e) {
+            log.error("删除知识库条目失败: id={}", id, e);
+            return Result.error("删除失败: " + e.getMessage());
         }
     }
     
@@ -114,8 +163,9 @@ public class RagManagementController {
     @DeleteMapping("/clear")
     public Result<String> clearKnowledgeBase() {
         try {
-            // TODO: 实现清空功能，需要管理员权限验证
-            return Result.error("清空功能待实现，需要管理员权限");
+            int deleted = ragKnowledgeBaseService.clearAllKnowledge();
+            log.warn("⚠️ RAG知识库已清空: {}条记录", deleted);
+            return Result.success("已清空" + deleted + "条知识");
         } catch (Exception e) {
             log.error("清空知识库失败", e);
             return Result.error("清空失败: " + e.getMessage());

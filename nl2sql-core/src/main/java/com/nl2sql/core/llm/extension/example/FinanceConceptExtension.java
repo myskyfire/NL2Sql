@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -35,7 +36,7 @@ public class FinanceConceptExtension implements IndustryConceptExtension {
     @Override
     public List<Map<String, Object>> extractTerms(String question, Long datasourceId) {
         // 示例：从问题中提取财务术语
-        List<Map<String, Object>> terms = new java.util.ArrayList<>();
+        List<Map<String, Object>> terms = new ArrayList<>();
         
         if (question.contains("收入") || question.contains("销售额")) {
             terms.add(Map.of(

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -53,14 +54,18 @@ public class StreamChatController {
     
     /**
      * 获取对话历史
-     * TODO: 待实现 - 需要扩展ConversationHistoryService
      */
     @GetMapping("/history/{sessionId}")
     public Result<List<Map<String, Object>>> getHistory(
             @PathVariable String sessionId,
             @RequestParam(defaultValue = "10") int limit) {
-        // TODO: 实现获取历史接口
-        return Result.success(java.util.Collections.emptyList());
+        try {
+            List<Map<String, Object>> history = conversationHistoryService.getHistory(sessionId);
+            return Result.success(history);
+        } catch (Exception e) {
+            log.error("获取对话历史失败: sessionId={}", sessionId, e);
+            return Result.error("获取失败: " + e.getMessage());
+        }
     }
     
     /**
@@ -84,7 +89,7 @@ public class StreamChatController {
     @GetMapping("/stats/{sessionId}")
     public Result<Map<String, Object>> getStats(@PathVariable String sessionId) {
         // TODO: 实现统计接口
-        return Result.success(new java.util.HashMap<>());
+        return Result.success(new HashMap<>());
     }
     
     /**

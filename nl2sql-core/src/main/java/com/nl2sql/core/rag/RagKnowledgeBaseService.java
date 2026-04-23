@@ -15,7 +15,10 @@ import org.springframework.stereotype.Service;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -129,7 +132,7 @@ public class RagKnowledgeBaseService {
      * 转换Provider结果为KnowledgeItem
      */
     private List<KnowledgeItem> convertFromProviderResults(List<VectorSearchResult> providerResults) {
-        List<KnowledgeItem> items = new java.util.ArrayList<>();
+        List<KnowledgeItem> items = new ArrayList<>();
         for (VectorSearchResult result : providerResults) {
             KnowledgeItem item = new KnowledgeItem();
             item.setQuestion(result.getQuestion());
@@ -189,6 +192,35 @@ public class RagKnowledgeBaseService {
         String sql = "DELETE FROM rag_knowledge_base WHERE quality_score < ?";
         int deleted = jdbcTemplate.update(sql, threshold);
         log.info("清理低质量RAG样本: threshold={}, deleted={}", threshold, deleted);
+    }
+    
+    /**
+     * 清空知识库（危险操作）
+     * @return 删除的记录数
+     */
+    public int clearAllKnowledge() {
+        try {
+            // 1. 清空MySQL表
+            String sql = "DELETE FROM rag_knowledge_base";
+            int deleted = jdbcTemplate.update(sql);
+            
+            // 2. 清空向量数据库（如果有活跃提供者）
+            VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
+            if (activeProvider != null) {
+                try {
+                    activeProvider.clearAll();
+                    log.info("已清空{}向量数据库", activeProvider.getName());
+                } catch (Exception e) {
+                    log.warn("清空向量数据库失败({}): {}", activeProvider.getName(), e.getMessage());
+                }
+            }
+            
+            log.warn("⚠️ RAG知识库已全部清空: deleted={}条", deleted);
+            return deleted;
+        } catch (Exception e) {
+            log.error("清空RAG知识库失败", e);
+            throw new RuntimeException("清空失败: " + e.getMessage(), e);
+        }
     }
     
     /**
@@ -266,6 +298,131 @@ public class RagKnowledgeBaseService {
         );
     }
     
+    /**
+     * 获取知识库统计信息
+     */
+    public java.util.Map<String, Object> getStatistics() {
+        Map<String, Object> stats = new HashMap<>();
+        
+        try {
+            // 总知识条目数
+            Long totalCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rag_knowledge_base", Long.class
+            );
+            stats.put("totalCount", totalCount != null ? totalCount : 0);
+            
+            // 平均质量评分
+            Double avgQuality = jdbcTemplate.queryForObject(
+                "SELECT AVG(quality_score) FROM rag_knowledge_base", Double.class
+            );
+            stats.put("avgQuality", avgQuality != null ? String.format("%.2f", avgQuality) : "0.00");
+            
+            // 本月新增数量
+            Integer monthlyAdded = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rag_knowledge_base WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)",
+                Integer.class
+            );
+            stats.put("monthlyAdded", monthlyAdded != null ? monthlyAdded : 0);
+            
+            // 用户反馈总数
+            Long feedbackCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rag_feedback", Long.class
+            );
+            stats.put("feedbackCount", feedbackCount != null ? feedbackCount : 0);
+            
+            log.info("RAG统计信息查询成功: {}", stats);
+            
+        } catch (Exception e) {
+            log.error("获取RAG统计信息失败", e);
+            stats.put("totalCount", 0);
+            stats.put("avgQuality", "0.00");
+            stats.put("monthlyAdded", 0);
+            stats.put("feedbackCount", 0);
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * 查询知识库列表（支持搜索、分页）
+     */
+    public java.util.List<KnowledgeItem> queryKnowledgeList(String keyword, int offset, int limit) {
+        StringBuilder sqlBuilder = new StringBuilder(
+            "SELECT id, question, answer, sql_example, category, quality_score, usage_count, created_at " +
+            "FROM rag_knowledge_base"
+        );
+        
+        List<Object> params = new ArrayList<>();
+        
+        // 关键词搜索
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            sqlBuilder.append(" WHERE question LIKE ? OR sql_example LIKE ?");
+            String searchPattern = "%" + keyword.trim() + "%";
+            params.add(searchPattern);
+            params.add(searchPattern);
+        }
+        
+        // 排序和分页
+        sqlBuilder.append(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+        params.add(limit);
+        params.add(offset);
+        
+        try {
+            java.util.List<KnowledgeItem> results = jdbcTemplate.query(
+                sqlBuilder.toString(),
+                new KnowledgeListRowMapper(),
+                params.toArray()
+            );
+            
+            log.debug("RAG知识库列表查询: keyword={}, total={}", keyword, results.size());
+            return results;
+            
+        } catch (Exception e) {
+            log.error("查询RAG知识库列表失败", e);
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * 获取知识库总数（用于分页）
+     */
+    public long getKnowledgeCount(String keyword) {
+        StringBuilder sqlBuilder = new StringBuilder("SELECT COUNT(*) FROM rag_knowledge_base");
+        List<Object> params = new ArrayList<>();
+        
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            sqlBuilder.append(" WHERE question LIKE ? OR sql_example LIKE ?");
+            String searchPattern = "%" + keyword.trim() + "%";
+            params.add(searchPattern);
+            params.add(searchPattern);
+        }
+        
+        try {
+            Long count = jdbcTemplate.queryForObject(sqlBuilder.toString(), Long.class, params.toArray());
+            return count != null ? count : 0;
+        } catch (Exception e) {
+            log.error("获取RAG知识库总数失败", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * 删除知识库条目
+     */
+    public boolean deleteKnowledge(Long id) {
+        try {
+            int deleted = jdbcTemplate.update("DELETE FROM rag_knowledge_base WHERE id = ?", id);
+            if (deleted > 0) {
+                log.info("删除RAG知识库条目: id={}", id);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("删除RAG知识库条目失败: id={}", id, e);
+            return false;
+        }
+    }
+    
     // ==================== 数据模型 ====================
     
     @Data
@@ -278,6 +435,7 @@ public class RagKnowledgeBaseService {
         private Float qualityScore;
         private Integer usageCount;
         private Double relevance; // 相关度分数
+        private LocalDateTime createdAt; // 创建时间
     }
     
     // ==================== RowMapper ====================
@@ -299,6 +457,35 @@ public class RagKnowledgeBaseService {
                 item.setRelevance(rs.getDouble("relevance"));
             } catch (SQLException e) {
                 item.setRelevance(null);
+            }
+            
+            return item;
+        }
+    }
+    
+    /**
+     * 知识库列表RowMapper（包含created_at）
+     */
+    private static class KnowledgeListRowMapper implements RowMapper<KnowledgeItem> {
+        @Override
+        public KnowledgeItem mapRow(ResultSet rs, int rowNum) throws SQLException {
+            KnowledgeItem item = new KnowledgeItem();
+            item.setId(rs.getLong("id"));
+            item.setQuestion(rs.getString("question"));
+            item.setAnswer(rs.getString("answer"));
+            item.setSqlExample(rs.getString("sql_example"));
+            item.setCategory(rs.getString("category"));
+            item.setQualityScore(rs.getFloat("quality_score"));
+            item.setUsageCount(rs.getInt("usage_count"));
+            
+            // created_at字段
+            try {
+                java.sql.Timestamp timestamp = rs.getTimestamp("created_at");
+                if (timestamp != null) {
+                    item.setCreatedAt(timestamp.toLocalDateTime());
+                }
+            } catch (SQLException e) {
+                // 忽略
             }
             
             return item;

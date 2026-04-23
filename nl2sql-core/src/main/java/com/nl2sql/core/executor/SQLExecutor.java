@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -117,7 +120,7 @@ public class SQLExecutor {
         // ✅ 新增：表级权限校验（非管理员用户）
         if (authService != null && userId != null) {
             try {
-                List<String> unauthorizedTables = checkTablePermissions(sql, userId);
+                List<String> unauthorizedTables = checkTablePermissions(sql, userId, datasourceId);
                 if (!unauthorizedTables.isEmpty()) {
                     String errorMsg = String.format(
                         "您缺少以下表的访问权限：%s\n请联系管理员添加权限后再进行查询。",
@@ -176,7 +179,7 @@ public class SQLExecutor {
                     
                     r = s.executeQuery(transformedSql);  // 使用转换后的SQL
                     
-                    List<Map<String, Object>> rows = new java.util.ArrayList<>();
+                    List<Map<String, Object>> rows = new ArrayList<>();
                     ResultSetMetaData metaData = r.getMetaData();
                     int columnCount = metaData.getColumnCount();
                     
@@ -184,7 +187,7 @@ public class SQLExecutor {
                     Map<String, String> columnNameMap = buildColumnNameMap(transformedSql, datasourceId);
                     
                     while (r.next()) {
-                        Map<String, Object> row = new java.util.HashMap<>();
+                        Map<String, Object> row = new HashMap<>();
                         for (int i = 1; i <= columnCount; i++) {
                             String columnName = metaData.getColumnName(i);
                             Object value = r.getObject(i);
@@ -335,13 +338,13 @@ public class SQLExecutor {
      */
     private Map<String, String> buildColumnNameMap(String sql, Long datasourceId) {
         if (datasourceId == null) {
-            return new java.util.HashMap<>();
+            return new HashMap<>();
         }
         
         // 提取表名
         String tableName = extractTableName(sql);
         if (tableName == null) {
-            return new java.util.HashMap<>();
+            return new HashMap<>();
         }
         
         // 构造缓存key
@@ -359,7 +362,7 @@ public class SQLExecutor {
             String querySql = "SELECT column_name, column_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ?";
             List<Map<String, Object>> metadataList = jdbcTemplate.queryForList(querySql, datasourceId, tableName);
             
-            Map<String, String> columnNameMap = new java.util.HashMap<>();
+            Map<String, String> columnNameMap = new HashMap<>();
             for (Map<String, Object> meta : metadataList) {
                 String colName = (String) meta.get("column_name");
                 String colComment = (String) meta.get("column_comment");
@@ -377,7 +380,7 @@ public class SQLExecutor {
             
         } catch (Exception e) {
             log.warn("[字段映射] 获取字段注释失败: {}", e.getMessage());
-            return new java.util.HashMap<>();
+            return new HashMap<>();
         }
     }
     
@@ -432,7 +435,7 @@ public class SQLExecutor {
         
         // 获取所有列名
         Map<String, Object> firstRow = rows.get(0);
-        List<String> untranslatedColumns = new java.util.ArrayList<>();
+        List<String> untranslatedColumns = new ArrayList<>();
         
         for (String colName : firstRow.keySet()) {
             // ✅ 关键修复：优先使用元数据注释，只有元数据中没有且不是中文时才调用LLM
@@ -447,8 +450,8 @@ public class SQLExecutor {
         
         try {
             // ✅ 步骤1：从LLM翻译缓存中查找已翻译的列
-            Map<String, String> cachedTranslations = new java.util.HashMap<>();
-            List<String> needLLMTranslation = new java.util.ArrayList<>();
+            Map<String, String> cachedTranslations = new HashMap<>();
+            List<String> needLLMTranslation = new ArrayList<>();
             
             if (metadataCacheService != null && datasourceId != null) {
                 cachedTranslations = metadataCacheService.batchGetColumnTranslations(datasourceId, untranslatedColumns);
@@ -466,7 +469,7 @@ public class SQLExecutor {
             }
             
             // ✅ 步骤2：对未命中的列调用LLM翻译
-            Map<String, String> llmTranslations = new java.util.HashMap<>();
+            Map<String, String> llmTranslations = new HashMap<>();
             if (!needLLMTranslation.isEmpty()) {
                 StringBuilder prompt = new StringBuilder();
                 prompt.append("请将以下数据库字段名翻译成简洁的中文，返回JSON格式。\n\n");
@@ -509,13 +512,13 @@ public class SQLExecutor {
             }
             
             // ✅ 步骤4：合并缓存和LLM翻译结果
-            Map<String, String> allTranslations = new java.util.HashMap<>();
+            Map<String, String> allTranslations = new HashMap<>();
             allTranslations.putAll(cachedTranslations);
             allTranslations.putAll(llmTranslations);
             
             // 重命名所有行的列
             for (Map<String, Object> row : rows) {
-                Map<String, Object> newRow = new java.util.LinkedHashMap<>();
+                Map<String, Object> newRow = new LinkedHashMap<>();
                 for (Map.Entry<String, Object> entry : row.entrySet()) {
                     String oldKey = entry.getKey();
                     String newKey = allTranslations.getOrDefault(oldKey, oldKey);
@@ -589,10 +592,11 @@ public class SQLExecutor {
      * ✅ 新增：检查SQL中涉及的表是否有访问权限
      * @param sql SQL语句
      * @param userId 用户ID
+     * @param datasourceId 数据源ID（用于获取数据库名）
      * @return 无权限的表名列表（空表示全部有权限）
      */
-    private List<String> checkTablePermissions(String sql, Long userId) {
-        List<String> unauthorizedTables = new java.util.ArrayList<>();
+    private List<String> checkTablePermissions(String sql, Long userId, Long datasourceId) {
+        List<String> unauthorizedTables = new ArrayList<>();
         
         try {
             // 1. 从SQL中提取表名（简单解析）
@@ -604,10 +608,18 @@ public class SQLExecutor {
             
             log.debug("[权限校验] SQL中涉及的表: {}", tablesInSQL);
             
-            // 2. 获取用户有权限的所有表
-            java.util.Set<String> authorizedTables = authService.getUserAuthorizedTables(userId);
+            // 2. 获取当前数据库名
+            String databaseName = getCurrentDatabaseName(datasourceId);
+            if (databaseName == null || databaseName.trim().isEmpty()) {
+                log.warn("[权限校验] 无法获取数据库名，跳过校验");
+                return unauthorizedTables;
+            }
             
-            // 3. 检查每个表是否有权限
+            // 3. 获取用户有权限的所有表（按数据库分组）
+            Map<String, java.util.Set<String>> authorizedTablesByDb = authService.getUserAuthorizedTablesByDatabase(userId);
+            java.util.Set<String> authorizedTables = authorizedTablesByDb.getOrDefault(databaseName.toLowerCase(), new java.util.HashSet<>());
+            
+            // 4. 检查每个表是否有权限
             for (String tableName : tablesInSQL) {
                 String normalizedTable = tableName.toLowerCase().trim();
                 
@@ -619,7 +631,7 @@ public class SQLExecutor {
                 
                 if (!authorizedTables.contains(normalizedTable)) {
                     unauthorizedTables.add(tableName);
-                    log.warn("[权限拦截] 用户userId={} 无权访问表: {}", userId, tableName);
+                    log.warn("[权限拦截] 用户userId={} 无权访问表: {}.{}", userId, databaseName, tableName);
                 }
             }
             
@@ -632,12 +644,33 @@ public class SQLExecutor {
     }
     
     /**
+     * 获取当前数据库名
+     */
+    private String getCurrentDatabaseName(Long datasourceId) {
+        try {
+            DataSource targetDataSource = datasourceId != null ? 
+                dataSourceManager.getJdbcTemplate(datasourceId).getDataSource() : 
+                this.dataSource;
+            
+            Connection conn = DataSourceUtils.getConnection(targetDataSource);
+            try {
+                return conn.getCatalog();
+            } finally {
+                DataSourceUtils.releaseConnection(conn, targetDataSource);
+            }
+        } catch (Exception e) {
+            log.error("[获取数据库名失败] {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
      * ✅ 从SQL中提取表名（简单启发式解析）
      * @param sql SQL语句
      * @return 表名列表
      */
     private List<String> extractTablesFromSQL(String sql) {
-        List<String> tables = new java.util.ArrayList<>();
+        List<String> tables = new ArrayList<>();
         
         if (sql == null || sql.trim().isEmpty()) {
             return tables;

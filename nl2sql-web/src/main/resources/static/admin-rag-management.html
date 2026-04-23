@@ -354,14 +354,22 @@
                             <th>质量评分</th>
                             <th>使用次数</th>
                             <th>创建时间</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="knowledgeTableBody">
                         <tr>
-                            <td colspan="7" style="text-align:center;color:#999;">加载中...</td>
+                            <td colspan="8" style="text-align:center;color:#999;">加载中...</td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+            
+            <!-- 分页控件 -->
+            <div class="pagination" id="pagination" style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="changePage(-1)" id="prevBtn">上一页</button>
+                <span id="pageInfo" style="color: #666;">第 1 页</span>
+                <button class="btn btn-primary" onclick="changePage(1)" id="nextBtn">下一页</button>
             </div>
         </div>
     </div>
@@ -397,16 +405,22 @@
     </div>
     
     <script>
+        // 全局变量
+        let currentPage = 0;
+        let totalPages = 1;
+        const pageSize = 20;
+        
         // 加载统计数据
         async function loadStats() {
             try {
                 const response = await fetch('/api/admin/rag/stats');
                 const result = await response.json();
                 
-                if (result.code === 200) {
-                    // TODO: 根据实际返回结构更新
-                    document.getElementById('totalCount').textContent = '-';
-                    document.getElementById('avgQuality').textContent = '-';
+                if (result.code === 200 && result.data) {
+                    document.getElementById('totalCount').textContent = result.data.totalCount || 0;
+                    document.getElementById('avgQuality').textContent = result.data.avgQuality || '0.00';
+                    document.getElementById('monthlyAdded').textContent = result.data.monthlyAdded || 0;
+                    document.getElementById('feedbackCount').textContent = result.data.feedbackCount || 0;
                 }
             } catch (error) {
                 console.error('加载统计失败:', error);
@@ -436,6 +450,7 @@
                 if (result.code === 200) {
                     showAlert('importAlert', 'success', `✅ 导入成功！ID: ${result.data}`);
                     document.getElementById('importForm').reset();
+                    loadStats(); // 刷新统计
                     loadKnowledgeList();
                 } else {
                     showAlert('importAlert', 'error', `❌ 导入失败: ${result.message}`);
@@ -468,6 +483,7 @@
                 if (result.code === 200) {
                     alert(`✅ 批量导入完成！\n成功: ${result.data.successCount}\n失败: ${result.data.failedCount}`);
                     closeImportModal();
+                    loadStats(); // 刷新统计
                     loadKnowledgeList();
                 } else {
                     alert(`❌ 导入失败: ${result.message}`);
@@ -478,17 +494,105 @@
         }
         
         // 加载知识库列表
-        async function loadKnowledgeList() {
+        async function loadKnowledgeList(keyword = '') {
             const tbody = document.getElementById('knowledgeTableBody');
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">加载中...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">加载中...</td></tr>';
             
             try {
-                // TODO: 实现列表查询API
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">列表功能待实现</td></tr>';
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    pageSize: pageSize
+                });
+                if (keyword) {
+                    params.append('keyword', keyword);
+                }
+                
+                const response = await fetch(`/api/admin/rag/knowledge-list?${params}`);
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    const { list, total, page, totalPages: tp } = result.data;
+                    totalPages = tp;
+                    
+                    if (list.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                    } else {
+                        tbody.innerHTML = list.map(item => `
+                            <tr>
+                                <td>${item.id}</td>
+                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(item.question)}">${escapeHtml(item.question)}</td>
+                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 12px;" title="${escapeHtml(item.sqlExample)}">${escapeHtml(item.sqlExample)}</td>
+                                <td><span class="badge badge-success">${escapeHtml(item.category || '-')}</span></td>
+                                <td>${item.qualityScore ? item.qualityScore.toFixed(2) : '-'}</td>
+                                <td>${item.usageCount || 0}</td>
+                                <td>${formatDateTime(item.createdAt)}</td>
+                                <td>
+                                    <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="deleteKnowledge(${item.id})">删除</button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                    
+                    // 更新分页信息
+                    document.getElementById('pageInfo').textContent = `第 ${page + 1} / ${totalPages} 页 (共${total}条)`;
+                    document.getElementById('prevBtn').disabled = page === 0;
+                    document.getElementById('nextBtn').disabled = page >= totalPages - 1;
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:red;">加载失败</td></tr>';
+                }
             } catch (error) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">加载失败</td></tr>';
+                console.error('加载列表失败:', error);
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:red;">加载失败</td></tr>';
             }
         }
+        
+        // 切换页码
+        function changePage(delta) {
+            const newPage = currentPage + delta;
+            if (newPage >= 0 && newPage < totalPages) {
+                currentPage = newPage;
+                const keyword = document.getElementById('searchInput').value.trim();
+                loadKnowledgeList(keyword);
+            }
+        }
+        
+        // 删除知识库条目
+        async function deleteKnowledge(id) {
+            if (!confirm('确定要删除这条知识吗？此操作不可恢复。')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/rag/knowledge/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert('✅ 删除成功');
+                    loadStats(); // 刷新统计
+                    loadKnowledgeList(document.getElementById('searchInput').value.trim());
+                } else {
+                    alert(`❌ 删除失败: ${result.message}`);
+                }
+            } catch (error) {
+                alert(`❌ 网络错误: ${error.message}`);
+            }
+        }
+        
+        // 搜索功能
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        currentPage = 0; // 重置到第一页
+                        loadKnowledgeList(this.value.trim());
+                    }
+                });
+            }
+        });
         
         // 显示提示
         function showAlert(containerId, type, message) {
@@ -504,6 +608,31 @@
         
         function closeImportModal() {
             document.getElementById('batchImportModal').classList.remove('active');
+        }
+        
+        // 工具函数：转义HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 工具函数：格式化日期时间
+        function formatDateTime(dateTimeStr) {
+            if (!dateTimeStr) return '-';
+            try {
+                const date = new Date(dateTimeStr);
+                return date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } catch (e) {
+                return dateTimeStr;
+            }
         }
         
         // 初始化

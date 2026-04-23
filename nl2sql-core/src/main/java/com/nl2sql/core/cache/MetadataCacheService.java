@@ -8,8 +8,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -139,7 +144,7 @@ public class MetadataCacheService {
      * 批量获取表结构
      */
     public Map<String, List<Map<String, Object>>> getSchemas(Long datasourceId, List<String> tableNames) {
-        Map<String, List<Map<String, Object>>> result = new java.util.HashMap<>();
+        Map<String, List<Map<String, Object>>> result = new HashMap<>();
         
         for (String tableName : tableNames) {
             List<Map<String, Object>> columns = getSchema(datasourceId, tableName);
@@ -387,7 +392,7 @@ public class MetadataCacheService {
             return;
         }
         
-        semanticIndexByDatasource.computeIfAbsent(datasourceId, k -> new java.util.ArrayList<>());
+        semanticIndexByDatasource.computeIfAbsent(datasourceId, k -> new ArrayList<>());
         
         java.util.List<CachedQueryEntry> index = semanticIndexByDatasource.get(datasourceId);
         
@@ -460,8 +465,8 @@ public class MetadataCacheService {
         }
         
         // 方法1: 字符级Jaccard相似度
-        java.util.Set<Character> set1 = new java.util.HashSet<>();
-        java.util.Set<Character> set2 = new java.util.HashSet<>();
+        Set<Character> set1 = new HashSet<>();
+        Set<Character> set2 = new HashSet<>();
         
         for (char c : text1.toCharArray()) {
             if (!Character.isWhitespace(c)) {
@@ -474,10 +479,10 @@ public class MetadataCacheService {
             }
         }
         
-        java.util.Set<Character> intersection = new java.util.HashSet<>(set1);
+        Set<Character> intersection = new HashSet<>(set1);
         intersection.retainAll(set2);
         
-        java.util.Set<Character> union = new java.util.HashSet<>(set1);
+        Set<Character> union = new HashSet<>(set1);
         union.addAll(set2);
         
         double jaccardSim = union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
@@ -516,14 +521,14 @@ public class MetadataCacheService {
             return 0.0;
         }
         
-        java.util.Set<String> set1 = new java.util.HashSet<>(java.util.Arrays.asList(words1));
-        java.util.Set<String> set2 = new java.util.HashSet<>(java.util.Arrays.asList(words2));
+        Set<String> set1 = new HashSet<>(Arrays.asList(words1));
+        Set<String> set2 = new HashSet<>(Arrays.asList(words2));
         
         // 计算交集和并集
-        java.util.Set<String> intersection = new java.util.HashSet<>(set1);
+        Set<String> intersection = new HashSet<>(set1);
         intersection.retainAll(set2);
         
-        java.util.Set<String> union = new java.util.HashSet<>(set1);
+        Set<String> union = new HashSet<>(set1);
         union.addAll(set2);
         
         // 基础Jaccard相似度
@@ -558,7 +563,7 @@ public class MetadataCacheService {
         
         // 简单分词：按常见模式切分（实际项目建议使用HanLP或IK Analyzer）
         // 这里采用保守策略：保留2字以上连续中文字符作为词
-        java.util.List<String> tokens = new java.util.ArrayList<>();
+        List<String> tokens = new ArrayList<>();
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\u4e00-\\u9fa5]{2,}|[a-zA-Z0-9]+").matcher(cleaned);
         while (matcher.find()) {
             tokens.add(matcher.group());
@@ -630,7 +635,7 @@ public class MetadataCacheService {
      * @return Map<英文列名, 中文翻译>，只包含缓存命中的项
      */
     public Map<String, String> batchGetColumnTranslations(Long datasourceId, List<String> columnNames) {
-        Map<String, String> result = new java.util.HashMap<>();
+        Map<String, String> result = new HashMap<>();
         for (String colName : columnNames) {
             String translation = getColumnTranslation(datasourceId, colName);
             if (translation != null) {

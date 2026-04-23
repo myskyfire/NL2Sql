@@ -265,6 +265,42 @@ public class AdminMetadataController {
         }
     }
     
+    /**
+     * ✅ 新增：按数据库名获取表列表
+     */
+    @GetMapping("/metadata/tables")
+    public Result<List<String>> getTablesByDatabase(@RequestParam String databaseName) {
+        try {
+            // 根据数据库名查找对应的数据源
+            List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
+            DataSourceConfig targetDs = null;
+            
+            for (DataSourceConfig ds : datasources) {
+                if (databaseName.equals(ds.getDatabaseName()) || databaseName.equals(ds.getName())) {
+                    targetDs = ds;
+                    break;
+                }
+            }
+            
+            if (targetDs == null) {
+                return Result.error("未找到数据库: " + databaseName);
+            }
+            
+            // 获取该数据源的所有表
+            List<com.nl2sql.metadata.entity.TableMetadata> tables = 
+                metadataQueryService.getAllTables(targetDs.getId());
+            
+            List<String> tableNames = tables.stream()
+                .map(com.nl2sql.metadata.entity.TableMetadata::getTableName)
+                .collect(java.util.stream.Collectors.toList());
+            
+            return Result.success(tableNames);
+        } catch (Exception e) {
+            log.error("获取表列表失败", e);
+            return Result.error("获取失败: " + e.getMessage());
+        }
+    }
+    
     @Data
     public static class TestConnectionRequest {
         private String dbType;

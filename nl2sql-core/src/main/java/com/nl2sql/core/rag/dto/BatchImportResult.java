@@ -2,6 +2,8 @@ package com.nl2sql.core.rag.dto;
 
 import lombok.Data;
 
+import java.util.ArrayList;
+
 /**
  * QA对批量导入结果
  */
@@ -26,7 +28,7 @@ public class BatchImportResult {
     public BatchImportResult() {
         this.successCount = 0;
         this.failedCount = 0;
-        this.errors = new java.util.ArrayList<>();
+        this.errors = new ArrayList<>();
     }
     
     public void addSuccess() {

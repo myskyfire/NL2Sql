@@ -43,9 +43,6 @@ public class NL2SQLTool {
     @Autowired
     private SynonymService synonymService;
     
-    @Autowired(required = false)
-    private com.nl2sql.core.cache.QueryCacheService queryCacheService;
-    
     @Autowired
     private com.nl2sql.core.mapper.MetadataMapper metadataMapper;
     
@@ -802,7 +799,7 @@ public class NL2SQLTool {
         
         // 分离已缓存和未缓存的表
         List<String> uncachedTables = new ArrayList<>();
-        Map<String, List<Map<String, Object>>> allColumnsByTable = new java.util.HashMap<>();
+        Map<String, List<Map<String, Object>>> allColumnsByTable = new HashMap<>();
         
         for (String tableName : tables) {
             if (cachedSchemas.containsKey(tableName)) {
@@ -860,7 +857,7 @@ public class NL2SQLTool {
         for (String tableName : tables) {
             sb.append(String.format("\n表名: %s\n", tableName));
             
-            List<Map<String, Object>> columns = allColumnsByTable.getOrDefault(tableName, java.util.Collections.emptyList());
+            List<Map<String, Object>> columns = allColumnsByTable.getOrDefault(tableName, Collections.emptyList());
             
             if (columns.isEmpty()) {
                 sb.append("  [警告] 该表没有字段元数据\n");

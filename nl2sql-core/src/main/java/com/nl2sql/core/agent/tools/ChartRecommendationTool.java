@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -69,14 +70,14 @@ public class ChartRecommendationTool {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> parseDataJson(String dataJson) {
         if (dataJson == null || dataJson.trim().isEmpty()) {
-            return new java.util.ArrayList<>();
+            return new ArrayList<>();
         }
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             return mapper.readValue(dataJson, List.class);
         } catch (Exception e) {
             log.error("[ChartRecommendationTool] 解析数据JSON失败", e);
-            return new java.util.ArrayList<>();
+            return new ArrayList<>();
         }
     }
 }

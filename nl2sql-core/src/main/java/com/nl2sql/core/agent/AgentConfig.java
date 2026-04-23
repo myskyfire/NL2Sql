@@ -432,7 +432,7 @@ public class AgentConfig {
                 // 生成 ECharts 配置
                 Map<String, Object> echartsConfig = generateEChartsConfig(chartType, queryData);
                 
-                Map<String, Object> result = new java.util.HashMap<>();
+                Map<String, Object> result = new HashMap<>();
                 result.put("status", "chart_generated");
                 result.put("chartType", getChartTypeName(chartType));
                 result.put("echartsConfig", echartsConfig);

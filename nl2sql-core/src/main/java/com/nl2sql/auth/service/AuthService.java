@@ -38,6 +38,9 @@ public class AuthService {
     @Autowired
     private com.nl2sql.auth.mapper.AuthMapper authMapper;
     
+    @Autowired
+    private TablePermissionMapper tablePermissionMapper;
+    
     private static final String WHITELIST_CACHE_KEY = "auth:whitelist:user:%d";
     private static final String SESSION_CACHE_KEY = "auth:session:%s";
     private static final String TABLE_PERMS_CACHE_KEY = "auth:tableperms:user:%d";
@@ -264,24 +267,25 @@ public class AuthService {
     /**
      * 检查用户是否有指定表的访问权限
      */
-    public boolean hasTablePermission(Long userId, String tableName) {
+    public boolean hasTablePermission(Long userId, String databaseName, String tableName) {
         try {
             // 先查Redis缓存
             String cacheKey = String.format(TABLE_PERMS_CACHE_KEY, userId);
             Set<Object> cachedTables = redisTemplate.opsForSet().members(cacheKey);
             
             if (cachedTables != null && !cachedTables.isEmpty()) {
-                return cachedTables.contains(tableName.toLowerCase());
+                String key = databaseName + "." + tableName.toLowerCase();
+                return cachedTables.contains(key);
             }
             
             // 查数据库
-            String sql = "SELECT table_name FROM table_permissions WHERE user_id = ? AND is_active = 1";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, userId);
+            List<Map<String, Object>> rows = tablePermissionMapper.findAuthorizedTables(userId, databaseName);
             Set<String> authorizedTables = new HashSet<>();
             
             for (Map<String, Object> row : rows) {
-                authorizedTables.add(((String) row.get("table_name")).toLowerCase());
+                String db = (String) row.get("database_name");
+                String table = (String) row.get("table_name");
+                authorizedTables.add(db + "." + table.toLowerCase());
             }
             
             // 更新缓存
@@ -290,7 +294,8 @@ public class AuthService {
                 redisTemplate.expire(cacheKey, CACHE_TTL_MINUTES, TimeUnit.MINUTES);
             }
             
-            return authorizedTables.contains(tableName.toLowerCase());
+            String key = databaseName + "." + tableName.toLowerCase();
+            return authorizedTables.contains(key);
             
         } catch (Exception e) {
             log.error("检查表权限失败", e);
@@ -299,48 +304,59 @@ public class AuthService {
     }
     
     /**
-     * 获取用户有权限的所有表
+     * 获取用户有权限的所有表（按数据库分组）
      */
-    public Set<String> getUserAuthorizedTables(Long userId) {
+    public Map<String, Set<String>> getUserAuthorizedTablesByDatabase(Long userId) {
         try {
             String cacheKey = String.format(TABLE_PERMS_CACHE_KEY, userId);
             Set<Object> cached = redisTemplate.opsForSet().members(cacheKey);
             
             if (cached != null && !cached.isEmpty()) {
-                Set<String> result = new HashSet<>();
+                // 从缓存重建Map结构
+                Map<String, Set<String>> result = new HashMap<>();
                 for (Object obj : cached) {
-                    result.add(obj.toString());
+                    String[] parts = obj.toString().split("\\.", 2);
+                    if (parts.length == 2) {
+                        result.computeIfAbsent(parts[0], k -> new HashSet<>()).add(parts[1]);
+                    }
                 }
                 return result;
             }
             
-            String sql = "SELECT table_name FROM table_permissions WHERE user_id = ? AND is_active = 1";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, userId);
-            Set<String> tables = new HashSet<>();
+            // 查询所有数据库的权限
+            List<Map<String, Object>> rows = tablePermissionMapper.findAuthorizedTables(userId, null);
+            Map<String, Set<String>> tablesByDb = new HashMap<>();
             
             for (Map<String, Object> row : rows) {
-                tables.add(((String) row.get("table_name")).toLowerCase());
+                String db = (String) row.get("database_name");
+                String table = ((String) row.get("table_name")).toLowerCase();
+                tablesByDb.computeIfAbsent(db, k -> new HashSet<>()).add(table);
             }
             
-            // 更新缓存
-            if (!tables.isEmpty()) {
-                redisTemplate.opsForSet().add(cacheKey, tables.toArray());
+            // 更新缓存（扁平化存储）
+            Set<String> flatTables = new HashSet<>();
+            for (Map.Entry<String, Set<String>> entry : tablesByDb.entrySet()) {
+                for (String table : entry.getValue()) {
+                    flatTables.add(entry.getKey() + "." + table);
+                }
+            }
+            if (!flatTables.isEmpty()) {
+                redisTemplate.opsForSet().add(cacheKey, flatTables.toArray());
                 redisTemplate.expire(cacheKey, CACHE_TTL_MINUTES, TimeUnit.MINUTES);
             }
             
-            return tables;
+            return tablesByDb;
             
         } catch (Exception e) {
             log.error("获取用户表权限失败", e);
-            return Collections.emptySet();
+            return Collections.emptyMap();
         }
     }
     
     /**
      * 授权用户访问指定表(仅管理员)
      */
-    public boolean grantTablePermission(Long operatorId, Long targetUserId, String tableName) {
+    public boolean grantTablePermission(Long operatorId, Long targetUserId, String databaseName, String tableName) {
         try {
             if (!isAdmin(operatorId)) {
                 return false;
@@ -354,13 +370,7 @@ public class AuthService {
             }
             
             // 插入或更新授权
-            String insertSql = "INSERT INTO table_permissions (user_id, table_name, granted_by, is_active) " +
-                              "VALUES (?, ?, ?, 1) " +
-                              "ON DUPLICATE KEY UPDATE " +
-                              "granted_by = VALUES(granted_by), " +
-                              "is_active = 1";
-            
-            jdbcTemplate.update(insertSql, targetUserId, tableName.toLowerCase(), operatorId);
+            tablePermissionMapper.insertTablePermission(targetUserId, databaseName.toLowerCase(), tableName.toLowerCase(), String.valueOf(operatorId));
             
             // 清除缓存
             String cacheKey = String.format(TABLE_PERMS_CACHE_KEY, targetUserId);
@@ -368,9 +378,9 @@ public class AuthService {
             
             // 记录日志
             logOperation(operatorId, targetUserId, "GRANT_TABLE", 
-                        String.format("授权访问表: %s", tableName), null);
+                        String.format("授权访问表: %s.%s", databaseName, tableName), null);
             
-            log.info("表授权成功: operatorId={}, targetUserId={}, table={}", operatorId, targetUserId, tableName);
+            log.info("表授权成功: operatorId={}, targetUserId={}, database={}, table={}", operatorId, targetUserId, databaseName, tableName);
             return true;
             
         } catch (Exception e) {
@@ -382,13 +392,13 @@ public class AuthService {
     /**
      * 撤销用户的表访问权限(仅管理员)
      */
-    public boolean revokeTablePermission(Long operatorId, Long targetUserId, String tableName) {
+    public boolean revokeTablePermission(Long operatorId, Long targetUserId, String databaseName, String tableName) {
         try {
             if (!isAdmin(operatorId)) {
                 return false;
             }
             
-            int affected = authMapper.revokeTablePermission(targetUserId, tableName.toLowerCase());
+            int affected = tablePermissionMapper.deactivateTablePermission(targetUserId, databaseName.toLowerCase(), tableName.toLowerCase());
             
             if (affected > 0) {
                 // 清除缓存
@@ -396,9 +406,9 @@ public class AuthService {
                 redisTemplate.delete(cacheKey);
                 
                 logOperation(operatorId, targetUserId, "REVOKE_TABLE", 
-                            String.format("撤销表权限: %s", tableName), null);
+                            String.format("撤销表权限: %s.%s", databaseName, tableName), null);
                 
-                log.info("撤销表权限成功: targetUserId={}, table={}", targetUserId, tableName);
+                log.info("撤销表权限成功: targetUserId={}, database={}, table={}", targetUserId, databaseName, tableName);
                 return true;
             }
             
@@ -464,10 +474,10 @@ public class AuthService {
     /**
      * 按表名查询已授权的用户列表
      */
-    public List<TablePermission> getPermissionsByTable(String tableName) {
+    public List<TablePermission> getPermissionsByTable(String databaseName, String tableName) {
         try {
             // ✅ 使用Mapper查询
-            List<Map<String, Object>> rows = tablePermissionMapper.findByTableName(tableName.toLowerCase());
+            List<Map<String, Object>> rows = tablePermissionMapper.findByTableName(databaseName != null ? databaseName.toLowerCase() : null, tableName.toLowerCase());
             List<TablePermission> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
@@ -478,6 +488,7 @@ public class AuthService {
                 perm.setRealName((String) row.get("real_name"));
                 perm.setEmail((String) row.get("email"));
                 perm.setRole((String) row.get("role"));
+                perm.setDatabaseName((String) row.get("database_name"));
                 perm.setTableName((String) row.get("table_name"));
                 perm.setGrantedById(((Number) row.get("granted_by")).longValue());
                 
@@ -496,7 +507,7 @@ public class AuthService {
             return result;
             
         } catch (Exception e) {
-            log.error("按表查询权限失败: table={}", tableName, e);
+            log.error("按表查询权限失败: database={}, table={}", databaseName, tableName, e);
             return Collections.emptyList();
         }
     }
@@ -727,6 +738,7 @@ public class AuthService {
         private String realName;
         private String email;
         private String role;
+        private String databaseName;
         private String tableName;
         private Long grantedById;
         private String grantedByUsername;
