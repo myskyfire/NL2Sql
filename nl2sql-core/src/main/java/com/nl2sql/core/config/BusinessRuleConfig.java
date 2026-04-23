@@ -1,10 +1,13 @@
 package com.nl2sql.core.config;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -60,6 +63,57 @@ public class BusinessRuleConfig {
      * 描述
      */
     private String description;
+    
+    /**
+     * 创建人
+     */
+    private String createdBy;
+    
+    /**
+     * 创建时间
+     */
+    private LocalDateTime createdAt;
+    
+    /**
+     * 更新人
+     */
+    private String updatedBy;
+    
+    /**
+     * 更新时间
+     */
+    private LocalDateTime updatedAt;
+    
+    // ==================== JSON序列化辅助方法 ====================
+    
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    
+    /**
+     * 获取JSON格式的ruleContent
+     */
+    public String getRuleContentJson() {
+        if (ruleContent == null) {
+            return "{}";
+        }
+        try {
+            return objectMapper.writeValueAsString(ruleContent);
+        } catch (JsonProcessingException e) {
+            return "{}";
+        }
+    }
+    
+    /**
+     * 从JSON字符串设置ruleContent
+     */
+    public void setRuleContentFromJson(String json) {
+        if (json != null && !json.isEmpty()) {
+            try {
+                this.ruleContent = objectMapper.readValue(json, Map.class);
+            } catch (JsonProcessingException e) {
+                this.ruleContent = new HashMap<>();
+            }
+        }
+    }
     
     // ==================== 便捷工厂方法 ====================
     
