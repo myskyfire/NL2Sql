@@ -242,22 +242,22 @@ public class SQLFeedbackService {
             log.debug("[表缓存注入] MetadataCacheService未注入，跳过");
             return;
         }
-        
+            
         try {
             String question = request.getQuestion();
             String sql = request.getGeneratedSql();
             int rating = request.getRating();
-            
-            // 1. 从SQL中提取实际使用的表
+                
+            // 1. 从 SQL中提取实际使用的表
             java.util.Set<String> usedTables = extractTablesFromSQL(sql);
             if (usedTables.isEmpty()) {
                 log.warn("[表缓存注入] 无法从SQL提取表: sql={}", sql);
                 return;
             }
-            
+                
             log.info("[表缓存注入] 开始处理: rating={}, question={}, tables={}", 
                 rating, question, usedTables);
-            
+                
             // 2. 获取datasourceId（从nl2sql_query_log查询）
             Long datasourceId = null;
             if (request.getSessionId() != null) {
@@ -273,26 +273,37 @@ public class SQLFeedbackService {
                     log.warn("[表缓存注入] 查询datasourceId失败", e);
                 }
             }
-            
+                
             if (datasourceId == null) {
                 log.warn("[表缓存注入] 无法获取datasourceId，跳过");
                 return;
             }
-            
+                
             // 3. 注入到L2模糊向量缓存（归一化key）
             String normalizedQuery = normalizeQuery(question);
             java.util.List<String> tableList = new java.util.ArrayList<>(usedTables);
             metadataCacheService.putFuzzyVectorRetrieval(normalizedQuery, tableList);
-            
+                
             log.info("[表缓存注入] ✅ 已注入L2缓存: question='{}', normalized='{}', tables={}", 
                 question, normalizedQuery, tableList);
-            
+                
             // 4. 注入到L3语义索引（供Jaccard匹配）
             metadataCacheService.recordQueryToSemanticIndex(datasourceId, question, tableList, rating);
-            
+                
             log.info("[表缓存注入] ✅ 已注入L3语义索引: datasourceId={}, tables={}", 
                 datasourceId, tableList);
-            
+                
+            // ✅ P0优化：5分反馈额外注入SQL模板到QueryCache
+            if (rating == 5 && queryCacheService != null) {
+                injectSQLTemplateToCache(question, sql, usedTables, normalizedQuery, rating);
+            }
+                
+            // ✅ P1优化：提取列名映射并缓存
+            injectColumnMappingToCache(datasourceId, sql, question);
+                
+            // ✅ P1优化：提取表关联关系并缓存
+            injectTableRelationshipsToCache(datasourceId, usedTables, sql);
+                
         } catch (Exception e) {
             // ⚠️ 关键：注入失败不影响主流程，只记录日志
             log.error("[表缓存注入] ❌ 注入失败（不影响反馈提交）: question={}", 
@@ -359,6 +370,161 @@ public class SQLFeedbackService {
         }
         
         return tables;
+    }
+    
+    /**
+     * ✅ P0优化：5分反馈注入SQL模板到QueryCache
+     */
+    private void injectSQLTemplateToCache(String question, String sql, 
+                                          java.util.Set<String> usedTables,
+                                          String normalizedQuery, int rating) {
+        try {
+            com.nl2sql.core.cache.QueryCacheService.CachedResult cachedResult = 
+                new com.nl2sql.core.cache.QueryCacheService.CachedResult();
+            cachedResult.setSql(sql);
+            cachedResult.setUsedTables(usedTables);
+            cachedResult.setUserRating(rating);
+            cachedResult.setNormalizedQuery(normalizedQuery);
+            
+            // 使用归一化查询作为key，提高泛化能力
+            queryCacheService.putToCache(normalizedQuery, cachedResult, 1440); // 缓存24小时
+            
+            log.info("[SQL模板缓存] ✅ 5分反馈已注入: question='{}', normalized='{}'", 
+                question, normalizedQuery);
+            
+        } catch (Exception e) {
+            log.error("[SQL模板缓存] ❌ 注入失败", e);
+        }
+    }
+    
+    /**
+     * ✅ P1优化：提取列名映射并缓存（英文 -> 中文）
+     */
+    private void injectColumnMappingToCache(Long datasourceId, String sql, String question) {
+        if (metadataCacheService == null) {
+            return;
+        }
+        
+        try {
+            // 从 SQL 的 AS 别名中提取列映射
+            // 例如：SELECT total_amount AS '订单金额' → {"total_amount": "订单金额"}
+            java.util.Map<String, String> columnMapping = extractColumnAliasMapping(sql);
+            
+            if (!columnMapping.isEmpty()) {
+                metadataCacheService.batchPutColumnTranslations(datasourceId, columnMapping);
+                log.info("[列名缓存] ✅ 已缓存 {} 个列名映射: {}", columnMapping.size(), columnMapping);
+            }
+            
+        } catch (Exception e) {
+            log.warn("[列名缓存] 提取失败", e);
+        }
+    }
+    
+    /**
+     * ✅ P1优化：提取表关联关系并缓存
+     */
+    private void injectTableRelationshipsToCache(Long datasourceId, 
+                                                  java.util.Set<String> usedTables, 
+                                                  String sql) {
+        if (metadataCacheService == null || usedTables.size() < 2) {
+            return; // 单表无需缓存关联关系
+        }
+        
+        try {
+            // 从 SQL 的 JOIN ... ON 条件中提取关联路径
+            List<String> joinPaths = extractJoinPaths(sql);
+            
+            if (!joinPaths.isEmpty()) {
+                String relationships = String.join("\n", joinPaths);
+                java.util.List<String> tableList = new java.util.ArrayList<>(usedTables);
+                metadataCacheService.putRelationships(datasourceId, tableList, relationships);
+                
+                log.info("[表关联缓存] ✅ 已缓存 {} 个关联路径: {}", joinPaths.size(), joinPaths);
+            }
+            
+        } catch (Exception e) {
+            log.warn("[表关联缓存] 提取失败", e);
+        }
+    }
+    
+    /**
+     * ✅ 从 SQL 的 AS 别名中提取列名映射
+     */
+    private java.util.Map<String, String> extractColumnAliasMapping(String sql) {
+        java.util.Map<String, String> mapping = new java.util.HashMap<>();
+        
+        if (sql == null) return mapping;
+        
+        try {
+            // 正则匹配：xxx AS '中文' 或 xxx AS "中文"
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s+AS\\s+['\"]([^'\"]+)['\"]", 
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            
+            java.util.regex.Matcher matcher = pattern.matcher(sql);
+            while (matcher.find()) {
+                String englishName = matcher.group(1).toLowerCase();
+                String chineseName = matcher.group(2);
+                
+                // 过滤常见非业务字段
+                if (!isCommonField(englishName)) {
+                    mapping.put(englishName, chineseName);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.warn("[列名映射] 正则解析失败", e);
+        }
+        
+        return mapping;
+    }
+    
+    /**
+     * ✅ 从 SQL 的 JOIN 条件中提取关联路径
+     */
+    private List<String> extractJoinPaths(String sql) {
+        List<String> paths = new java.util.ArrayList<>();
+        
+        if (sql == null) return paths;
+        
+        try {
+            // 正则匹配：JOIN tableB ON tableA.col1 = tableB.col2
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "JOIN\\s+(\\w+)\\s+ON\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)",
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            
+            java.util.regex.Matcher matcher = pattern.matcher(sql);
+            while (matcher.find()) {
+                String joinedTable = matcher.group(1).toLowerCase();
+                String leftTable = matcher.group(2).toLowerCase();
+                String leftCol = matcher.group(3).toLowerCase();
+                String rightTable = matcher.group(4).toLowerCase();
+                String rightCol = matcher.group(5).toLowerCase();
+                
+                String path = String.format("%s.%s -> %s.%s", 
+                    leftTable, leftCol, rightTable, rightCol);
+                paths.add(path);
+            }
+            
+        } catch (Exception e) {
+            log.warn("[关联路径] 正则解析失败", e);
+        }
+        
+        return paths;
+    }
+    
+    /**
+     * ✅ 判断是否为常见非业务字段
+     */
+    private boolean isCommonField(String fieldName) {
+        return fieldName.equals("id") || 
+               fieldName.equals("created_at") || 
+               fieldName.equals("updated_at") ||
+               fieldName.equals("deleted_at") ||
+               fieldName.startsWith("row_") ||
+               fieldName.startsWith("__");
     }
     
     /**

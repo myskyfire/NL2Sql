@@ -43,6 +43,9 @@ public class NL2SQLTool {
     @Autowired
     private SynonymService synonymService;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.cache.QueryCacheService queryCacheService;
+    
     @Autowired
     private SQLValidationService sqlValidationService;
     
@@ -175,6 +178,20 @@ public class NL2SQLTool {
     @Tool("根据用户的自然语言问题和数据源ID，生成对应的SQL查询语句。如果缺少必要的表信息，会返回澄清请求")
     public String generateSQL(String query, Long datasourceId) {
         try {
+            // ✅ P0优化：优先从QueryCache获取5分SQL模板
+            if (queryCacheService != null) {
+                String normalizedQuery = normalizeQueryForCache(query);
+                com.nl2sql.core.cache.QueryCacheService.CachedResult cached = 
+                    queryCacheService.getFromCache(normalizedQuery);
+                
+                if (cached != null && cached.getUserRating() != null && cached.getUserRating() == 5) {
+                    log.info("[NL2SQLTool] ⚡⚡⚡ 5分SQL模板命中: question='{}', sql={}", 
+                        query, cached.getSql());
+                    saveCurrentContext(cached.getSql(), query);
+                    return cached.getSql();
+                }
+            }
+            
             // ✅ 关键优化：尝试从缓存获取 SQL（避免 LLM 非确定性）
             if (queryCacheService != null) {
                 try {

@@ -230,6 +230,12 @@ public class QueryCacheService {
         private double executionTime;
         private long cachedAt; // 缓存时间戳
         
+        // ✅ 新增：5分反馈相关字段
+        private String sql;              // 原始SQL（用于模板）
+        private java.util.Set<String> usedTables;  // 使用的表
+        private Integer userRating;      // 用户评分（4-5分为高质量）
+        private String normalizedQuery;  // 归一化查询文本
+        
         public CachedResult() {
             this.cachedAt = System.currentTimeMillis();
         }
