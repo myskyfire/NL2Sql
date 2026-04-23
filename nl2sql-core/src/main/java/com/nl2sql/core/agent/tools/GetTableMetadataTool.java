@@ -122,7 +122,7 @@ public class GetTableMetadataTool extends BaseToolAdapter {
     }
     
     /**
-     * 获取表的元数据信息
+     * 获取表的元数据信息（LangChain4j @Tool入口）
      * 
      * @param tableName 表名
      * @param datasourceId 数据源ID
@@ -131,49 +131,30 @@ public class GetTableMetadataTool extends BaseToolAdapter {
     @Tool("获取指定表的元数据信息，包括表注释、字段列表、数据类型等。输入表名和数据源ID")
     public String getTableMetadata(String tableName, Long datasourceId) {
         try {
-            log.info("[GetTableMetadataTool] 获取表元数据: {}", tableName);
+            // 构建ToolContext
+            ToolContext context = ToolContext.builder()
+                .parameters(new HashMap<String, Object>() {{
+                    put("tableName", tableName);
+                    put("datasourceId", datasourceId);
+                }})
+                .build();
             
-            // 获取表注释
-            String tableComment = jdbcTemplate.queryForObject(
-                "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
-                String.class, datasourceId, tableName
-            );
+            // 调用新框架执行
+            com.nl2sql.core.agent.tool.ToolResult result = execute(context);
             
-            // 获取字段列表
-            List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                "SELECT column_name, data_type, column_comment, is_primary_key, ordinal_position " +
-                "FROM column_metadata WHERE datasource_id = ? AND table_name = ? " +
-                "ORDER BY ordinal_position",
-                datasourceId, tableName
-            );
-            
-            if (columns.isEmpty()) {
-                return "{\"success\":false,\"error\":\"表不存在或没有字段信息\"}";
+            // 序列化返回
+            if (result.isSuccess()) {
+                return objectMapper.writeValueAsString(result.getData());
+            } else {
+                Map<String, Object> error = new HashMap<>();
+                error.put("success", false);
+                error.put("error", result.getErrorMessage());
+                return objectMapper.writeValueAsString(error);
             }
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("tableName", tableName);
-            response.put("tableComment", tableComment != null ? tableComment : "");
-            response.put("columnCount", columns.size());
-            response.put("columns", columns);
-            
-            log.info("[GetTableMetadataTool] 获取成功，共 {} 个字段", columns.size());
-            
-            return objectMapper.writeValueAsString(response);
             
         } catch (Exception e) {
-            log.error("[GetTableMetadataTool] 获取失败", e);
-            
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            log.error("[GetTableMetadataTool] 序列化失败", e);
+            return "{\"success\":false,\"error\":\"序列化失败\"}";
         }
     }
 }
