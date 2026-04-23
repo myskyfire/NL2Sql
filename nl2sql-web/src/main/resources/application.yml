@@ -135,7 +135,7 @@ llm:
 
 # Chroma Vector Database Configuration (RAG)
 chroma:
-  enabled: true  # ✅ 使用 LangChain4j 原生 V2 API 支持
+  enabled: false  # ⚠️ 临时禁用，避免集合维度不匹配问题
   url: http://[::1]:8000  # ⚠️ Chroma 绑定在 IPv6 localhost
   collection-name: NL2SQL_rag
 
