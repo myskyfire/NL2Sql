@@ -346,4 +346,67 @@ public class SQLCorrectionService {
     public String cleanSQL(String sql) {
         return MarkdownUtils.cleanSQL(sql);
     }
+    
+    // ==================== 向后兼容方法（保持API稳定性）====================
+    
+    /**
+     * SQL纠错结果（兼容旧版API）
+     */
+    @lombok.Data
+    public static class CorrectionResult {
+        private boolean success;
+        private String correctedSQL;
+        private String originalError;
+        private java.util.List<String> suggestions;
+        private int retryCount;
+        
+        public CorrectionResult() {
+            this.suggestions = new java.util.ArrayList<>();
+            this.retryCount = 0;
+        }
+    }
+    
+    /**
+     * 尝试自动修正SQL错误（兼容旧版API）
+     * 
+     * @param sql 原始SQL
+     * @param error 错误信息
+     * @param maxRetries 最大重试次数
+     * @return 修正结果
+     */
+    public CorrectionResult autoCorrect(String sql, String error, int maxRetries) {
+        CorrectionResult result = new CorrectionResult();
+        result.setOriginalError(error);
+        result.setRetryCount(1);
+        
+        log.info("[SQLCorrection] 开始SQL纠错: sql={}, error={}", sql, error);
+        
+        // 优先尝试语法修正
+        String correctedSql = attemptSyntaxCorrection(sql, error, "", "", "");
+        
+        if (correctedSql != null && !correctedSql.trim().isEmpty() && !correctedSql.equals(sql)) {
+            result.setSuccess(true);
+            result.setCorrectedSQL(correctedSql);
+            log.info("[SQLCorrection] ✅ 语法修正成功: {}", correctedSql);
+            return result;
+        }
+        
+        // 尝试幻觉列名修正
+        correctedSql = attemptHallucinationCorrection(sql, "", "", "", java.util.Collections.singletonList(error));
+        
+        if (correctedSql != null && !correctedSql.trim().isEmpty() && !correctedSql.equals(sql)) {
+            result.setSuccess(true);
+            result.setCorrectedSQL(correctedSql);
+            log.info("[SQLCorrection] ✅ 幻觉列名修正成功: {}", correctedSql);
+            return result;
+        }
+        
+        // 修正失败
+        result.setSuccess(false);
+        result.setCorrectedSQL(sql);
+        result.getSuggestions().add("自动修正失败，建议手动检查SQL");
+        log.warn("[SQLCorrection] ❌ SQL纠错失败");
+        
+        return result;
+    }
 }

@@ -13,7 +13,7 @@ if sys.stdout.encoding != 'utf-8':
 if sys.stderr.encoding != 'utf-8':
     sys.stderr.reconfigure(encoding='utf-8')
 
-TOKEN = "f4bef8749a264cbcad59b2b0e634cb3f"
+TOKEN = "0dc3e6ef912746ecade2864a49446e92"
 API_URL = "http://localhost:8080/api/agent/chat/test"
 FEEDBACK_URL = "http://localhost:8080/api/feedback/submit"
 
@@ -462,12 +462,14 @@ for round_num in range(1, 11):
             )
             
             if resp.status_code != 200:
+                error_msg = f'HTTP {resp.status_code}: {resp.text[:200]}'
+                print(f"  ❌ API Error: {error_msg}")
                 return {
                     'Question': tc['question'],
                     'ExpectedSQL': tc['expected_sql'],
                     'ActualSQL': 'API Error',
                     'Score': 1,
-                    'Issues': f'HTTP {resp.status_code}'
+                    'Issues': error_msg
                 }
             
             result = resp.json()
@@ -524,10 +526,12 @@ for round_num in range(1, 11):
             }
             
         except Exception as e:
+            error_msg = f'Exception: {str(e)[:200]}'
+            print(f"  ❌ Test Failed: {tc['question']} - {error_msg}")
             return {
                 'Question': tc['question'],
                 'ExpectedSQL': tc['expected_sql'],
-                'ActualSQL': f'Exception: {str(e)[:100]}',
+                'ActualSQL': error_msg,
                 'Score': 1,
                 'Issues': str(e)
             }

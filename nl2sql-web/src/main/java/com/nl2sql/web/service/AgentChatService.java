@@ -392,7 +392,7 @@ public class AgentChatService {
     }
     
     /**
-     * 保存对话历史
+     * 保存对话历史（优化版：只保存摘要，避免上下文爆炸）
      */
     private void saveConversationHistory(String sessionId, Number userId, String userMessage, String agentResponse) {
         if (historyService == null) {
@@ -408,16 +408,80 @@ public class AgentChatService {
             userMsg.put("content", userMessage);
             messages.add(userMsg);
             
-            // Assistant message
+            // ✅ 关键优化：解析 agentResponse，只保存摘要信息
+            String assistantContent = extractSummaryFromResponse(agentResponse);
+            
             Map<String, Object> assistantMsg = new HashMap<>();
             assistantMsg.put("role", "assistant");
-            assistantMsg.put("content", agentResponse);
+            assistantMsg.put("content", assistantContent);
             messages.add(assistantMsg);
             
             historyService.saveHistory(sessionId, userId.longValue(), messages);
             
         } catch (Exception e) {
             log.warn("[对话历史] 保存失败", e);
+        }
+    }
+    
+    /**
+     * 从 Agent 响应中提取摘要信息（避免保存完整结果数据）
+     * 
+     * @param agentResponse 完整的 Agent 响应 JSON
+     * @return 摘要文本
+     */
+    private String extractSummaryFromResponse(String agentResponse) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<String, Object> response = mapper.readValue(agentResponse, Map.class);
+            
+            Boolean success = (Boolean) response.get("success");
+            if (success != null && success) {
+                // 成功查询：保存 SQL + 结果摘要
+                String sql = (String) response.get("sql");
+                Integer rowCount = (Integer) response.get("rowCount");
+                
+                StringBuilder summary = new StringBuilder();
+                summary.append("✅ 查询成功\n");
+                if (sql != null) {
+                    summary.append("SQL: ").append(sql).append("\n");
+                }
+                if (rowCount != null) {
+                    summary.append("结果: ").append(rowCount).append(" 行");
+                }
+                
+                // ✅ 可选：添加前3行数据样本（限制字段数）
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> data = (List<Map<String, Object>>) response.get("data");
+                if (data != null && !data.isEmpty()) {
+                    summary.append("\n\n数据样本（前3行）:\n");
+                    int sampleSize = Math.min(3, data.size());
+                    for (int i = 0; i < sampleSize; i++) {
+                        Map<String, Object> row = data.get(i);
+                        // 只取前5个字段
+                        int fieldCount = 0;
+                        for (Map.Entry<String, Object> entry : row.entrySet()) {
+                            if (fieldCount >= 5) break;
+                            summary.append(entry.getKey()).append(": ").append(entry.getValue()).append(", ");
+                            fieldCount++;
+                        }
+                        summary.append("\n");
+                    }
+                }
+                
+                return summary.toString();
+            } else {
+                // 失败：保存错误信息
+                String error = (String) response.get("error");
+                return "❌ 查询失败: " + (error != null ? error : "未知错误");
+            }
+            
+        } catch (Exception e) {
+            log.warn("[对话历史] 解析响应失败，保存原始响应", e);
+            // 降级：如果解析失败，截断原始响应
+            if (agentResponse != null && agentResponse.length() > 1000) {
+                return agentResponse.substring(0, 1000) + "... [已截断]";
+            }
+            return agentResponse;
         }
     }
     
