@@ -30,6 +30,9 @@ public class SQLFeedbackService {
     @Autowired(required = false)
     private QueryCacheService queryCacheService;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.cache.MetadataCacheService metadataCacheService;
+    
     /**
      * 提交SQL反馈
      */
@@ -98,9 +101,10 @@ public class SQLFeedbackService {
         }
         
         try {
-            // ✅ 新增：高分反馈（4-5星）自动同步到rag_knowledge_base
+            // ✅ 新增：高分反馈（4-5星）自动同步到rag_knowledge_base + 注入L1/L2表缓存
             if (request.getRating() >= 4) {
                 syncHighRatingFeedbackToKnowledge(request);
+                injectTableSelectionToCache(request);  // ✅ 新增：注入表选择缓存
             }
             
             // 如果有关联的知识库ID，更新其质量评分
@@ -226,6 +230,158 @@ public class SQLFeedbackService {
             log.error("[反馈同步] ❌ 同步失败（不影响反馈提交）: question={}", 
                 request.getQuestion(), e);
         }
+    }
+    
+    /**
+     * ✅ 新增：将高分反馈的表选择注入到L1/L2缓存
+     * 核心思路：用户评分>=4分 → 提取SQL中的表 → 写入元数据缓存
+     * 下次相似查询时，直接从缓存获取表，跳过L3向量检索和LLM选表
+     */
+    private void injectTableSelectionToCache(SQLFeedbackRequest request) {
+        if (metadataCacheService == null) {
+            log.debug("[表缓存注入] MetadataCacheService未注入，跳过");
+            return;
+        }
+        
+        try {
+            String question = request.getQuestion();
+            String sql = request.getGeneratedSql();
+            int rating = request.getRating();
+            
+            // 1. 从SQL中提取实际使用的表
+            java.util.Set<String> usedTables = extractTablesFromSQL(sql);
+            if (usedTables.isEmpty()) {
+                log.warn("[表缓存注入] 无法从SQL提取表: sql={}", sql);
+                return;
+            }
+            
+            log.info("[表缓存注入] 开始处理: rating={}, question={}, tables={}", 
+                rating, question, usedTables);
+            
+            // 2. 获取datasourceId（从nl2sql_query_log查询）
+            Long datasourceId = null;
+            if (request.getSessionId() != null) {
+                try {
+                    List<Map<String, Object>> logs = jdbcTemplate.queryForList(
+                        "SELECT datasource_id FROM nl2sql_query_log WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+                        request.getSessionId()
+                    );
+                    if (!logs.isEmpty()) {
+                        datasourceId = ((Number) logs.get(0).get("datasource_id")).longValue();
+                    }
+                } catch (Exception e) {
+                    log.warn("[表缓存注入] 查询datasourceId失败", e);
+                }
+            }
+            
+            if (datasourceId == null) {
+                log.warn("[表缓存注入] 无法获取datasourceId，跳过");
+                return;
+            }
+            
+            // 3. 注入到L2模糊向量缓存（归一化key）
+            String normalizedQuery = normalizeQuery(question);
+            java.util.List<String> tableList = new java.util.ArrayList<>(usedTables);
+            metadataCacheService.putFuzzyVectorRetrieval(normalizedQuery, tableList);
+            
+            log.info("[表缓存注入] ✅ 已注入L2缓存: question='{}', normalized='{}', tables={}", 
+                question, normalizedQuery, tableList);
+            
+            // 4. 注入到L3语义索引（供Jaccard匹配）
+            metadataCacheService.recordQueryToSemanticIndex(datasourceId, question, tableList, rating);
+            
+            log.info("[表缓存注入] ✅ 已注入L3语义索引: datasourceId={}, tables={}", 
+                datasourceId, tableList);
+            
+        } catch (Exception e) {
+            // ⚠️ 关键：注入失败不影响主流程，只记录日志
+            log.error("[表缓存注入] ❌ 注入失败（不影响反馈提交）: question={}", 
+                request.getQuestion(), e);
+        }
+    }
+    
+    /**
+     * ✅ 从SQL中提取表名（使用JSqlParser）
+     */
+    private java.util.Set<String> extractTablesFromSQL(String sql) {
+        java.util.Set<String> tables = new java.util.HashSet<>();
+        
+        if (sql == null || sql.trim().isEmpty()) {
+            return tables;
+        }
+        
+        try {
+            net.sf.jsqlparser.statement.Statement statement = 
+                net.sf.jsqlparser.parser.CCJSqlParserUtil.parse(sql);
+            
+            if (!(statement instanceof net.sf.jsqlparser.statement.select.Select)) {
+                return tables; // 非SELECT语句
+            }
+            
+            net.sf.jsqlparser.statement.select.Select selectStmt = 
+                (net.sf.jsqlparser.statement.select.Select) statement;
+            net.sf.jsqlparser.statement.select.SelectBody selectBody = selectStmt.getSelectBody();
+            
+            if (!(selectBody instanceof net.sf.jsqlparser.statement.select.PlainSelect)) {
+                return tables;
+            }
+            
+            net.sf.jsqlparser.statement.select.PlainSelect plainSelect = 
+                (net.sf.jsqlparser.statement.select.PlainSelect) selectBody;
+            
+            // FROM表
+            if (plainSelect.getFromItem() != null) {
+                String fromTable = plainSelect.getFromItem().toString().toLowerCase();
+                // 去除别名
+                if (fromTable.contains(" ")) {
+                    fromTable = fromTable.split("\\s+")[0];
+                }
+                tables.add(fromTable);
+            }
+            
+            // JOIN表
+            if (plainSelect.getJoins() != null) {
+                for (net.sf.jsqlparser.statement.select.Join join : plainSelect.getJoins()) {
+                    if (join.getRightItem() != null) {
+                        String joinTable = join.getRightItem().toString().toLowerCase();
+                        if (joinTable.contains(" ")) {
+                            joinTable = joinTable.split("\\s+")[0];
+                        }
+                        tables.add(joinTable);
+                    }
+                }
+            }
+            
+            log.debug("[表缓存注入] 从SQL提取到表: {}", tables);
+            
+        } catch (Exception e) {
+            log.warn("[表缓存注入] SQL解析失败: {}", e.getMessage());
+        }
+        
+        return tables;
+    }
+    
+    /**
+     * ✅ 归一化查询文本（用于缓存key）
+     * 去除时间、数字等变量，保留语义结构
+     */
+    private String normalizeQuery(String query) {
+        if (query == null) return "";
+        
+        // 替换数字为占位符
+        String normalized = query.replaceAll("\\d+", "<NUM>");
+        
+        // 替换具体日期为占位符
+        normalized = normalized.replaceAll("\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}", "<DATE>");
+        
+        // 替换相对时间为占位符
+        normalized = normalized.replaceAll("最近\\d+天", "最近<NUM>天");
+        normalized = normalized.replaceAll("过去\\d+天", "过去<NUM>天");
+        
+        // 去除多余空格
+        normalized = normalized.trim().replaceAll("\\s+", " ");
+        
+        return normalized;
     }
     
     /**

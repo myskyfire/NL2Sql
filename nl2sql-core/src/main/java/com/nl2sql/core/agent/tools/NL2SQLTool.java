@@ -1286,7 +1286,30 @@ public class NL2SQLTool {
      */
     public String retrieveSchema(String query, Long datasourceId) {
         try {
-            // ✅ 向量检索相关表（传入datasourceId，确保只检索指定数据源的表）
+            // ✅ 关键优化：优先从L1/L2缓存获取表（高分反馈注入的“黄金表关系”）
+            List<String> cachedTables = null;
+            
+            if (metadataCacheService != null) {
+                // 1. 尝试L2模糊向量缓存（归一化匹配）
+                String normalizedQuery = normalizeQueryForCache(query);
+                cachedTables = metadataCacheService.getFuzzyVectorRetrieval(normalizedQuery);
+                
+                if (cachedTables != null && !cachedTables.isEmpty()) {
+                    log.info("[NL2SQLTool] ⚡ L2缓存命中(高分反馈): query='{}', tables={}", query, cachedTables);
+                    return buildTableSchemaInfo(cachedTables, datasourceId);
+                }
+                
+                // 2. 尝试L3语义索引（Jaccard相似度）
+                cachedTables = metadataCacheService.findSimilarQueryBySemantic(query, datasourceId, 0.85);
+                
+                if (cachedTables != null && !cachedTables.isEmpty()) {
+                    log.info("[NL2SQLTool] ⚡ L3语义索引命中: query='{}', tables={}", query, cachedTables);
+                    return buildTableSchemaInfo(cachedTables, datasourceId);
+                }
+            }
+            
+            // 3. 缓存未命中，走正常流程：L3向量检索
+            log.debug("[NL2SQLTool] 缓存未命中，执行向量检索: query={}", query);
             List<String> tables = vectorRetriever.retrieveTopTables(query, datasourceId, 10);
             if (tables.isEmpty()) {
                 return "ERROR: 未找到任何相关表";
@@ -1298,6 +1321,28 @@ public class NL2SQLTool {
             log.error("[NL2SQLTool] 检索schema失败", e);
             return "ERROR: " + e.getMessage();
         }
+    }
+    
+    /**
+     * ✅ 归一化查询文本（与SQLFeedbackService保持一致）
+     */
+    private String normalizeQueryForCache(String query) {
+        if (query == null) return "";
+        
+        // 替换数字为占位符
+        String normalized = query.replaceAll("\\d+", "<NUM>");
+        
+        // 替换具体日期为占位符
+        normalized = normalized.replaceAll("\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}", "<DATE>");
+        
+        // 替换相对时间为占位符
+        normalized = normalized.replaceAll("最近\\d+天", "最近<NUM>天");
+        normalized = normalized.replaceAll("过去\\d+天", "过去<NUM>天");
+        
+        // 去除多余空格
+        normalized = normalized.trim().replaceAll("\\s+", " ");
+        
+        return normalized;
     }
     
     /**
