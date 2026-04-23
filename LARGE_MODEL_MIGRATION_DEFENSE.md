@@ -129,7 +129,7 @@ mvn test -Dtest=NL2SQLRegressionTest
 
 ### 1. 在NL2SQLTool中集成白名单校验
 
-**修改位置**：`nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java`
+**修改位置**：`nl2sql-core/src/main/java/com/nl2sql/core/service/NL2SQLService.java`
 
 **建议在LLM生成SQL后立即调用**：
 ```java

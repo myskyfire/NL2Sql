@@ -109,7 +109,7 @@ llm:
 | 任务类型 | 使用模型 | 示例 |
 |---------|---------|------|
 | Agent决策 | 推理模型 | ReAct循环中的Thought |
-| SQL生成 | 代码模型 | NL2SQLTool.generateSQL |
+| SQL生成 | 代码模型 | NL2SQLService.generateSQL |
 | 数据总结 | 推理模型 | AISummaryTool |
 | 意图分类 | 推理模型 | IntentClassifierTool |
 

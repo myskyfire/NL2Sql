@@ -19,7 +19,7 @@
 4. 基于关联关系自动扩展表列表（第217-231行），从`table_relationships`中提取所有涉及的表名
 
 **代码位置：**
-- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java`
+- `NL2SQL-core/src/main/java/com/nl2sql/core/service/NL2SQLService.java`
   - 第70-77行：表选择迭代中获取关联关系
   - 第217-231行：基于关联关系扩展表列表
   - 第336-355行：增强`buildTableCheckPrompt`方法
@@ -50,7 +50,7 @@ JOIN product_categories pc ON oi.product_id IN (SELECT id FROM products WHERE ca
 3. 在StandardQuerySkill中添加`optimizeSQL`检测方法（仅警告，暂未实际修复）
 
 **代码位置：**
-- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java` 第264-270行
+- `NL2SQL-core/src/main/java/com/nl2sql/core/service/NL2SQLService.java` 第264-270行
 - `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java` 第93-109行
 - Database: `nl2sql_meta_db.table_relationships` 新增4条关联关系
 
@@ -79,7 +79,7 @@ SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS order_date
 ```
 
 **代码位置：**
-- `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java` 第244-250行
+- `NL2SQL-core/src/main/java/com/nl2sql/core/service/NL2SQLService.java` 第244-250行
 
 **经验教训：**
 - 不要在后端硬编码业务逻辑判断
@@ -164,7 +164,7 @@ private ModelRouter modelRouter;
 
 // 正确
 @Autowired
-private NL2SQLTool nl2sqlTool;
+private NL2SQLService nl2sqlTool;
 ```
 
 **代码位置：**

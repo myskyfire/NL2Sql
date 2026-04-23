@@ -5,12 +5,13 @@ import com.nl2sql.common.result.Result;
 import com.nl2sql.common.util.LogContextUtil;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
-import com.nl2sql.core.agent.tools.NL2SQLTool;
 import com.nl2sql.core.rag.SQLFeedbackService;
+import com.nl2sql.core.service.SessionContextManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import com.nl2sql.core.service.NL2SQLService;
 
 import java.util.*;
 
@@ -33,7 +34,10 @@ public class AgentChatService {
     private JdbcTemplate jdbcTemplate;
     
     @Autowired(required = false)
-    private NL2SQLTool nl2sqlTool;
+    private NL2SQLService nl2sqlService;
+    
+    @Autowired(required = false)
+    private SessionContextManager sessionContextManager;
     
     @Autowired(required = false)
     private IntentClassifier intentClassifier;
@@ -182,11 +186,11 @@ public class AgentChatService {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             
-            // 如果 nl2sqlTool 中有最新的 SQL，覆盖 context 中的旧 SQL
+            // 如果 sessionContextManager 中有最新的 SQL，覆盖 context 中的旧 SQL
             Map<String, Object> contextMap = new HashMap<>(context);
-            if (nl2sqlTool != null) {
-                String latestSQL = nl2sqlTool.getCurrentSQL();
-                String latestQuery = nl2sqlTool.getCurrentQuery();
+            if (sessionContextManager != null) {
+                String latestSQL = sessionContextManager.getCurrentSQL();
+                String latestQuery = sessionContextManager.getCurrentQuery();
                 if (latestSQL != null && !latestSQL.trim().isEmpty()) {
                     log.info("[Agent对话] 使用最新 SQL 覆盖 context: {}", latestSQL);
                     contextMap.put("generatedSQL", latestSQL);
@@ -231,8 +235,8 @@ public class AgentChatService {
      * 设置会话ID
      */
     private void setSessionId(String sessionId) {
-        if (nl2sqlTool != null) {
-            nl2sqlTool.setCurrentSessionId(sessionId);
+        if (sessionContextManager != null) {
+            sessionContextManager.setCurrentSessionId(sessionId);
             log.debug("[Agent对话] 已设置会话ID: {}", sessionId);
         }
     }
@@ -241,8 +245,8 @@ public class AgentChatService {
      * 清除会话ID
      */
     private void clearSessionId() {
-        if (nl2sqlTool != null) {
-            nl2sqlTool.clearCurrentSessionId();
+        if (sessionContextManager != null) {
+            sessionContextManager.clearCurrentSessionId();
         }
     }
     

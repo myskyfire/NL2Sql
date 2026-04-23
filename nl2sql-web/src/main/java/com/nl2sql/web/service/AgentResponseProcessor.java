@@ -2,8 +2,8 @@ package com.nl2sql.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.ReActAgent;
-import com.nl2sql.core.agent.tools.NL2SQLTool;
 import com.nl2sql.core.agent.tools.SQLExecutionTool;
+import com.nl2sql.core.service.NL2SQLService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,7 +37,7 @@ public class AgentResponseProcessor {
     private JdbcTemplate jdbcTemplate;
     
     @Autowired
-    private NL2SQLTool nl2sqlTool;
+    private NL2SQLService nl2sqlService;
     
     @Autowired
     private SQLExecutionTool sqlExecutionTool;
@@ -319,7 +319,7 @@ public class AgentResponseProcessor {
             log.info("[forceExecuteQuery] 强制执行查询: question={}, datasourceId={}", question, datasourceId);
             
             // 1. 生成SQL
-            String sql = nl2sqlTool.generateSQL(question, datasourceId);
+            String sql = nl2sqlService.generateSQL(question, datasourceId);
             log.info("[forceExecuteQuery] 生成的SQL: {}", sql);
             
             // 2. 检查是否是澄清请求

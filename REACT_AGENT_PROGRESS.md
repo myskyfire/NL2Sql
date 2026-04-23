@@ -124,7 +124,7 @@ Agent决策：直接返回给用户，无需额外操作
 **注册的Tools列表**:
 ```
 核心Tools:
-- NL2SQLTool
+- NL2SQLService
 - SQLExecutionTool
 - AISummaryTool
 - ChartRecommendationTool
@@ -161,7 +161,7 @@ Agent决策：直接返回给用户，无需额外操作
 **问题**：依赖`table_relationships`配置，新表未配置时LLM仍会遗漏
 **方案**：
 ```java
-// NL2SQLTool.retrieveSchema后自动推断
+// NL2SQLService.retrieveSchema后自动推断
 - 分析字段命名模式（user_id → users.id）
 - 检测外键约束信息
 - 临时添加到Prompt上下文

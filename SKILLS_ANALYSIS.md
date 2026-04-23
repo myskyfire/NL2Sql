@@ -216,7 +216,7 @@ public interface NL2SQLAgent {
 ```java
 @Component
 public class StandardQuerySkill {
-    @Autowired private NL2SQLTool nl2sqlTool;      // Tool
+    @Autowired private NL2SQLService nl2sqlTool;      // Tool
     @Autowired private SQLExecutionTool execTool;   // Tool
     @Autowired private SQLSecurityValidator validator; // Tool
     

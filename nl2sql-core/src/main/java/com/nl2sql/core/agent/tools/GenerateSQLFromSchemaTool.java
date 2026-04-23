@@ -1,6 +1,7 @@
 package com.nl2sql.core.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.service.NL2SQLService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +17,7 @@ import java.util.*;
 public class GenerateSQLFromSchemaTool {
     
     @Autowired
-    private NL2SQLTool nl2sqlTool;
+    private NL2SQLService nl2sqlService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -33,8 +34,8 @@ public class GenerateSQLFromSchemaTool {
         try {
             log.info("[GenerateSQLFromSchemaTool] 生成SQL: question={}, datasourceId={}", question, datasourceId);
             
-            // 调用 NL2SQLTool 的 generateSQL 方法
-            String sql = nl2sqlTool.generateSQL(question, datasourceId);
+            // 调用 NL2SQLService 的 generateSQL 方法
+            String sql = nl2sqlService.generateSQL(question, datasourceId);
             
             // 检查是否需要澄清
             if (sql != null && (sql.startsWith("CLARIFY_") || sql.startsWith("CLARIFICATION"))) {

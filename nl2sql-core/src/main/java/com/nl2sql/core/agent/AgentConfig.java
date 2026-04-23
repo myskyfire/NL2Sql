@@ -4,6 +4,8 @@ import com.nl2sql.core.agent.skills.GroovySkillExecutor;
 import com.nl2sql.core.agent.skills.SkillContext;
 import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
 import com.nl2sql.core.agent.tools.*;
+import com.nl2sql.core.service.NL2SQLService;
+import com.nl2sql.core.service.SessionContextManager;
 import com.nl2sql.core.llm.LLMService;
 import com.nl2sql.core.metadata.MetadataService;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +34,10 @@ public class AgentConfig {
     
     // 核心Tools（Skills内部依赖这些工具）
     @Autowired
-    private NL2SQLTool nl2sqlTool;
+    private NL2SQLService nl2sqlService;
+    
+    @Autowired
+    private SessionContextManager sessionContextManager;
     
     @Autowired
     private SQLExecutionTool sqlExecutionTool;
@@ -215,9 +220,9 @@ public class AgentConfig {
                         context.setParameter("userId", userId);
                         context.setParameter("username", username);
                         
-                        // ✅ 从 NL2SQLTool 获取当前会话ID（用于流式事件推送）
-                        if (nl2sqlTool != null) {
-                            String currentSessionId = nl2sqlTool.getCurrentSessionId();
+                        // ✅ 从 SessionContextManager 获取当前会话ID（用于流式事件推送）
+                        if (sessionContextManager != null) {
+                            String currentSessionId = sessionContextManager.getCurrentSessionId();
                             if (currentSessionId != null) {
                                 context.setParameter("sessionId", currentSessionId);
                                 log.debug("[{}] 已设置 sessionId: {}", skill.getToolName(), currentSessionId);
@@ -297,11 +302,11 @@ public class AgentConfig {
                 String lastQuery;
                 String generatedSQL;
                 
-                // ✅ 关键修复：优先从 NL2SQLTool 获取最新的 SQL
-                if (nl2sqlTool != null) {
-                    generatedSQL = nl2sqlTool.getCurrentSQL();
-                    lastQuery = nl2sqlTool.getCurrentQuery();
-                    log.info("[summarize_result] 从 NL2SQLTool 获取上下文: sql={}, query={}", generatedSQL, lastQuery);
+                // ✅ 关键修复：优先从 SessionContextManager 获取最新的 SQL
+                if (sessionContextManager != null) {
+                    generatedSQL = sessionContextManager.getCurrentSQL();
+                    lastQuery = sessionContextManager.getCurrentQuery();
+                    log.info("[summarize_result] 从 SessionContextManager 获取上下文: sql={}, query={}", generatedSQL, lastQuery);
                 } else {
                     // 降级：从扁平参数中获取
                     lastQuery = (String) args.get("lastQuery");
@@ -368,11 +373,11 @@ public class AgentConfig {
             String chartType;
             String generatedSQL;
             
-            // ✅ 关键修复：优先从 NL2SQLTool 获取最新的 SQL
-            if (nl2sqlTool != null) {
-                generatedSQL = nl2sqlTool.getCurrentSQL();
+            // ✅ 关键修复：优先从 SessionContextManager 获取最新的 SQL
+            if (sessionContextManager != null) {
+                generatedSQL = sessionContextManager.getCurrentSQL();
                 chartType = (String) args.get("chartType");
-                log.info("[generate_chart] 从 NL2SQLTool 获取上下文: sql={}, chartType={}", generatedSQL, chartType);
+                log.info("[generate_chart] 从 SessionContextManager 获取上下文: sql={}, chartType={}", generatedSQL, chartType);
             } else {
                 // 降级：从扁平参数中获取
                 chartType = (String) args.get("chartType");

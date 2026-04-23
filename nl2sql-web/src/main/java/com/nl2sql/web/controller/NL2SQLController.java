@@ -3,16 +3,14 @@ package com.nl2sql.web.controller;
 import com.nl2sql.audit.AuditService;
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
-import com.nl2sql.common.util.LogContextUtil;
 import com.nl2sql.conversation.ConversationService;
 import com.nl2sql.core.cache.QueryCacheService;
 import com.nl2sql.core.executor.ExcelExportService;
-import com.nl2sql.core.executor.SQLCorrectionService;
 import com.nl2sql.core.executor.SQLExecutor;
 import com.nl2sql.core.retriever.VectorRetriever;
 import com.nl2sql.core.metadata.MetadataService;
 import com.nl2sql.core.visualization.ChartRecommendationService;
-import com.nl2sql.web.service.NL2SQLService;
+import com.nl2sql.web.service.NL2SQLDepService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
@@ -31,27 +29,25 @@ import java.util.*;
 @CrossOrigin(origins = "*")
 public class NL2SQLController {
     
-    private final NL2SQLService nl2sqlService;
+    private final NL2SQLDepService nl2sqlService;
     private final MetadataService metadataService;
     private final VectorRetriever vectorRetriever;
     private final ConversationService conversationService;
     private final AuditService auditService;
     private final AuthService authService;
     private final ExcelExportService excelExportService;
-    private final SQLCorrectionService correctionService;
     private final QueryCacheService cacheService;
     private final SQLExecutor sqlExecutor;
     private final ChartRecommendationService chartRecommendationService;
     
     public NL2SQLController(
-        NL2SQLService nl2sqlService,
+        NL2SQLDepService nl2sqlService,
         MetadataService metadataService,
         VectorRetriever vectorRetriever,
         ConversationService conversationService,
         AuditService auditService,
         AuthService authService,
         ExcelExportService excelExportService,
-        SQLCorrectionService correctionService,
         QueryCacheService cacheService,
         SQLExecutor sqlExecutor,
         ChartRecommendationService chartRecommendationService
@@ -63,7 +59,6 @@ public class NL2SQLController {
         this.auditService = auditService;
         this.authService = authService;
         this.excelExportService = excelExportService;
-        this.correctionService = correctionService;
         this.cacheService = cacheService;
         this.sqlExecutor = sqlExecutor;
         this.chartRecommendationService = chartRecommendationService;
@@ -142,37 +137,16 @@ public class NL2SQLController {
     }
     
     /**
-     * SQL纠错
+     * SQL纠错 - 已废弃
+     * @deprecated 此功能已整合到NL2SQL生成流程中
      */
+    @Deprecated
     @PostMapping("/correct")
     public Result<Map<String, Object>> correctSQL(
         @RequestBody CorrectRequest request,
         @RequestHeader(value = "Authorization", required = false) String token
     ) {
-        AuthService.UserInfo userInfo = validateUser(token);
-        if (userInfo == null) {
-            return Result.error("请先登录");
-        }
-        
-        try {
-            SQLCorrectionService.CorrectionResult result = correctionService.autoCorrect(
-                request.getSql(),
-                request.getError(),
-                3
-            );
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", result.isSuccess());
-            response.put("correctedSQL", result.getCorrectedSQL());
-            response.put("retryCount", result.getRetryCount());
-            response.put("originalError", result.getOriginalError());
-            response.put("suggestions", result.getSuggestions());
-            
-            return Result.success(response);
-        } catch (Exception e) {
-            log.error("SQL纠错失败", e);
-            return Result.error("纠错失败: " + e.getMessage());
-        }
+        return Result.error("此接口已废弃，SQL纠错已整合到NL2SQL生成流程中");
     }
     
     /**

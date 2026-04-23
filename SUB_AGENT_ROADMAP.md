@@ -237,7 +237,7 @@ Master Agent (协调者)
   - 实现结果缓存（Redis，TTL 1小时）
 
 - [ ] **2.3 SQLGenerator Sub-Agent**
-  - 迁移现有的 NL2SQLTool 逻辑
+  - 迁移现有的 NL2SQLService 逻辑
   - 集成 SQL 解析器（如 JSqlParser）
   - 实现 Self-Correction 机制（最多3次修正）
   - 添加 SQL 复杂度分级

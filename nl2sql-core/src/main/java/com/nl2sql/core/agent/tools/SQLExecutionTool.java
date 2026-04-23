@@ -4,6 +4,7 @@ import com.nl2sql.core.agent.validation.SQLValidationService;
 import com.nl2sql.core.executor.SQLExecutor;
 import com.nl2sql.core.rag.RagAutoLearner;
 import com.nl2sql.core.rag.RagLearningContext;
+import com.nl2sql.core.service.NL2SQLService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +25,7 @@ public class SQLExecutionTool {
     private SQLExecutor sqlExecutor;
     
     @Autowired
-    private NL2SQLTool nl2sqlTool;  // 用于SQL修正
+    private NL2SQLService nl2sqlService;  // 用于SQL修正
     
     @Autowired(required = false)
     private RagAutoLearner ragAutoLearner;  // RAG自动学习器
@@ -173,8 +174,8 @@ public class SQLExecutionTool {
             case TABLE_NOT_FOUND:
             case COLUMN_NOT_FOUND:
             case AMBIGUOUS_COLUMN:
-                // 调用 NL2SQLTool 的 autoFixSQL 方法
-                return nl2sqlTool.autoFixSQL(failedSql, errorMessage);
+                // 调用 NL2SQLService 的 autoFixSQL 方法
+                return nl2sqlService.autoFixSQL(failedSql, errorMessage);
             
             case TIMEOUT:
                 // 超时错误，添加 LIMIT 限制

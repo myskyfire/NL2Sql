@@ -94,6 +94,62 @@ public class RagKnowledgeBaseService {
     }
     
     /**
+     * 构建RAG增强文本（供Tool调用）
+     * 
+     * @param query 用户问题
+     * @return RAG增强文本，如果没有相似示例则返回空字符串
+     */
+    public String buildRAGEnhancement(String query) {
+        try {
+            List<KnowledgeItem> similarItems = searchSimilarQuestions(query, 1);
+            
+            if (similarItems.isEmpty()) {
+                log.debug("[RAG] 未找到相似示例");
+                return "";
+            }
+            
+            StringBuilder ragBuilder = new StringBuilder();
+            ragBuilder.append("\n\n参考示例（历史成功案例，请借鉴其JOIN方式和字段选择）:\n");
+            
+            int validCount = 0;
+            for (KnowledgeItem item : similarItems) {
+                // 过滤包含GROUP BY但非统计类问题的示例
+                if (item.getSqlExample() != null && !item.getSqlExample().isEmpty()) {
+                    String sql = item.getSqlExample().toUpperCase();
+                    boolean hasGroupBy = sql.contains("GROUP BY");
+                    boolean isStatQuestion = item.getQuestion().contains("统计") || 
+                                           item.getQuestion().contains("汇总") ||
+                                           item.getQuestion().contains("平均") ||
+                                           item.getQuestion().contains("合计");
+                    
+                    if (hasGroupBy && !isStatQuestion) {
+                        log.warn("[RAG] 跳过错误的示例: question={}, reason=非统计问题但包含GROUP BY", 
+                            item.getQuestion());
+                        continue;
+                    }
+                }
+                
+                ragBuilder.append(String.format("\n示例%d:\n", ++validCount));
+                ragBuilder.append("问题: ").append(item.getQuestion()).append("\n");
+                if (item.getSqlExample() != null && !item.getSqlExample().isEmpty()) {
+                    ragBuilder.append("SQL: ").append(item.getSqlExample()).append("\n");
+                }
+            }
+            
+            if (validCount > 0) {
+                log.info("[RAG] 有效示例数量: {}", validCount);
+                return ragBuilder.toString();
+            }
+            
+            return "";
+            
+        } catch (Exception e) {
+            log.warn("[RAG] 构建增强文本失败: {}", e.getMessage());
+            return "";
+        }
+    }
+    
+    /**
      * MySQL全文检索（降级方案）
      */
     private List<KnowledgeItem> searchByMySQL(String question, int maxResults) {

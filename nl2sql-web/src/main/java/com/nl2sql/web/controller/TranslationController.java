@@ -2,7 +2,7 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
 import com.nl2sql.common.util.StringUtils;
-import com.nl2sql.core.agent.tools.NL2SQLTool;
+import com.nl2sql.core.service.NL2SQLService;
 import com.nl2sql.core.cache.MetadataCacheService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +19,7 @@ import java.util.*;
 public class TranslationController {
     
     @Autowired
-    private NL2SQLTool nl2sqlTool;
+    private NL2SQLService nl2sqlService;
     
     @Autowired(required = false)
     private MetadataCacheService metadataCacheService;
@@ -84,7 +84,7 @@ public class TranslationController {
                 prompt.append("2. 翻译要简洁准确，例如：total_amount -> 总金额, created_at -> 创建时间\n");
                 prompt.append("3. 不要添加任何解释或其他内容\n");
                 
-                String response = nl2sqlTool.generateSQL(prompt.toString(), 1L);
+                String response = nl2sqlService.generateSQL(prompt.toString(), 1L);
                 
                 // 解析JSON响应
                 llmTranslations = parseTranslationResponse(response, needLLMTranslation);

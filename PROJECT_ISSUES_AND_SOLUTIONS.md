@@ -1076,7 +1076,7 @@ WHERE datasource_id=1 AND table_name='users' AND column_name='province';
 -- 同理更新 city, district, user_addresses.*, orders.shipping_address
 ```
 
-**步骤3：添加一对多JOIN防笛卡尔积规则（NL2SQLTool.java）**
+**步骤3：添加一对多JOIN防笛卡尔积规则（NL2SQLService.java）**
 ```java
 "   - **一对多关联时必须添加过滤条件避免笛卡尔积**\n" +
 "   - 错误示例：JOIN user_addresses ua ON orders.user_id = ua.user_id （一个用户可能有多个地址，导致订单金额重复计算）\n" +

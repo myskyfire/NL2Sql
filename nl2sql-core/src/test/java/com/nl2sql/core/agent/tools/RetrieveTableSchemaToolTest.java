@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.core.service.SchemaRetrievalService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -16,7 +17,7 @@ import static org.mockito.Mockito.*;
 class RetrieveTableSchemaToolTest {
     
     @Mock
-    private NL2SQLTool nl2sqlTool;
+    private SchemaRetrievalService schemaRetrievalService;
     
     @InjectMocks
     private RetrieveTableSchemaTool tool;
@@ -33,7 +34,7 @@ class RetrieveTableSchemaToolTest {
         Long datasourceId = 1L;
         String expectedSchema = "表名: orders";
         
-        when(nl2sqlTool.retrieveSchema(eq(question), eq(datasourceId)))
+        when(schemaRetrievalService.retrieveSchema(eq(question), eq(datasourceId)))
             .thenReturn(expectedSchema);
         
         // 执行测试
@@ -44,13 +45,13 @@ class RetrieveTableSchemaToolTest {
         assertTrue(result.contains("\"success\":true"));
         assertTrue(result.contains("\"schema\":\"表名: orders\""));
         
-        verify(nl2sqlTool, times(1)).retrieveSchema(question, datasourceId);
+        verify(schemaRetrievalService, times(1)).retrieveSchema(question, datasourceId);
     }
     
     @Test
     void testRetrieveTableSchemaWithNullQuestion() throws Exception {
         // 测试空问题
-        when(nl2sqlTool.retrieveSchema(isNull(), anyLong()))
+        when(schemaRetrievalService.retrieveSchema(isNull(), anyLong()))
             .thenReturn("");
         
         String result = tool.retrieveTableSchema(null, 1L);
@@ -62,7 +63,7 @@ class RetrieveTableSchemaToolTest {
     @Test
     void testRetrieveTableSchemaException() throws Exception {
         // 模拟异常
-        when(nl2sqlTool.retrieveSchema(anyString(), anyLong()))
+        when(schemaRetrievalService.retrieveSchema(anyString(), anyLong()))
             .thenThrow(new RuntimeException("数据库连接失败"));
         
         String result = tool.retrieveTableSchema("查询", 1L);

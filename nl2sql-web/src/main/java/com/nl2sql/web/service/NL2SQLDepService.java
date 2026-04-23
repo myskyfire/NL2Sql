@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @Deprecated  // 标记为废弃，所有新代码应使用 NL2SQLAgent
-public class NL2SQLService {
+public class NL2SQLDepService {
     
     /**
      * @deprecated 请使用 AgentController.chat() 代替

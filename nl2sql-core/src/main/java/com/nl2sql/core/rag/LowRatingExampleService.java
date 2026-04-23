@@ -64,6 +64,49 @@ public class LowRatingExampleService {
     }
     
     /**
+     * 获取负面示例文本（供Tool调用）
+     * 
+     * @param query 用户问题
+     * @return 格式化的负面示例文本，如果没有则返回空字符串
+     */
+    public String getNegativeExamples(String query) {
+        try {
+            List<LowRatingExample> badExamples = findSimilarLowRatingExamples(query, 0.85, 2);
+            
+            if (badExamples.isEmpty()) {
+                return "";
+            }
+            
+            log.info("[低分示例] 找到 {} 个负面示例", badExamples.size());
+            StringBuilder negBuilder = new StringBuilder();
+            negBuilder.append("\n⚠️ **以下SQL曾被用户评为低分，请避免类似错误：**\n\n");
+            
+            for (int i = 0; i < badExamples.size(); i++) {
+                LowRatingExample ex = badExamples.get(i);
+                negBuilder.append(String.format(
+                    "**反例 %d:**\n" +
+                    "问题: %s\n" +
+                    "错误SQL: %s\n" +
+                    "用户反馈: %s\n" +
+                    "评分: %d星\n\n",
+                    i + 1,
+                    ex.getQuestion(),
+                    ex.getGeneratedSql(),
+                    ex.getFeedbackText() != null ? ex.getFeedbackText() : "未提供原因",
+                    ex.getRating()
+                ));
+            }
+            
+            negBuilder.append("**请确保生成的SQL与上述错误示例完全不同！**\n\n");
+            return negBuilder.toString();
+            
+        } catch (Exception e) {
+            log.warn("[低分示例] 获取失败: {}", e.getMessage());
+            return "";
+        }
+    }
+    
+    /**
      * 低分示例数据类
      */
     @Data

@@ -7,7 +7,7 @@
 **修改文件**: 
 - `QueryCacheService.java` - 扩展CachedResult增加rating字段
 - `SQLFeedbackService.java` - injectSQLTemplateToCache()
-- `NL2SQLTool.java` - 优先查5分SQL模板
+- `NL2SQLService.java` - 优先查5分SQL模板
 
 **核心逻辑**:
 ```

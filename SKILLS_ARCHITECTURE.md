@@ -29,9 +29,9 @@
 ```
 用户问题 
   ↓
-Step 1: 检索表结构 (NL2SQLTool.retrieveSchema)
+Step 1: 检索表结构 (NL2SQLService.retrieveSchema)
   ↓
-Step 2: 生成 SQL (NL2SQLTool.generateSQL)
+Step 2: 生成 SQL (NL2SQLService.generateSQL)
   ↓
 Step 2.5: SQL 优化与风险评估
   - 检测 IN 子查询关联问题
@@ -40,7 +40,7 @@ Step 2.5: SQL 优化与风险评估
   ↓
 Step 3: 执行 SQL (SQLExecutionTool.executeSQL)
   - 支持自动修正（最多重试 2 次）
-  - 失败时调用 NL2SQLTool.autoFixSQL
+  - 失败时调用 NL2SQLService.autoFixSQL
   ↓
 返回查询结果
 ```

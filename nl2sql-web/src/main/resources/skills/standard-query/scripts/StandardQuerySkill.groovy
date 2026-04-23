@@ -1,5 +1,5 @@
 import com.nl2sql.core.agent.skills.SkillContext
-import com.nl2sql.core.agent.tools.NL2SQLTool
+import com.nl2sql.core.service.NL2SQLService
 import com.nl2sql.core.agent.tools.SQLExecutionTool
 import com.nl2sql.core.executor.SQLRiskAnalyzer
 import com.nl2sql.core.llm.LLMService
@@ -50,7 +50,7 @@ class StandardQuerySkill {
         try {
             // ✅ 新架构：通过 callTool() 调用原子能力，而不是直接获取 Bean
             // 保留旧方式作为兼容（后续逐步迁移）
-            NL2SQLTool nl2sqlTool = context.getBean(NL2SQLTool.class)
+            NL2SQLService nl2sqlService = context.getBean(NL2SQLService.class)
             SQLExecutionTool sqlExecutionTool = context.getBean(SQLExecutionTool.class)
             LLMService llmService = context.getBean(LLMService.class)
             SQLRiskAnalyzer riskAnalyzer = null
@@ -82,7 +82,7 @@ class StandardQuerySkill {
             // Step 1: 检索表结构
             println "[StandardQuerySkill] Step 1: 检索表结构"
             publishEvent(context, sessionId, "retrieving_schema", "🔍 检索表结构...")
-            String schema = nl2sqlTool.retrieveSchema(question, datasourceId)
+            String schema = nl2sqlService.retrieveSchema(question, datasourceId)
             publishEvent(context, sessionId, "schema_retrieved", "✅ 表结构检索完成")
                         
             // Step 2: 生成SQL
@@ -114,7 +114,7 @@ class StandardQuerySkill {
                 }
             }
             
-            String sql = nl2sqlTool.generateSQL(enhancedQuestion, datasourceId)
+            String sql = nl2sqlService.generateSQL(enhancedQuestion, datasourceId)
             
             // ✅ 关键修复：检查 SQL 生成是否失败或需要澄清
             boolean hasSyntaxError = false
@@ -316,7 +316,7 @@ class StandardQuerySkill {
      */
     private RiskAssessmentResult assessSQLRisk(String sql, String question, Long datasourceId, 
                                                 LLMService llmService, SQLRiskAnalyzer riskAnalyzer,
-                                                NL2SQLTool nl2sqlTool, SkillContext context, String sessionId) {
+                                                NL2SQLService nL2SQLService, SkillContext context, String sessionId) {
         try {
             // ✅ 关键修复：如果 SQL 是澄清消息或错误消息，直接返回低风险
             if (sql.startsWith("CLARIFICATION") || sql.startsWith("CLARIFY_") || 
@@ -747,7 +747,7 @@ ${sql}
      * 执行SQL并支持自动修正（复用 SQLCorrectionService）
      */
     private def executeWithAutoFix(String sql, Long datasourceId, Long userId, String username, 
-                                    int maxRetries, NL2SQLTool nl2sqlTool, SQLExecutionTool sqlExecutionTool,
+                                    int maxRetries, NL2SQLService nl2sqlService, SQLExecutionTool sqlExecutionTool,
                                     SkillContext context, String sessionId) {
         // ✅ 统一使用 SQLCorrectionService 进行纠错
         com.nl2sql.core.executor.SQLCorrectionService correctionService = null
@@ -787,11 +787,11 @@ ${sql}
                         } else {
                             // 降级：使用原有逻辑
                             log.warn("⚠️ SQLCorrectionService 修正失败，降级为 LLM 修正")
-                            currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
+                            currentSql = nl2sqlService.autoFixSQL(currentSql, result.error)
                         }
                     } else {
                         // 降级：使用原有逻辑
-                        currentSql = nl2sqlTool.autoFixSQL(currentSql, result.error)
+                        currentSql = nl2sqlService.autoFixSQL(currentSql, result.error)
                     }
                     
                     log.info("修正后的SQL: {}", currentSql)
@@ -813,11 +813,11 @@ ${sql}
                         } else {
                             // 降级：使用原有逻辑
                             log.warn("⚠️ SQLCorrectionService 修正失败，降级为 LLM 修正")
-                            currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
+                            currentSql = nl2sqlService.autoFixSQL(currentSql, e.message)
                         }
                     } else {
                         // 降级：使用原有逻辑
-                        currentSql = nl2sqlTool.autoFixSQL(currentSql, e.message)
+                        currentSql = nl2sqlService.autoFixSQL(currentSql, e.message)
                     }
                 } else {
                     throw e

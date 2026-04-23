@@ -105,7 +105,7 @@ public String expandSynonyms(String query, Long datasourceId) {
 
 #### 2. 在System Prompt中增加语义约束
 
-在[NL2SQLTool.java](file:///D:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/NL2SQLTool.java#L613-L619)的SQL生成Prompt中注入：
+在[NL2SQLService.java](file:///D:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/service/NL2SQLService.java#L613-L619)的SQL生成Prompt中注入：
 
 ```
 🚫 **严禁同义词替换（极其重要）**：

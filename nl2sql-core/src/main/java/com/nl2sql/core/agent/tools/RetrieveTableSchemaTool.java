@@ -1,6 +1,7 @@
 package com.nl2sql.core.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.service.SchemaRetrievalService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +17,7 @@ import java.util.*;
 public class RetrieveTableSchemaTool {
     
     @Autowired
-    private NL2SQLTool nl2sqlTool;
+    private SchemaRetrievalService schemaRetrievalService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -32,8 +33,7 @@ public class RetrieveTableSchemaTool {
         try {
             log.info("[RetrieveTableSchemaTool] 检索表结构: question={}, datasourceId={}", question, datasourceId);
             
-            // 调用 NL2SQLTool 的 retrieveSchema 方法
-            String schema = nl2sqlTool.retrieveSchema(question, datasourceId);
+            String schema = schemaRetrievalService.retrieveSchema(question, datasourceId);
             
             // 解析并返回结构化结果
             Map<String, Object> result = new HashMap<>();

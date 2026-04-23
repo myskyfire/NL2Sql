@@ -3,7 +3,8 @@ package com.nl2sql.web.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
-import com.nl2sql.core.agent.tools.NL2SQLTool;
+import com.nl2sql.core.service.NL2SQLService;
+import com.nl2sql.core.service.SessionContextManager;
 import com.nl2sql.common.event.StreamProgressEvent;
 import com.nl2sql.web.event.StreamProgressEventListener;
 import lombok.extern.slf4j.Slf4j;
@@ -27,19 +28,22 @@ public class StreamChatService {
     
     private final ReActAgent reActAgent;
     private final ConversationHistoryService conversationHistoryService;
-    private final NL2SQLTool nl2sqlTool;
+    private final NL2SQLService nl2sqlService;
+    private final SessionContextManager sessionContextManager;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     public StreamChatService(
         ReActAgent reActAgent,
         ConversationHistoryService conversationHistoryService,
-        NL2SQLTool nl2sqlTool,
+        NL2SQLService nl2sqlService,
+        SessionContextManager sessionContextManager,
         ApplicationEventPublisher eventPublisher
     ) {
         this.reActAgent = reActAgent;
         this.conversationHistoryService = conversationHistoryService;
-        this.nl2sqlTool = nl2sqlTool;
+        this.nl2sqlService = nl2sqlService;
+        this.sessionContextManager = sessionContextManager;
         this.eventPublisher = eventPublisher;
     }
     
@@ -150,8 +154,8 @@ public class StreamChatService {
      * 设置当前会话ID
      */
     private void setCurrentSessionId(String sessionId) {
-        if (nl2sqlTool != null) {
-            nl2sqlTool.setCurrentSessionId(sessionId);
+        if (sessionContextManager != null) {
+            sessionContextManager.setCurrentSessionId(sessionId);
             log.debug("[流式对话] 已设置会话ID: {}", sessionId);
         }
     }
@@ -160,8 +164,8 @@ public class StreamChatService {
      * 清除当前会话ID
      */
     private void clearCurrentSessionId() {
-        if (nl2sqlTool != null) {
-            nl2sqlTool.clearCurrentSessionId();
+        if (sessionContextManager != null) {
+            sessionContextManager.clearCurrentSessionId();
         }
     }
     

@@ -47,7 +47,7 @@ graph TB
     end
 
     subgraph "核心Tools层"
-        NL2SQL[NL2SQLTool]
+        NL2SQL[NL2SQLService]
         SQLExec[SQLExecutionTool]
         DSClarify[DatasourceClarificationTool]
         AISummary[AISummaryTool]
@@ -139,7 +139,6 @@ agent/
 ├── NL2SQLAgent.java             # ⚠️ 仅接口定义，未被使用
 ├── ToolDefinitionConverter.java # Tool 定义转换
 ├── tools/                       # 22 个 Tool 实现
-│   ├── NL2SQLTool.java         # 【核心】NL2SQL 生成
 │   ├── SQLExecutionTool.java   # 【核心】SQL 执行
 │   ├── DatasourceClarificationTool.java
 │   ├── AISummaryTool.java
@@ -283,7 +282,7 @@ private OllamaProvider ollamaCodeProvider;       # qwen2.5-coder
 |------|---------|------|
 | ReAct Agent 循环 | ReActAgent.java | ✅ 正常工作 |
 | 原生 Tool Calling | OllamaProvider.generateWithTools() | ✅ 使用 /api/chat |
-| NL2SQL 生成 | NL2SQLTool.generateSQL() | ✅ 含表选择迭代 |
+| NL2SQL 生成 | NL2SQLService.generateSQL() | ✅ 含表选择迭代 |
 | SQL 执行 | SQLExecutionTool.executeSQL() | ✅ 含风险评估 |
 | 数据源澄清 | DatasourceClarificationTool | ✅ 正常工作 |
 | AI 总结 | AISummaryTool（内联） | ✅ 正常工作 |
@@ -376,7 +375,7 @@ llm:
 **建议**：在 StandardQuerySkill 中集成纠错逻辑
 
 #### 问题 6：缺少单元测试
-**现状**：核心逻辑（ReActAgent、NL2SQLTool）缺少测试
+**现状**：核心逻辑（ReActAgent、NL2SQLService）缺少测试
 **建议**：补充关键路径的单元测试
 
 ### 7.3 低优先级问题
@@ -454,7 +453,7 @@ llm:
    - LLM 返回 tool_calls: [{name: "summarize_result", args: {...}}]
    ↓
 4. AgentConfig 中的 summarize_result lambda
-   - 从 NL2SQLTool 获取当前 SQL 和问题
+   - 从 NL2SQLService 获取当前 SQL 和问题
    - 使用 SQLExecutionTool 重新执行 SQL
    - 调用 AISummaryTool.summarize()
    ↓

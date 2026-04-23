@@ -77,7 +77,7 @@ agent.registerTool("generate_chart", (args, dsId, userId, username, userMessage)
 | `SQLRiskAnalysisTool` | `AgentConfig.java` 第345行 | ✅ 已注册 |
 | `AISummaryTool` | `AgentConfig.java` 第204行 | ✅ 已注册 |
 | `SQLExecutionTool` | `AgentConfig.java` 多处调用 | ✅ 正常使用 |
-| `NL2SQLTool` | `AgentConfig.java` 多处调用 | ✅ 正常使用 |
+| `NL2SQLService` | `AgentConfig.java` 多处调用 | ✅ 正常使用 |
 
 ---
 

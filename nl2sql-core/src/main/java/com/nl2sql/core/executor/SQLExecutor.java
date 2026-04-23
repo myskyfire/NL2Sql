@@ -3,6 +3,7 @@ package com.nl2sql.core.executor;
 import com.nl2sql.core.datasource.DataSourceManager;
 import com.nl2sql.core.metadata.ValueMappingService;
 import com.nl2sql.auth.service.AuthService;  // ✅ 新增：权限服务
+import com.nl2sql.core.service.NL2SQLService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +30,7 @@ public class SQLExecutor {
     private final SQLExecutionLogService executionLogService;
     private final DataSourceManager dataSourceManager;  // 动态数据源管理器
     private final ValueMappingService valueMappingService;  // 值映射服务
-    private final com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool;  // LLM翻译工具
+    private final com.nl2sql.core.service.NL2SQLService nl2sqlService;  // LLM翻译工具
     private final com.nl2sql.core.llm.ModelRouterService modelRouter;  // 模型路由服务
     private final com.nl2sql.core.cache.QueryCacheService queryCacheService;  // 查询结果缓存
     private final com.nl2sql.core.cache.MetadataCacheService metadataCacheService;  // 元数据缓存服务
@@ -55,7 +56,7 @@ public class SQLExecutor {
                       SQLExecutionLogService executionLogService,
                       DataSourceManager dataSourceManager,
                       ValueMappingService valueMappingService,
-                      com.nl2sql.core.agent.tools.NL2SQLTool nl2sqlTool,
+                      NL2SQLService nl2sqlService,
                       com.nl2sql.core.llm.ModelRouterService modelRouter,
                       com.nl2sql.core.cache.QueryCacheService queryCacheService,
                       com.nl2sql.core.cache.MetadataCacheService metadataCacheService) {
@@ -64,7 +65,7 @@ public class SQLExecutor {
         this.executionLogService = executionLogService;
         this.dataSourceManager = dataSourceManager;
         this.valueMappingService = valueMappingService;
-        this.nl2sqlTool = nl2sqlTool;
+        this.nl2sqlService = nl2sqlService;
         this.modelRouter = modelRouter;
         this.queryCacheService = queryCacheService;
         this.metadataCacheService = metadataCacheService;
