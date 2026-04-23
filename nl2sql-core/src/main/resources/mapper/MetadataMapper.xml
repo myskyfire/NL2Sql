@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.core.mapper.MetadataMapper">
+    
+    <!-- 统计数据源数量 -->
+    <select id="countDistinctDatasources" resultType="java.lang.Integer">
+        SELECT COUNT(DISTINCT datasource_id) FROM column_metadata
+    </select>
+    
+    <!-- 统计指定数据源的表是否存在 -->
+    <select id="countTableByDatasource" resultType="java.lang.Integer">
+        SELECT COUNT(*) 
+        FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} 
+          AND table_name = #{tableName}
+    </select>
+    
+    <!-- 获取表的中文注释 -->
+    <select id="getTableComment" resultType="java.lang.String">
+        SELECT DISTINCT table_comment 
+        FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} 
+          AND table_name = #{tableName} 
+        LIMIT 1
+    </select>
+    
+</mapper>

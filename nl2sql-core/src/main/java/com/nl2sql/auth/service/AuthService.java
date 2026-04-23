@@ -6,6 +6,7 @@ import com.nl2sql.auth.mapper.UserMapper;
 import com.nl2sql.auth.mapper.WhitelistMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -25,10 +26,17 @@ public class AuthService {
     private final BCryptPasswordEncoder passwordEncoder;
     
     // ✅ MyBatis Mappers
-    private final UserMapper userMapper;
-    private final WhitelistMapper whitelistMapper;
-    private final TablePermissionMapper tablePermissionMapper;
-    private final OperationLogMapper operationLogMapper;
+    @Autowired
+    private WhitelistMapper whitelistMapper;
+    
+    @Autowired
+    private UserMapper userMapper;
+    
+    @Autowired
+    private OperationLogMapper operationLogMapper;
+    
+    @Autowired
+    private com.nl2sql.auth.mapper.AuthMapper authMapper;
     
     private static final String WHITELIST_CACHE_KEY = "auth:whitelist:user:%d";
     private static final String SESSION_CACHE_KEY = "auth:session:%s";
@@ -226,8 +234,7 @@ public class AuthService {
             }
             
             // 检查目标用户是否存在
-            String checkSql = "SELECT COUNT(*) FROM users WHERE id = ?";
-            Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, targetUserId);
+            Integer count = authMapper.checkUserExists(targetUserId);
             
             if (count == null || count == 0) {
                 log.warn("目标用户不存在: targetUserId={}", targetUserId);
@@ -235,15 +242,7 @@ public class AuthService {
             }
             
             // 插入白名单
-            String insertSql = "INSERT INTO whitelist (user_id, added_by, reason, expires_at, is_active) " +
-                              "VALUES (?, ?, ?, ?, 1) " +
-                              "ON DUPLICATE KEY UPDATE " +
-                              "added_by = VALUES(added_by), " +
-                              "reason = VALUES(reason), " +
-                              "expires_at = VALUES(expires_at), " +
-                              "is_active = 1";
-            
-            jdbcTemplate.update(insertSql, targetUserId, operatorId, reason, expiresAt);
+            authMapper.insertOrUpdateWhitelist(targetUserId, operatorId, reason, expiresAt.toString());
             
             // 清除缓存
             String cacheKey = String.format(WHITELIST_CACHE_KEY, targetUserId);
@@ -348,8 +347,7 @@ public class AuthService {
             }
             
             // 检查目标用户是否存在
-            String checkSql = "SELECT COUNT(*) FROM users WHERE id = ?";
-            Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, targetUserId);
+            Integer count = authMapper.checkUserExists(targetUserId);
             
             if (count == null || count == 0) {
                 return false;
@@ -390,8 +388,7 @@ public class AuthService {
                 return false;
             }
             
-            String sql = "UPDATE table_permissions SET is_active = 0 WHERE user_id = ? AND table_name = ?";
-            int affected = jdbcTemplate.update(sql, targetUserId, tableName.toLowerCase());
+            int affected = authMapper.revokeTablePermission(targetUserId, tableName.toLowerCase());
             
             if (affected > 0) {
                 // 清除缓存
@@ -513,8 +510,7 @@ public class AuthService {
                 return false;
             }
             
-            String sql = "UPDATE whitelist SET is_active = 0 WHERE user_id = ?";
-            int affected = jdbcTemplate.update(sql, targetUserId);
+            int affected = authMapper.deactivateWhitelist(targetUserId);
             
             if (affected > 0) {
                 // 清除缓存
@@ -642,7 +638,7 @@ public class AuthService {
             String username = "unknown";
             try {
                 Map<String, Object> user = userMapper.findByUsername(
-                    jdbcTemplate.queryForObject("SELECT username FROM users WHERE id = ?", String.class, operatorId)
+                    authMapper.getUsernameById(operatorId)
                 );
                 if (user != null) {
                     username = (String) user.get("username");
@@ -772,7 +768,7 @@ public class AuthService {
         try {
             // ✅ 使用Mapper查询用户当前密码
             Map<String, Object> user = userMapper.findByUsername(
-                jdbcTemplate.queryForObject("SELECT username FROM users WHERE id = ?", String.class, userId)
+                authMapper.getUsernameById(userId)
             );
             
             if (user == null) {
@@ -805,7 +801,7 @@ public class AuthService {
     public boolean resetUserPassword(Long userId, String newPassword) {
         try {
             // ✅ 使用Mapper检查用户是否存在
-            String username = jdbcTemplate.queryForObject("SELECT username FROM users WHERE id = ?", String.class, userId);
+            String username = authMapper.getUsernameById(userId);
             if (username == null) {
                 return false;
             }

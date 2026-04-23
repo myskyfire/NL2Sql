@@ -47,6 +47,9 @@ public class NL2SQLTool {
     private com.nl2sql.core.cache.QueryCacheService queryCacheService;
     
     @Autowired
+    private com.nl2sql.core.mapper.MetadataMapper metadataMapper;
+    
+    @Autowired
     private SQLValidationService sqlValidationService;
     
     @Autowired(required = false)
@@ -235,10 +238,7 @@ public class NL2SQLTool {
             publishProgress("tables_retrieved", "✅ 找到 " + initialTables.size() + " 个候选表");
             
             // ✅ 关键优化：如果只有一个数据源且检索到的表 <= 5，跳过 LLM 表选择
-            Integer totalDatasourceCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(DISTINCT datasource_id) FROM column_metadata",
-                Integer.class
-            );
+            Integer totalDatasourceCount = metadataMapper.countDistinctDatasources();
             
             if (totalDatasourceCount != null && totalDatasourceCount == 1 && initialTables.size() <= 5) {
                 log.info("[NL2SQLTool] ⚡ 单数据源模式，直接使用检索结果，跳过 LLM 表选择");
@@ -306,10 +306,7 @@ public class NL2SQLTool {
                                 log.info("[NL2SQLTool] 处理表选择: {}", tableName);
                                 
                                 // 验证表是否存在
-                                Integer count = jdbcTemplate.queryForObject(
-                                    "SELECT COUNT(*) FROM column_metadata WHERE datasource_id = ? AND table_name = ?",
-                                    Integer.class, datasourceId, tableName
-                                );
+                                Integer count = metadataMapper.countTableByDatasource(datasourceId, tableName);
                                 if (count != null && count > 0) {
                                     selectedTables.add(tableName);
                                     log.info("[NL2SQLTool] ✅ 表{}存在，已加入选择列表", tableName);
@@ -343,10 +340,7 @@ public class NL2SQLTool {
                             for (String tableName : missingTables) {
                                 if (allTables.contains(tableName)) continue;
                                             
-                                Integer count = jdbcTemplate.queryForObject(
-                                    "SELECT COUNT(*) FROM column_metadata WHERE datasource_id = ? AND table_name = ?",
-                                    Integer.class, datasourceId, tableName
-                                );
+                                Integer count = metadataMapper.countTableByDatasource(datasourceId, tableName);
                                             
                                 if (count != null && count > 0) {
                                     allTables.add(tableName);
@@ -389,10 +383,7 @@ public class NL2SQLTool {
                     tableName = tableName.toLowerCase();
                     if (allTables.contains(tableName)) continue;
                                 
-                    Integer count = jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM column_metadata WHERE datasource_id = ? AND table_name = ?",
-                        Integer.class, datasourceId, tableName
-                    );
+                    Integer count = metadataMapper.countTableByDatasource(datasourceId, tableName);
                                 
                     if (count != null && count > 0) {
                         allTables.add(tableName);
@@ -795,10 +786,7 @@ public class NL2SQLTool {
      */
     private String getTableComment(String tableName, Long datasourceId) {
         try {
-            return jdbcTemplate.queryForObject(
-                "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
-                String.class, datasourceId, tableName
-            );
+            return metadataMapper.getTableComment(datasourceId, tableName);
         } catch (Exception e) {
             return "";
         }

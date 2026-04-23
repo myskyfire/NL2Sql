@@ -19,6 +19,9 @@ public class ConversationHistoryService {
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
     
+    @Autowired(required = false)
+    private com.nl2sql.conversation.mapper.ConversationMapper conversationMapper;
+    
     private static final int MAX_HISTORY_ROUNDS = 5; // 最多保留5轮对话
     private static final int MAX_MESSAGES_PER_ROUND = 4; // 每轮最多4条消息(user/assistant/tool_calls/tool_result)
     
@@ -102,14 +105,7 @@ public class ConversationHistoryService {
                     continue;
                 }
                 
-                jdbcTemplate.update(insertSql, 
-                    sessionId, 
-                    userId, 
-                    role, 
-                    content, 
-                    name, 
-                    toolCallId
-                );
+                conversationMapper.insertMessage(sessionId, userId, role, content, name, toolCallId);
             }
             
             log.info("[ConversationHistory] 保存历史: sessionId={}, 消息数={}", 
@@ -167,7 +163,7 @@ public class ConversationHistoryService {
         }
         
         try {
-            jdbcTemplate.update("DELETE FROM conversation_history WHERE session_id = ?", sessionId);
+            conversationMapper.clearHistory(sessionId);
             log.info("[ConversationHistory] 清除历史: sessionId={}", sessionId);
         } catch (Exception e) {
             log.error("[ConversationHistory] 清除历史失败: sessionId={}", sessionId, e);

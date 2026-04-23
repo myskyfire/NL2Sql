@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.conversation.mapper.ConversationMapper">
+    
+    <!-- 插入对话消息 -->
+    <insert id="insertMessage">
+        INSERT INTO conversation_history 
+        (session_id, user_id, role, content, name, tool_call_id)
+        VALUES (#{sessionId}, #{userId}, #{role}, #{content}, #{name}, #{toolCallId})
+    </insert>
+    
+    <!-- 清除会话历史 -->
+    <delete id="clearHistory">
+        DELETE FROM conversation_history WHERE session_id = #{sessionId}
+    </delete>
+    
+</mapper>

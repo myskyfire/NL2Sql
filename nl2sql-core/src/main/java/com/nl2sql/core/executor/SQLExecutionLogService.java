@@ -53,12 +53,7 @@ public class SQLExecutionLogService {
      */
     public void logExecution(ExecutionLog execLog) {
         try {
-            String sql = "INSERT INTO sql_execution_logs " +
-                        "(user_id, username, sql_text, execution_time_ms, row_count, " +
-                        "is_slow_query, status, error_message, ip_address) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
-            jdbcTemplate.update(sql,
+            executionLogMapper.insertExecutionLog(
                 execLog.getUserId(),
                 execLog.getUsername(),
                 execLog.getSqlText(),
