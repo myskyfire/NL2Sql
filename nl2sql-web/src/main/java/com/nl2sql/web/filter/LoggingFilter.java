@@ -2,6 +2,7 @@ package com.nl2sql.web.filter;
 
 import com.nl2sql.common.util.LogContextUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -30,8 +31,13 @@ public class LoggingFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         
         try {
-            // 初始化请求ID
-            String requestId = LogContextUtil.initRequestId();
+            // ✅ 优先使用前端传递的 traceId，否则生成新的
+            String requestId = httpRequest.getHeader("X-Request-ID");
+            if (requestId == null || requestId.trim().isEmpty()) {
+                requestId = LogContextUtil.initRequestId();
+            } else {
+                MDC.put(LogContextUtil.REQUEST_ID, requestId);
+            }
             
             // 记录请求开始
             long startTime = System.currentTimeMillis();

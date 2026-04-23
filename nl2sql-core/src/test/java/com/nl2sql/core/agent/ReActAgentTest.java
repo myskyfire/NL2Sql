@@ -103,7 +103,7 @@ class ReActAgentTest {
             return "{\"status\":\"success\",\"data\":[{\"id\":1,\"name\":\"test\"}],\"rowCount\":1}";
         }, "查询工具");
         
-        String result = agent.execute("查询数据", 1L, 123L, "user", "查询数据");
+        String result = agent.execute("查询数据", 1L, 123L, "user", List.of());
         
         // 应该直接返回结构化数据，不再调用LLM
         assertTrue(result.contains("\"status\":\"success\""));
