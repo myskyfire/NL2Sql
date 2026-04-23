@@ -1,5 +1,6 @@
 import com.nl2sql.core.agent.skills.SkillContext
 import com.nl2sql.core.service.NL2SQLService
+import com.nl2sql.core.service.SchemaRetrievalService
 import com.nl2sql.core.agent.tools.SQLExecutionTool
 import com.nl2sql.core.executor.SQLRiskAnalyzer
 import com.nl2sql.core.llm.LLMService
@@ -51,6 +52,7 @@ class StandardQuerySkill {
             // ✅ 新架构：通过 callTool() 调用原子能力，而不是直接获取 Bean
             // 保留旧方式作为兼容（后续逐步迁移）
             NL2SQLService nl2sqlService = context.getBean(NL2SQLService.class)
+            SchemaRetrievalService schemaRetrievalService = context.getBean(SchemaRetrievalService.class)
             SQLExecutionTool sqlExecutionTool = context.getBean(SQLExecutionTool.class)
             LLMService llmService = context.getBean(LLMService.class)
             SQLRiskAnalyzer riskAnalyzer = null
@@ -82,7 +84,7 @@ class StandardQuerySkill {
             // Step 1: 检索表结构
             println "[StandardQuerySkill] Step 1: 检索表结构"
             publishEvent(context, sessionId, "retrieving_schema", "🔍 检索表结构...")
-            String schema = nl2sqlService.retrieveSchema(question, datasourceId)
+            String schema = schemaRetrievalService.retrieveSchema(question, datasourceId)
             publishEvent(context, sessionId, "schema_retrieved", "✅ 表结构检索完成")
                         
             // Step 2: 生成SQL
@@ -146,7 +148,7 @@ class StandardQuerySkill {
             if (!hasSyntaxError) {
                 log.info("Step 2.5: 评估SQL风险")
                 publishEvent(context, sessionId, "assessing_risk", "🔍 评估SQL风险...")
-                RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer, nl2sqlTool, context, sessionId)
+                RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer, nl2sqlService, context, sessionId)
                 
                 if ("HIGH".equals(riskResult.getRiskLevel())) {
                     log.warn("SQL风险评估为高风险，阻断执行: {}", riskResult.getReason())
@@ -183,7 +185,7 @@ class StandardQuerySkill {
             log.info("Step 3: 执行SQL")
             publishEvent(context, sessionId, "executing_sql", "⚙️ 执行SQL查询...")
             
-            def execResult = executeWithAutoFix(sql, datasourceId, userId, username, 2, nl2sqlTool, sqlExecutionTool, context, sessionId)
+            def execResult = executeWithAutoFix(sql, datasourceId, userId, username, 2, nl2sqlService, sqlExecutionTool, context, sessionId)
             
             if (!execResult.success) {
                 log.error("执行失败: {}", execResult.error)
@@ -744,15 +746,15 @@ ${sql}
     }
     
     /**
-     * 执行SQL并支持自动修正（复用 SQLCorrectionService）
+     * 执行SQL并支持自动修正
      */
     private def executeWithAutoFix(String sql, Long datasourceId, Long userId, String username, 
                                     int maxRetries, NL2SQLService nl2sqlService, SQLExecutionTool sqlExecutionTool,
                                     SkillContext context, String sessionId) {
         // ✅ 统一使用 SQLCorrectionService 进行纠错
-        com.nl2sql.core.executor.SQLCorrectionService correctionService = null
+        com.nl2sql.core.service.SQLCorrectionService correctionService = null
         try {
-            correctionService = context.getBean(com.nl2sql.core.executor.SQLCorrectionService.class)
+            correctionService = context.getBean(com.nl2sql.core.service.SQLCorrectionService.class)
         } catch (Exception e) {
             log.warn("⚠️ SQLCorrectionService 未配置，降级为原有纠错逻辑")
         }
@@ -777,8 +779,8 @@ ${sql}
                     publishEvent(context, sessionId, "correcting_sql", "🔧 自动修正SQL...")
                     
                     if (correctionService != null) {
-                        // ✅ 使用统一的 SQLCorrectionService
-                        com.nl2sql.core.executor.SQLCorrectionService.CorrectionResult correctionResult = 
+                        // ✅ 使用统一的 SQLCorrectionService（兼容旧版API）
+                        com.nl2sql.core.service.SQLCorrectionService.CorrectionResult correctionResult = 
                             correctionService.autoCorrect(currentSql, result.error, 1)
                         
                         if (correctionResult.success) {
@@ -803,8 +805,8 @@ ${sql}
                     publishEvent(context, sessionId, "correcting_error", "🔧 修正执行错误...")
                     
                     if (correctionService != null) {
-                        // ✅ 使用统一的 SQLCorrectionService
-                        com.nl2sql.core.executor.SQLCorrectionService.CorrectionResult correctionResult = 
+                        // ✅ 使用统一的 SQLCorrectionService（兼容旧版API）
+                        com.nl2sql.core.service.SQLCorrectionService.CorrectionResult correctionResult = 
                             correctionService.autoCorrect(currentSql, e.message, 1)
                         
                         if (correctionResult.success) {
