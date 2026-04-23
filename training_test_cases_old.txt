@@ -1,0 +1,458 @@
+# NL2SQL Training Test Cases (500+ cases with real data)
+# Format: question|expected_sql|tables|functions
+# Address Mapping Rules:
+# 1. User registration location -> users.city/province
+# 2. Order delivery location -> orders.shipping_address (LIKE match)
+# 3. User address book -> user_addresses table (add is_default=1 for default address)
+
+# ===== L1: 绠€鍗曞崟琛ㄦ煡璇?(50涓? =====
+# Note: For L1, use user_id directly. For queries by real_name, see L3 section.
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 1|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 2|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 3|orders|WHERE
+鏌ヨ璁㈠崟鍙稯RD20260401090001鐨勮鎯厊SELECT * FROM orders WHERE order_no = 'ORD20260401090001'|orders|WHERE
+璁㈠崟鎬绘暟|SELECT COUNT(*) FROM orders|orders|COUNT
+鍟嗗搧鎬绘暟|SELECT COUNT(*) FROM products|products|COUNT
+鐢ㄦ埛鎬绘暟|SELECT COUNT(*) FROM users|users|COUNT
+宸插畬鎴愯鍗曟暟閲弢SELECT COUNT(*) FROM orders WHERE status = 'completed'|orders|COUNT,WHERE
+寰呮敮浠樿鍗曟暟閲弢SELECT COUNT(*) FROM orders WHERE status = 'pending'|orders|COUNT,WHERE
+鎵€鏈夎鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders|orders|SUM
+骞冲潎璁㈠崟閲戦|SELECT AVG(total_amount) FROM orders|orders|AVG
+鏈€楂樿鍗曢噾棰潀SELECT MAX(total_amount) FROM orders|orders|MAX
+鏈€浣庤鍗曢噾棰潀SELECT MIN(total_amount) FROM orders|orders|MIN
+鏈€璐电殑鍟嗗搧|SELECT * FROM products ORDER BY price DESC LIMIT 1|products|ORDER BY,LIMIT
+鏈€渚垮疁鐨勫晢鍝亅SELECT * FROM products ORDER BY price ASC LIMIT 1|products|ORDER BY,LIMIT
+MacBook Pro 14鐨勪环鏍紎SELECT price FROM products WHERE product_name = 'MacBook Pro 14'|products|WHERE
+绱㈠凹65瀵哥數瑙嗙殑淇℃伅|SELECT * FROM products WHERE product_name = '绱㈠凹65瀵哥數瑙?|products|WHERE
+娴峰皵鍐扮鐨勪环鏍紎SELECT price FROM products WHERE product_name = '娴峰皵鍐扮'|products|WHERE
+Nike杩愬姩闉嬬殑浠锋牸|SELECT price FROM products WHERE product_name = 'Nike杩愬姩闉?|products|WHERE
+Adidas澶栧鐨勪俊鎭瘄SELECT * FROM products WHERE product_name = 'Adidas澶栧'|products|WHERE
+浼樿。搴撹‖琛环鏍紎SELECT price FROM products WHERE product_name = '浼樿。搴撹‖琛?|products|WHERE
+璁㈠崟ORD20260401100003鐨勯噾棰潀SELECT total_amount FROM orders WHERE order_no = 'ORD20260401100003'|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 4|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 5|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 6|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 7|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 8|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗晐SELECT * FROM orders WHERE user_id = 9|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?0鐨勮鍗晐SELECT * FROM orders WHERE user_id = 10|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?1鐨勮鍗晐SELECT * FROM orders WHERE user_id = 11|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?2鐨勮鍗晐SELECT * FROM orders WHERE user_id = 12|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?3鐨勮鍗晐SELECT * FROM orders WHERE user_id = 13|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?4鐨勮鍗晐SELECT * FROM orders WHERE user_id = 14|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?5鐨勮鍗晐SELECT * FROM orders WHERE user_id = 15|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?6鐨勮鍗晐SELECT * FROM orders WHERE user_id = 16|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?7鐨勮鍗晐SELECT * FROM orders WHERE user_id = 17|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?8鐨勮鍗晐SELECT * FROM orders WHERE user_id = 18|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?9鐨勮鍗晐SELECT * FROM orders WHERE user_id = 19|orders|WHERE
+鏌ヨ鐢ㄦ埛ID涓?0鐨勮鍗晐SELECT * FROM orders WHERE user_id = 20|orders|WHERE
+OPPO Find X7鐨勪环鏍紎SELECT price FROM products WHERE product_name = 'OPPO Find X7'|products|WHERE
+vivo X100 Pro鐨勪俊鎭瘄SELECT * FROM products WHERE product_name = 'vivo X100 Pro'|products|WHERE
+ThinkPad X1 Carbon浠锋牸|SELECT price FROM products WHERE product_name = 'ThinkPad X1 Carbon'|products|WHERE
+鎴村皵XPS 15鐨勮鎯厊SELECT * FROM products WHERE product_name = '鎴村皵XPS 15'|products|WHERE
+涓夋槦Galaxy S24浠锋牸|SELECT price FROM products WHERE product_name = '涓夋槦Galaxy S24'|products|WHERE
+鍗庣ROG娓告垙鏈俊鎭瘄SELECT * FROM products WHERE product_name = '鍗庣ROG娓告垙鏈?|products|WHERE
+鎯犳櫘鎴?6浠锋牸|SELECT price FROM products WHERE product_name = '鎯犳櫘鎴?6'|products|WHERE
+寰蒋Surface Laptop璇︽儏|SELECT * FROM products WHERE product_name = '寰蒋Surface Laptop'|products|WHERE
+鑻规灉iPad Air浠锋牸|SELECT price FROM products WHERE product_name = '鑻规灉iPad Air'|products|WHERE
+鑽ｈ€€Magic6淇℃伅|SELECT * FROM products WHERE product_name = '鑽ｈ€€Magic6'|products|WHERE
+鐢峰＋鍟嗗姟琛～浠锋牸|SELECT price FROM products WHERE product_name = '鐢峰＋鍟嗗姟琛～'|products|WHERE
+鐢峰＋浼戦棽瑁や俊鎭瘄SELECT * FROM products WHERE product_name = '鐢峰＋浼戦棽瑁?|products|WHERE
+濂冲＋杩炶。瑁欎环鏍紎SELECT price FROM products WHERE product_name = '濂冲＋杩炶。瑁?|products|WHERE
+濂冲＋鐗涗粩瑁や俊鎭瘄SELECT * FROM products WHERE product_name = '濂冲＋鐗涗粩瑁?|products|WHERE
+涓夊彧鏉鹃紶鍧氭灉绀肩洅浠锋牸|SELECT price FROM products WHERE product_name = '涓夊彧鏉鹃紶鍧氭灉绀肩洅'|products|WHERE
+鑹搧閾哄瓙闆堕澶хぜ鍖呬俊鎭瘄SELECT * FROM products WHERE product_name = '鑹搧閾哄瓙闆堕澶хぜ鍖?|products|WHERE
+鍙彛鍙箰浠锋牸|SELECT price FROM products WHERE product_name = '鍙彛鍙箰'|products|WHERE
+鍐滃か灞辨硥鐭挎硥姘翠俊鎭瘄SELECT * FROM products WHERE product_name = '鍐滃か灞辨硥鐭挎硥姘?|products|WHERE
+鐧句簨鍙箰浠锋牸|SELECT price FROM products WHERE product_name = '鐧句簨鍙箰'|products|WHERE
+搴峰笀鍌呯孩鑼朵俊鎭瘄SELECT * FROM products WHERE product_name = '搴峰笀鍌呯孩鑼?|products|WHERE
+鎭版伆鐡滃瓙浠锋牸|SELECT price FROM products WHERE product_name = '鎭版伆鐡滃瓙'|products|WHERE
+鐧捐崏鍛冲潥鏋滀俊鎭瘄SELECT * FROM products WHERE product_name = '鐧捐崏鍛冲潥鏋?|products|WHERE
+鏌ヨ宸叉敮浠樿鍗晐SELECT * FROM orders WHERE status = 'paid'|orders|WHERE
+鏌ヨ宸插彂璐ц鍗晐SELECT * FROM orders WHERE status = 'shipped'|orders|WHERE
+鏌ヨ宸插畬鎴愯鍗晐SELECT * FROM orders WHERE status = 'completed'|orders|WHERE
+寰俊鏀粯璁㈠崟鍒楄〃|SELECT * FROM orders WHERE payment_method = '寰俊鏀粯'|orders|WHERE
+鏀粯瀹濊鍗曞垪琛▅SELECT * FROM orders WHERE payment_method = '鏀粯瀹?|orders|WHERE
+閾惰鍗℃敮浠樿鍗晐SELECT * FROM orders WHERE payment_method = '閾惰鍗?|orders|WHERE
+搴撳瓨澶т簬100鐨勫晢鍝亅SELECT p.product_name, i.stock_quantity FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.stock_quantity > 100|products,inventory|JOIN,WHERE
+搴撳瓨灏忎簬50鐨勫晢鍝亅SELECT p.product_name, i.stock_quantity FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.stock_quantity < 50|products,inventory|JOIN,WHERE
+鏈夐€€璐х殑璁㈠崟|SELECT DISTINCT o.order_no FROM orders o JOIN returns r ON o.id = r.order_id|orders,returns|JOIN,DISTINCT
+閫€璐у師鍥犵粺璁SELECT reason, COUNT(*) FROM returns GROUP BY reason|returns|COUNT,GROUP BY
+
+# ===== L2: 鑱氬悎涓庡垎缁?(40涓? =====
+姣忎釜鐢ㄦ埛鐨勮鍗曟暟閲弢SELECT user_id, COUNT(*) FROM orders GROUP BY user_id|orders|COUNT,GROUP BY
+姣忎釜鐘舵€佽鍗曟暟閲弢SELECT status, COUNT(*) FROM orders GROUP BY status|orders|COUNT,GROUP BY
+姣忎釜鍟嗗搧鍒嗙被鐨勫晢鍝佹暟閲弢SELECT category_id, COUNT(*) FROM products GROUP BY category_id|products|COUNT,GROUP BY
+娣卞湷甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '娣卞湷甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+骞垮窞甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '骞垮窞甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+鏉窞甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '鏉窞甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+鍗椾含甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '鍗椾含甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+鎴愰兘甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '鎴愰兘甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+姝︽眽甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '姝︽眽甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+闈掑矝甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '闈掑矝甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+鍘﹂棬甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '鍘﹂棬甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+閮戝窞甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '閮戝窞甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+闀挎矙甯傛敞鍐岀敤鎴锋暟閲弢SELECT COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.city = '闀挎矙甯? AND ua.is_default = 1|user_addresses|COUNT,WHERE,DISTINCT
+鍚勭渷浠芥敞鍐岀敤鎴锋暟|SELECT ua.province, COUNT(DISTINCT ua.user_id) FROM user_addresses ua WHERE ua.is_default = 1 GROUP BY ua.province|user_addresses|COUNT,GROUP BY,DISTINCT,WHERE
+鎵嬫満鏁扮爜绫诲晢鍝佸潎浠穦SELECT AVG(price) FROM products WHERE category_id = 1|products|AVG,WHERE
+鐢佃剳鍔炲叕绫诲晢鍝佸潎浠穦SELECT AVG(price) FROM products WHERE category_id = 2|products|AVG,WHERE
+瀹剁敤鐢靛櫒绫诲晢鍝佸潎浠穦SELECT AVG(price) FROM products WHERE category_id = 3|products|AVG,WHERE
+鏈嶈鏈嶉グ绫诲晢鍝佸潎浠穦SELECT AVG(price) FROM products WHERE category_id = 4|products|AVG,WHERE
+璁㈠崟閲戦澶т簬5000鐨勬暟閲弢SELECT COUNT(*) FROM orders WHERE total_amount > 5000|orders|COUNT,WHERE
+璁㈠崟閲戦澶т簬10000鐨勬暟閲弢SELECT COUNT(*) FROM orders WHERE total_amount > 10000|orders|COUNT,WHERE
+璁㈠崟閲戦鍦?000鍒?000涔嬮棿鐨勬暟閲弢SELECT COUNT(*) FROM orders WHERE total_amount BETWEEN 1000 AND 5000|orders|COUNT,WHERE,BETWEEN
+浠锋牸楂樹簬5000鐨勫晢鍝佹暟閲弢SELECT COUNT(*) FROM products WHERE price > 5000|products|COUNT,WHERE
+浠锋牸浣庝簬1000鐨勫晢鍝佹暟閲弢SELECT COUNT(*) FROM products WHERE price < 1000|products|COUNT,WHERE
+姣忎釜鍒嗙被鐨勫钩鍧囦环鏍紎SELECT category_id, AVG(price) FROM products GROUP BY category_id|products|AVG,GROUP BY
+姣忎釜鍒嗙被鐨勬渶楂樹环鏍紎SELECT category_id, MAX(price) FROM products GROUP BY category_id|products|MAX,GROUP BY
+姣忎釜鍒嗙被鐨勬渶浣庝环鏍紎SELECT category_id, MIN(price) FROM products GROUP BY category_id|products|MIN,GROUP BY
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders WHERE user_id = 1|orders|SUM,WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders WHERE user_id = 2|orders|SUM,WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders WHERE user_id = 3|orders|SUM,WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders WHERE user_id = 4|orders|SUM,WHERE
+鏌ヨ鐢ㄦ埛ID涓?鐨勮鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders WHERE user_id = 5|orders|SUM,WHERE
+璁㈠崟閲戦瓒呰繃10000鐨勮鍗曞彿|SELECT order_no FROM orders WHERE total_amount > 10000|orders|WHERE
+璁㈠崟閲戦鏈€楂樼殑鍓?涓鍗晐SELECT order_no, total_amount FROM orders ORDER BY total_amount DESC LIMIT 5|orders|ORDER BY,LIMIT
+璁㈠崟閲戦鏈€浣庣殑鍓?涓鍗晐SELECT order_no, total_amount FROM orders ORDER BY total_amount ASC LIMIT 5|orders|ORDER BY,LIMIT
+鍟嗗搧浠锋牸楂樹簬5000鐨勫晢鍝佸悕绉皘SELECT product_name FROM products WHERE price > 5000|products|WHERE
+浠锋牸鏈€楂樼殑3涓晢鍝亅SELECT product_name, price FROM products ORDER BY price DESC LIMIT 3|products|ORDER BY,LIMIT
+浠锋牸鏈€浣庣殑3涓晢鍝亅SELECT product_name, price FROM products ORDER BY price ASC LIMIT 3|products|ORDER BY,LIMIT
+涓嶅悓鐘舵€佺殑璁㈠崟骞冲潎閲戦|SELECT status, AVG(total_amount) FROM orders GROUP BY status|orders|AVG,GROUP BY
+涓嶅悓鍒嗙被鍟嗗搧鏁伴噺缁熻|SELECT c.category_name, COUNT(p.id) FROM product_categories c LEFT JOIN products p ON c.id = p.category_id GROUP BY c.category_name|product_categories,products|COUNT,GROUP BY,LEFT JOIN
+鍙戝線骞夸笢鐪佺殑璁㈠崟鎬绘暟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪?|orders,users|COUNT,JOIN,WHERE
+鍚勫煄甯傜敤鎴锋暟閲弢SELECT city, COUNT(*) FROM users GROUP BY city|users|COUNT,GROUP BY
+鍚勭渷浠界敤鎴锋暟閲弢SELECT province, COUNT(*) FROM users GROUP BY province|users|COUNT,GROUP BY
+鐢锋€х敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE gender = '鐢?|users|COUNT,WHERE
+濂虫€х敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE gender = '濂?|users|COUNT,WHERE
+鍖椾含甯傜敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE city = '鍖椾含甯?|users|COUNT,WHERE
+娣卞湷甯傜敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE city = '娣卞湷甯?|users|COUNT,WHERE
+涓婃捣甯傜敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE city = '涓婃捣甯?|users|COUNT,WHERE
+骞夸笢鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '骞夸笢鐪?|users|COUNT,WHERE
+娴欐睙鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '娴欐睙鐪?|users|COUNT,WHERE
+姹熻嫃鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '姹熻嫃鐪?|users|COUNT,WHERE
+鍥涘窛鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '鍥涘窛鐪?|users|COUNT,WHERE
+婀栧寳鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '婀栧寳鐪?|users|COUNT,WHERE
+灞变笢鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '灞变笢鐪?|users|COUNT,WHERE
+绂忓缓鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '绂忓缓鐪?|users|COUNT,WHERE
+娌冲崡鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '娌冲崡鐪?|users|COUNT,WHERE
+婀栧崡鐪佺敤鎴锋暟閲弢SELECT COUNT(*) FROM users WHERE province = '婀栧崡鐪?|users|COUNT,WHERE
+鎵嬫満鏁扮爜绫诲晢鍝佹€绘暟|SELECT COUNT(*) FROM products WHERE category_id = 1|products|COUNT,WHERE
+鐢佃剳鍔炲叕绫诲晢鍝佹€绘暟|SELECT COUNT(*) FROM products WHERE category_id = 2|products|COUNT,WHERE
+瀹剁敤鐢靛櫒绫诲晢鍝佹€绘暟|SELECT COUNT(*) FROM products WHERE category_id = 3|products|COUNT,WHERE
+鏈嶈鏈嶉グ绫诲晢鍝佹€绘暟|SELECT COUNT(*) FROM products WHERE category_id = 4|products|COUNT,WHERE
+涓婃灦鍟嗗搧鏁伴噺|SELECT COUNT(*) FROM products WHERE status = '涓婃灦'|products|COUNT,WHERE
+浠锋牸楂樹簬10000鐨勫晢鍝佹暟|SELECT COUNT(*) FROM products WHERE price > 10000|products|COUNT,WHERE
+浠锋牸鍦?000-10000涔嬮棿鐨勫晢鍝佹暟|SELECT COUNT(*) FROM products WHERE price BETWEEN 5000 AND 10000|products|COUNT,WHERE,BETWEEN
+浠锋牸浣庝簬1000鐨勫晢鍝佹暟|SELECT COUNT(*) FROM products WHERE price < 1000|products|COUNT,WHERE
+搴撳瓨鎬婚噺|SELECT SUM(stock_quantity) FROM inventory|inventory|SUM
+鍙敤搴撳瓨鎬婚噺|SELECT SUM(available_quantity) FROM inventory|inventory|SUM
+閿佸畾搴撳瓨鎬婚噺|SELECT SUM(locked_quantity) FROM inventory|inventory|SUM
+閫€璐ф€绘暟|SELECT COUNT(*) FROM returns|returns|COUNT
+宸插畬鎴愮殑閫€璐ф暟|SELECT COUNT(*) FROM returns WHERE status = '宸插畬鎴?|returns|COUNT,WHERE
+瀹℃牳涓殑閫€璐ф暟|SELECT COUNT(*) FROM returns WHERE status = '瀹℃牳涓?|returns|COUNT,WHERE
+鎬婚€€娆鹃噾棰潀SELECT SUM(refund_amount) FROM returns|returns|SUM
+
+# ===== L3: 鍙岃〃鍏宠仈 (40涓? =====
+寮犱笁鐨勮鍗曞強閲戦|SELECT o.order_no, o.total_amount FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '寮犱笁'|orders,users|JOIN,WHERE
+鏉庡洓鐨勮鍗曞垪琛▅SELECT o.order_no, o.status FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏉庡洓'|orders,users|JOIN,WHERE
+鐜嬩簲鐨勮鍗曡鎯厊SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鐜嬩簲'|orders,users|JOIN,WHERE
+鎵嬫満鏁扮爜绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鎵嬫満鏁扮爜'|products,product_categories|JOIN,WHERE
+鐢佃剳鍔炲叕绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鐢佃剳鍔炲叕'|products,product_categories|JOIN,WHERE
+瀹剁敤鐢靛櫒绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '瀹剁敤鐢靛櫒'|products,product_categories|JOIN,WHERE
+鏈嶈鏈嶉グ绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鏈嶈鏈嶉グ'|products,product_categories|JOIN,WHERE
+椋熷搧楗枡绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '椋熷搧楗枡'|products,product_categories|JOIN,WHERE
+鍥句功闊冲儚绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鍥句功闊冲儚'|products,product_categories|JOIN,WHERE
+杩愬姩鎴峰绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '杩愬姩鎴峰'|products,product_categories|JOIN,WHERE
+缇庡涓姢绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '缇庡涓姢'|products,product_categories|JOIN,WHERE
+瀹跺眳瀹惰绫诲晢鍝佸垪琛▅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '瀹跺眳瀹惰'|products,product_categories|JOIN,WHERE
+璁㈠崟ORD20260401090001鐨勭敤鎴蜂俊鎭瘄SELECT u.real_name, u.phone FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401090001'|orders,users|JOIN,WHERE
+璁㈠崟ORD20260401093002鐨勭敤鎴穦SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401093002'|orders,users|JOIN,WHERE
+璁㈠崟ORD20260401100003鐨勭敤鎴穦SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401100003'|orders,users|JOIN,WHERE
+璁㈠崟ORD20260401103004鐨勭敤鎴穦SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401103004'|orders,users|JOIN,WHERE
+璁㈠崟ORD20260401110005鐨勭敤鎴穦SELECT u.real_name FROM orders o JOIN users u ON o.user_id = u.id WHERE o.order_no = 'ORD20260401110005'|orders,users|JOIN,WHERE
+寮犱笁鐨勯粯璁ゆ敹璐у湴鍧€|SELECT ua.province, ua.city, ua.detail_address FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '寮犱笁' AND ua.is_default = 1|users,user_addresses|JOIN,WHERE
+鏉庡洓鐨勬墍鏈夋敹璐у湴鍧€|SELECT ua.province, ua.city, ua.detail_address FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '鏉庡洓'|users,user_addresses|JOIN,WHERE
+鐜嬩簲鐨勬敹璐у湴鍧€绨縷SELECT ua.* FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '鐜嬩簲'|users,user_addresses|JOIN,WHERE
+璧靛叚鐨勯粯璁ゅ湴鍧€|SELECT ua.province, ua.city FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '璧靛叚' AND ua.is_default = 1|users,user_addresses|JOIN,WHERE
+瀛欎竷鐨勫湴鍧€鍒楄〃|SELECT ua.province, ua.city, ua.detail_address FROM users u JOIN user_addresses ua ON u.id = ua.user_id WHERE u.real_name = '瀛欎竷'|users,user_addresses|JOIN,WHERE
+MacBook Pro 14鎵€灞炲垎绫粅SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'MacBook Pro 14'|products,product_categories|JOIN,WHERE
+ThinkPad X1 Carbon鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'ThinkPad X1 Carbon'|products,product_categories|JOIN,WHERE
+鎴村皵XPS 15鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鎴村皵XPS 15'|products,product_categories|JOIN,WHERE
+鍗庝负Mate 60 Pro鎵€灞炲垎绫粅SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鍗庝负Mate 60 Pro'|products,product_categories|JOIN,WHERE
+灏忕背14鐨勫垎绫粅SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '灏忕背14'|products,product_categories|JOIN,WHERE
+iPhone 15 Pro鎵€灞炲垎绫粅SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'iPhone 15 Pro'|products,product_categories|JOIN,WHERE
+OPPO Find X7鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'OPPO Find X7'|products,product_categories|JOIN,WHERE
+vivo X100 Pro鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'vivo X100 Pro'|products,product_categories|JOIN,WHERE
+涓夋槦Galaxy S24鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '涓夋槦Galaxy S24'|products,product_categories|JOIN,WHERE
+鑽ｈ€€Magic6鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鑽ｈ€€Magic6'|products,product_categories|JOIN,WHERE
+MacBook Pro 14鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = 'MacBook Pro 14'|products,product_categories|JOIN,WHERE
+鑱旀兂ThinkPad X1鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鑱旀兂ThinkPad X1'|products,product_categories|JOIN,WHERE
+鍗庣ROG娓告垙鏈垎绫粅SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鍗庣ROG娓告垙鏈?|products,product_categories|JOIN,WHERE
+鎯犳櫘鎴?6鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鎯犳櫘鎴?6'|products,product_categories|JOIN,WHERE
+鎴村皵XPS 13鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鎴村皵XPS 13'|products,product_categories|JOIN,WHERE
+寰蒋Surface Laptop鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '寰蒋Surface Laptop'|products,product_categories|JOIN,WHERE
+鑻规灉iPad Air鍒嗙被|SELECT c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.product_name = '鑻规灉iPad Air'|products,product_categories|JOIN,WHERE
+鍖椾含甯傜敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯?|orders,users|JOIN,WHERE
+娣卞湷甯傜敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯?|orders,users|JOIN,WHERE
+涓婃捣甯傜敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '涓婃捣甯?|orders,users|JOIN,WHERE
+骞夸笢鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪?|orders,users|JOIN,WHERE
+娴欐睙鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娴欐睙鐪?|orders,users|JOIN,WHERE
+姹熻嫃鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '姹熻嫃鐪?|orders,users|JOIN,WHERE
+鍥涘窛鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '鍥涘窛鐪?|orders,users|JOIN,WHERE
+婀栧寳鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧寳鐪?|orders,users|JOIN,WHERE
+灞变笢鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '灞变笢鐪?|orders,users|JOIN,WHERE
+绂忓缓鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '绂忓缓鐪?|orders,users|JOIN,WHERE
+娌冲崡鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娌冲崡鐪?|orders,users|JOIN,WHERE
+婀栧崡鐪佺敤鎴蜂笅鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧崡鐪?|orders,users|JOIN,WHERE
+鍛ㄥ叓鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍛ㄥ叓'|orders,users|JOIN,WHERE
+鍚翠節鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍚翠節'|orders,users|JOIN,WHERE
+閮戝崄鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '閮戝崄'|orders,users|JOIN,WHERE
+闄堜竴鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '闄堜竴'|orders,users|JOIN,WHERE
+鏋椾簩鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏋椾簩'|orders,users|JOIN,WHERE
+榛勪笁鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '榛勪笁'|orders,users|JOIN,WHERE
+浣曞洓鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '浣曞洓'|orders,users|JOIN,WHERE
+楂樹簲鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '楂樹簲'|orders,users|JOIN,WHERE
+缃楀叚鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '缃楀叚'|orders,users|JOIN,WHERE
+姊佷竷鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '姊佷竷'|orders,users|JOIN,WHERE
+瀹嬪叓鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '瀹嬪叓'|orders,users|JOIN,WHERE
+鍞愪節鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍞愪節'|orders,users|JOIN,WHERE
+鍐崄鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍐崄'|orders,users|JOIN,WHERE
+鏇逛竴鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏇逛竴'|orders,users|JOIN,WHERE
+钖涗簩鐨勮鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '钖涗簩'|orders,users|JOIN,WHERE
+
+# ===== L4: 澶氳〃澶嶆潅鏌ヨ (40涓? =====
+寮犱笁璐拱鐨勫晢鍝佸垪琛▅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '寮犱笁'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鏉庡洓璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏉庡洓'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鐜嬩簲璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鐜嬩簲'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鎵嬫満鏁扮爜绫诲晢鍝侀攢鍞€婚|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鎵嬫満鏁扮爜'|order_items,products,product_categories|SUM,JOIN,WHERE
+鐢佃剳鍔炲叕绫诲晢鍝侀攢鍞€婚|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鐢佃剳鍔炲叕'|order_items,products,product_categories|SUM,JOIN,WHERE
+瀹剁敤鐢靛櫒绫诲晢鍝侀攢鍞€婚|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '瀹剁敤鐢靛櫒'|order_items,products,product_categories|SUM,JOIN,WHERE
+鏈嶈鏈嶉グ绫诲晢鍝侀攢鍞€婚|SELECT SUM(oi.subtotal) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鏈嶈鏈嶉グ'|order_items,products,product_categories|SUM,JOIN,WHERE
+寮犱笁涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '寮犱笁'|orders,users|COUNT,JOIN,WHERE
+鏉庡洓涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏉庡洓'|orders,users|COUNT,JOIN,WHERE
+鐜嬩簲涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鐜嬩簲'|orders,users|COUNT,JOIN,WHERE
+璧靛叚涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '璧靛叚'|orders,users|COUNT,JOIN,WHERE
+瀛欎竷涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '瀛欎竷'|orders,users|COUNT,JOIN,WHERE
+鍖椾含甯傜敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯?|orders,users|COUNT,JOIN,WHERE
+娣卞湷甯傜敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯?|orders,users|COUNT,JOIN,WHERE
+涓婃捣甯傜敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '涓婃捣甯?|orders,users|COUNT,JOIN,WHERE
+骞夸笢鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪?|orders,users|COUNT,JOIN,WHERE
+娴欐睙鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娴欐睙鐪?|orders,users|COUNT,JOIN,WHERE
+姹熻嫃鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '姹熻嫃鐪?|orders,users|COUNT,JOIN,WHERE
+鍥涘窛鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '鍥涘窛鐪?|orders,users|COUNT,JOIN,WHERE
+婀栧寳鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧寳鐪?|orders,users|COUNT,JOIN,WHERE
+灞变笢鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '灞变笢鐪?|orders,users|COUNT,JOIN,WHERE
+绂忓缓鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '绂忓缓鐪?|orders,users|COUNT,JOIN,WHERE
+娌冲崡鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娌冲崡鐪?|orders,users|COUNT,JOIN,WHERE
+婀栧崡鐪佺敤鎴疯鍗曟暟閲弢SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧崡鐪?|orders,users|COUNT,JOIN,WHERE
+鍖椾含甯傜敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯?|orders,users|SUM,JOIN,WHERE
+娣卞湷甯傜敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯?|orders,users|SUM,JOIN,WHERE
+涓婃捣甯傜敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '涓婃捣甯?|orders,users|SUM,JOIN,WHERE
+骞夸笢鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪?|orders,users|SUM,JOIN,WHERE
+娴欐睙鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娴欐睙鐪?|orders,users|SUM,JOIN,WHERE
+姹熻嫃鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '姹熻嫃鐪?|orders,users|SUM,JOIN,WHERE
+鍥涘窛鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '鍥涘窛鐪?|orders,users|SUM,JOIN,WHERE
+婀栧寳鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧寳鐪?|orders,users|SUM,JOIN,WHERE
+灞变笢鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '灞变笢鐪?|orders,users|SUM,JOIN,WHERE
+绂忓缓鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '绂忓缓鐪?|orders,users|SUM,JOIN,WHERE
+娌冲崡鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娌冲崡鐪?|orders,users|SUM,JOIN,WHERE
+婀栧崡鐪佺敤鎴疯喘涔扮殑璁㈠崟鎬婚|SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧崡鐪?|orders,users|SUM,JOIN,WHERE
+鍛ㄥ叓璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍛ㄥ叓'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鍚翠節璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍚翠節'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+閮戝崄璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '閮戝崄'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+闄堜竴璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '闄堜竴'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鏋椾簩璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏋椾簩'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+榛勪笁璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '榛勪笁'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+浣曞洓璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '浣曞洓'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+楂樹簲璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '楂樹簲'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+缃楀叚璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '缃楀叚'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+姊佷竷璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '姊佷竷'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+瀹嬪叓璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '瀹嬪叓'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鍞愪節璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍞愪節'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鍐崄璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍐崄'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+鏇逛竴璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏇逛竴'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+钖涗簩璐拱鐨勫晢鍝亅SELECT DISTINCT p.product_name FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN users u ON o.user_id = u.id WHERE u.real_name = '钖涗簩'|orders,order_items,products,users|JOIN,DISTINCT,WHERE
+
+# ===== L5: 楂樼骇鍑芥暟涓庡鏉傚満鏅?(30涓? =====
+璁㈠崟閲戦鎺掑悕鍓?0鐨勭敤鎴穦SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY total DESC LIMIT 10|users,orders|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+娑堣垂鏈€灏戠殑鍚?涓敤鎴穦SELECT u.real_name, SUM(o.total_amount) as total_spent FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY total_spent ASC LIMIT 5|users,orders|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+涓嶅悓鍩庡競鐨勫钩鍧囪鍗曢噾棰潀SELECT u.city, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city|users,orders|AVG,GROUP BY,JOIN
+涓嶅悓鐪佷唤鐨勫钩鍧囪鍗曢噾棰潀SELECT u.province, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province|users,orders|AVG,GROUP BY,JOIN
+姣忎釜鍒嗙被閿€鍞|SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name|product_categories,products,order_items|SUM,GROUP BY,JOIN
+姣忎釜鍒嗙被閿€鍞暟閲弢SELECT c.category_name, SUM(oi.quantity) as qty FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name|product_categories,products,order_items|SUM,GROUP BY,JOIN
+閿€鍞鏈€楂樼殑鍒嗙被|SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY revenue DESC LIMIT 1|product_categories,products,order_items|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+閿€鍞鏈€浣庣殑鍒嗙被|SELECT c.category_name, SUM(oi.subtotal) as revenue FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY revenue ASC LIMIT 1|product_categories,products,order_items|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+涓嶅悓鐘舵€佽鍗曟€婚|SELECT status, SUM(total_amount) FROM orders GROUP BY status|orders|SUM,GROUP BY
+涓嶅悓鐘舵€佽鍗曞钩鍧囬噾棰潀SELECT status, AVG(total_amount) FROM orders GROUP BY status|orders|AVG,GROUP BY
+涓嶅悓鐘舵€佽鍗曟渶澶ч噾棰潀SELECT status, MAX(total_amount) FROM orders GROUP BY status|orders|MAX,GROUP BY
+涓嶅悓鐘舵€佽鍗曟渶灏忛噾棰潀SELECT status, MIN(total_amount) FROM orders GROUP BY status|orders|MIN,GROUP BY
+璁㈠崟鏁板ぇ浜?鐨勭敤鎴峰強鍏惰鍗曟€婚|SELECT u.real_name, COUNT(o.id) as cnt, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING cnt > 2|users,orders|COUNT,SUM,GROUP BY,HAVING,JOIN
+璁㈠崟鏁板ぇ浜?鐨勭敤鎴峰強鍏跺钩鍧囪鍗曢噾棰潀SELECT u.real_name, COUNT(o.id) as cnt, AVG(o.total_amount) as avg_amt FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING cnt > 5|users,orders|COUNT,AVG,GROUP BY,HAVING,JOIN
+娑堣垂瓒呰繃10000鐨勭敤鎴穦SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING total > 10000|users,orders|SUM,GROUP BY,HAVING,JOIN
+娑堣垂瓒呰繃20000鐨勭敤鎴穦SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING total > 20000|users,orders|SUM,GROUP BY,HAVING,JOIN
+娑堣垂瓒呰繃50000鐨勭敤鎴穦SELECT u.real_name, SUM(o.total_amount) as total FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING total > 50000|users,orders|SUM,GROUP BY,HAVING,JOIN
+姣忎釜鐢ㄦ埛鐨勮鍗曟暟鍜屾€婚噾棰潀SELECT u.real_name, COUNT(o.id) as order_count, SUM(o.total_amount) as total_amount FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name|users,orders|COUNT,SUM,GROUP BY,LEFT JOIN
+鍚勫煄甯傚钩鍧囪鍗曢噾棰潀SELECT u.city, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city|users,orders|AVG,GROUP BY,JOIN
+鍚勭渷浠藉钩鍧囪鍗曢噾棰潀SELECT u.province, AVG(o.total_amount) as avg_amount FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province|users,orders|AVG,GROUP BY,JOIN
+鍖椾含甯傚钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯?|orders,users|AVG,JOIN,WHERE
+娣卞湷甯傚钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯?|orders,users|AVG,JOIN,WHERE
+涓婃捣甯傚钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '涓婃捣甯?|orders,users|AVG,JOIN,WHERE
+骞夸笢鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪?|orders,users|AVG,JOIN,WHERE
+娴欐睙鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娴欐睙鐪?|orders,users|AVG,JOIN,WHERE
+姹熻嫃鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '姹熻嫃鐪?|orders,users|AVG,JOIN,WHERE
+鍥涘窛鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '鍥涘窛鐪?|orders,users|AVG,JOIN,WHERE
+婀栧寳鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧寳鐪?|orders,users|AVG,JOIN,WHERE
+灞变笢鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '灞变笢鐪?|orders,users|AVG,JOIN,WHERE
+绂忓缓鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '绂忓缓鐪?|orders,users|AVG,JOIN,WHERE
+娌冲崡鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娌冲崡鐪?|orders,users|AVG,JOIN,WHERE
+婀栧崡鐪佸钩鍧囪鍗曢噾棰潀SELECT AVG(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧崡鐪?|orders,users|AVG,JOIN,WHERE
+鍛ㄥ叓鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍛ㄥ叓'|orders,users|SUM,JOIN,WHERE
+鍚翠節鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍚翠節'|orders,users|SUM,JOIN,WHERE
+閮戝崄鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '閮戝崄'|orders,users|SUM,JOIN,WHERE
+闄堜竴鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '闄堜竴'|orders,users|SUM,JOIN,WHERE
+鏋椾簩鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏋椾簩'|orders,users|SUM,JOIN,WHERE
+榛勪笁鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '榛勪笁'|orders,users|SUM,JOIN,WHERE
+浣曞洓鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '浣曞洓'|orders,users|SUM,JOIN,WHERE
+楂樹簲鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '楂樹簲'|orders,users|SUM,JOIN,WHERE
+缃楀叚鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '缃楀叚'|orders,users|SUM,JOIN,WHERE
+姊佷竷鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '姊佷竷'|orders,users|SUM,JOIN,WHERE
+瀹嬪叓鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '瀹嬪叓'|orders,users|SUM,JOIN,WHERE
+鍞愪節鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍞愪節'|orders,users|SUM,JOIN,WHERE
+鍐崄鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍐崄'|orders,users|SUM,JOIN,WHERE
+鏇逛竴鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏇逛竴'|orders,users|SUM,JOIN,WHERE
+钖涗簩鐨勮鍗曟€婚噾棰潀SELECT SUM(o.total_amount) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '钖涗簩'|orders,users|SUM,JOIN,WHERE
+鍛ㄥ叓涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍛ㄥ叓'|orders,users|COUNT,JOIN,WHERE
+鍚翠節涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍚翠節'|orders,users|COUNT,JOIN,WHERE
+閮戝崄涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '閮戝崄'|orders,users|COUNT,JOIN,WHERE
+闄堜竴涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '闄堜竴'|orders,users|COUNT,JOIN,WHERE
+鏋椾簩涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏋椾簩'|orders,users|COUNT,JOIN,WHERE
+榛勪笁涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '榛勪笁'|orders,users|COUNT,JOIN,WHERE
+浣曞洓涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '浣曞洓'|orders,users|COUNT,JOIN,WHERE
+楂樹簲涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '楂樹簲'|orders,users|COUNT,JOIN,WHERE
+缃楀叚涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '缃楀叚'|orders,users|COUNT,JOIN,WHERE
+姊佷竷涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '姊佷竷'|orders,users|COUNT,JOIN,WHERE
+瀹嬪叓涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '瀹嬪叓'|orders,users|COUNT,JOIN,WHERE
+鍞愪節涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍞愪節'|orders,users|COUNT,JOIN,WHERE
+鍐崄涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鍐崄'|orders,users|COUNT,JOIN,WHERE
+鏇逛竴涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏇逛竴'|orders,users|COUNT,JOIN,WHERE
+钖涗簩涔拌繃鍑犳璁㈠崟|SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '钖涗簩'|orders,users|COUNT,JOIN,WHERE
+
+# ===== L6: 鏃堕棿鏌ヨ涓庢棩鏈熷鐞?(50涓? =====
+# 鍏抽敭瑙勫垯: 
+# - "X鏈圶鍙? = 鍏蜂綋鏌愪竴澶?鐢?WHERE DATE(created_at) = 'YYYY-MM-DD',涓嶅姞GROUP BY
+# - "鏈€杩慩澶? = 鏃堕棿鑼冨洿,鐢?WHERE created_at >= NOW() - INTERVAL X DAY
+# - "鎸夊ぉ缁熻" = 鍒嗙粍鑱氬悎,鐢?GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
+
+鏌ヨ2026骞?鏈?0鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-10'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?0鍙疯鍗曟€婚噾棰潀SELECT SUM(total_amount) FROM orders WHERE DATE(created_at) = '2026-04-10'|orders|SUM,WHERE,DATE
+鏌ヨ2026骞?鏈?0鍙疯鍗曟暟閲弢SELECT COUNT(*) FROM orders WHERE DATE(created_at) = '2026-04-10'|orders|COUNT,WHERE,DATE
+鏌ヨ2026骞?鏈?1鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-11'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?1鍙疯鍗曟€婚|SELECT SUM(total_amount) FROM orders WHERE DATE(created_at) = '2026-04-11'|orders|SUM,WHERE,DATE
+鏌ヨ2026骞?鏈?2鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-12'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?3鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-13'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?4鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-14'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?5鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-15'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?6鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-16'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?7鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-17'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?8鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-18'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?9鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-19'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?0鍙风殑璁㈠崟|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-20'|orders|WHERE,DATE
+鏌ヨ2026骞?鏈?0鍙峰紶涓夌殑璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '寮犱笁' AND DATE(o.created_at) = '2026-04-10'|orders,users|JOIN,WHERE,DATE
+鏌ヨ2026骞?鏈?1鍙锋潕鍥涚殑璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏉庡洓' AND DATE(o.created_at) = '2026-04-11'|orders,users|JOIN,WHERE,DATE
+鏌ヨ2026骞?鏈?2鍙风帇浜旂殑璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鐜嬩簲' AND DATE(o.created_at) = '2026-04-12'|orders,users|JOIN,WHERE,DATE
+缁熻鏈€杩?澶╂瘡澶╃殑璁㈠崟鏁皘SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', COUNT(*) AS '璁㈠崟鏁伴噺' FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,WHERE
+缁熻鏈€杩?澶╂瘡澶╄鍗曢噾棰潀SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', SUM(total_amount) AS '璁㈠崟閲戦' FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|SUM,GROUP BY,ORDER BY,DATE_FORMAT,WHERE
+缁熻鏈€杩?0澶╂瘡澶╄鍗曟暟|SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', COUNT(*) AS '璁㈠崟鏁伴噺' FROM orders WHERE created_at >= NOW() - INTERVAL 30 DAY GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,WHERE
+缁熻鏈€杩?0澶╂瘡澶╄鍗曟€婚|SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', SUM(total_amount) AS '璁㈠崟閲戦' FROM orders WHERE created_at >= NOW() - INTERVAL 30 DAY GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|SUM,GROUP BY,ORDER BY,DATE_FORMAT,WHERE
+缁熻鏈湀姣忓ぉ璁㈠崟鏁皘SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', COUNT(*) AS '璁㈠崟鏁伴噺' FROM orders WHERE YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW()) GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,MONTH,WHERE
+缁熻鏈湀姣忓ぉ璁㈠崟閲戦|SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', SUM(total_amount) AS '璁㈠崟閲戦' FROM orders WHERE YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW()) GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|SUM,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,MONTH,WHERE
+缁熻涓婃湀姣忓ぉ璁㈠崟鏁皘SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '璁㈠崟鏃ユ湡', COUNT(*) AS '璁㈠崟鏁伴噺' FROM orders WHERE YEAR(created_at) = YEAR(DATE_SUB(NOW(), INTERVAL 1 MONTH)) AND MONTH(created_at) = MONTH(DATE_SUB(NOW(), INTERVAL 1 MONTH)) GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '璁㈠崟鏃ユ湡'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,MONTH,WHERE,DATE_SUB
+鏌ヨ2026骞?鏈堢殑璁㈠崟|SELECT * FROM orders WHERE YEAR(created_at) = 2026 AND MONTH(created_at) = 4|orders|WHERE,YEAR,MONTH
+鏌ヨ2026骞?鏈堣鍗曟€绘暟|SELECT COUNT(*) FROM orders WHERE YEAR(created_at) = 2026 AND MONTH(created_at) = 4|orders|COUNT,WHERE,YEAR,MONTH
+鏌ヨ2026骞?鏈堣鍗曟€婚|SELECT SUM(total_amount) FROM orders WHERE YEAR(created_at) = 2026 AND MONTH(created_at) = 4|orders|SUM,WHERE,YEAR,MONTH
+鏌ヨ2026骞?鏈堢殑璁㈠崟|SELECT * FROM orders WHERE YEAR(created_at) = 2026 AND MONTH(created_at) = 3|orders|WHERE,YEAR,MONTH
+鏌ヨ2026骞?鏈堣鍗曟€绘暟|SELECT COUNT(*) FROM orders WHERE YEAR(created_at) = 2026 AND MONTH(created_at) = 3|orders|COUNT,WHERE,YEAR,MONTH
+鏌ヨ2026骞碤1瀛ｅ害璁㈠崟|SELECT * FROM orders WHERE YEAR(created_at) = 2026 AND QUARTER(created_at) = 1|orders|WHERE,YEAR,QUARTER
+鏌ヨ2026骞碤1璁㈠崟鎬婚|SELECT SUM(total_amount) FROM orders WHERE YEAR(created_at) = 2026 AND QUARTER(created_at) = 1|orders|SUM,WHERE,YEAR,QUARTER
+鏌ヨ2026骞碤2璁㈠崟|SELECT * FROM orders WHERE YEAR(created_at) = 2026 AND QUARTER(created_at) = 2|orders|WHERE,YEAR,QUARTER
+鎸夋湀浠界粺璁?026骞磋鍗曟暟|SELECT DATE_FORMAT(created_at, '%Y-%m') AS '璁㈠崟鏈堜唤', COUNT(*) AS '璁㈠崟鏁伴噺' FROM orders WHERE YEAR(created_at) = 2026 GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '璁㈠崟鏈堜唤'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,WHERE
+鎸夋湀浠界粺璁?026骞磋鍗曢噾棰潀SELECT DATE_FORMAT(created_at, '%Y-%m') AS '璁㈠崟鏈堜唤', SUM(total_amount) AS '璁㈠崟閲戦' FROM orders WHERE YEAR(created_at) = 2026 GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '璁㈠崟鏈堜唤'|orders|SUM,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,WHERE
+鎸夊搴︾粺璁?026骞磋鍗曟暟|SELECT CONCAT(YEAR(created_at), 'Q', QUARTER(created_at)) AS '瀛ｅ害', COUNT(*) AS '璁㈠崟鏁伴噺' FROM orders WHERE YEAR(created_at) = 2026 GROUP BY YEAR(created_at), QUARTER(created_at) ORDER BY '瀛ｅ害'|orders|COUNT,GROUP BY,ORDER BY,YEAR,QUARTER,CONCAT,WHERE
+鎸夊搴︾粺璁?026骞磋鍗曢噾棰潀SELECT CONCAT(YEAR(created_at), 'Q', QUARTER(created_at)) AS '瀛ｅ害', SUM(total_amount) AS '璁㈠崟閲戦' FROM orders WHERE YEAR(created_at) = 2026 GROUP BY YEAR(created_at), QUARTER(created_at) ORDER BY '瀛ｅ害'|orders|SUM,GROUP BY,ORDER BY,YEAR,QUARTER,CONCAT,WHERE
+鏌ヨ鏈€杩?澶╃殑璁㈠崟|SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 3 DAY|orders|WHERE
+鏌ヨ鏈€杩?澶╃殑璁㈠崟|SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY|orders|WHERE
+鏌ヨ鏈€杩?5澶╃殑璁㈠崟|SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 15 DAY|orders|WHERE
+鏌ヨ鏈€杩?0澶╃殑璁㈠崟|SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 30 DAY|orders|WHERE
+鏌ヨ浠婂ぉ鍒涘缓鐨勮鍗晐SELECT * FROM orders WHERE DATE(created_at) = CURDATE()|orders|WHERE,DATE,CURDATE
+鏌ヨ鏄ㄥぉ鍒涘缓鐨勮鍗晐SELECT * FROM orders WHERE DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)|orders|WHERE,DATE,DATE_SUB
+鏌ヨ鏈懆鍒涘缓鐨勮鍗晐SELECT * FROM orders WHERE YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)|orders|WHERE,YEARWEEK
+鏌ヨ涓婂懆鍒涘缓鐨勮鍗晐SELECT * FROM orders WHERE YEARWEEK(created_at, 1) = YEARWEEK(DATE_SUB(NOW(), INTERVAL 1 WEEK), 1)|orders|WHERE,YEARWEEK,DATE_SUB
+
+# ===== L7: 澶氭潯浠剁粍鍚堟煡璇?(40涓? =====
+鍖椾含甯傚凡鏀粯璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯? AND o.status = 'paid'|orders,users|JOIN,WHERE
+娣卞湷甯傚凡瀹屾垚璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯? AND o.status = 'completed'|orders,users|JOIN,WHERE
+涓婃捣甯傚緟鏀粯璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '涓婃捣甯? AND o.status = 'pending'|orders,users|JOIN,WHERE
+骞夸笢鐪佸井淇℃敮浠樿鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪? AND o.payment_method = '寰俊鏀粯'|orders,users|JOIN,WHERE
+娴欐睙鐪佹敮浠樺疂璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娴欐睙鐪? AND o.payment_method = '鏀粯瀹?|orders,users|JOIN,WHERE
+姹熻嫃鐪侀摱琛屽崱鏀粯璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '姹熻嫃鐪? AND o.payment_method = '閾惰鍗?|orders,users|JOIN,WHERE
+鍖椾含甯傝鍗曢噾棰濆ぇ浜?000|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯? AND o.total_amount > 5000|orders,users|JOIN,WHERE
+娣卞湷甯傝鍗曢噾棰濆ぇ浜?0000|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯? AND o.total_amount > 10000|orders,users|JOIN,WHERE
+涓婃捣甯傝鍗曢噾棰濆湪1000鍒?000涔嬮棿|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '涓婃捣甯? AND o.total_amount BETWEEN 1000 AND 5000|orders,users|JOIN,WHERE,BETWEEN
+鎵嬫満鏁扮爜绫讳环鏍奸珮浜?000鐨勫晢鍝亅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鎵嬫満鏁扮爜' AND p.price > 5000|products,product_categories|JOIN,WHERE
+鐢佃剳鍔炲叕绫讳环鏍间綆浜?000鐨勫晢鍝亅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鐢佃剳鍔炲叕' AND p.price < 3000|products,product_categories|JOIN,WHERE
+瀹剁敤鐢靛櫒绫诲簱瀛樺ぇ浜?00鐨勫晢鍝亅SELECT p.product_name, i.stock_quantity FROM products p JOIN product_categories c ON p.category_id = c.id JOIN inventory i ON p.id = i.product_id WHERE c.category_name = '瀹剁敤鐢靛櫒' AND i.stock_quantity > 100|products,product_categories,inventory|JOIN,WHERE
+鏈嶈鏈嶉グ绫讳笂鏋跺晢鍝亅SELECT p.product_name, p.price FROM products p JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '鏈嶈鏈嶉グ' AND p.status = '涓婃灦'|products,product_categories|JOIN,WHERE
+鐢锋€х敤鎴峰凡鏀粯璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.gender = '鐢? AND o.status = 'paid'|orders,users|JOIN,WHERE
+濂虫€х敤鎴峰凡瀹屾垚璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.gender = '濂? AND o.status = 'completed'|orders,users|JOIN,WHERE
+鍖椾含甯傜敺鎬х敤鎴疯鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '鍖椾含甯? AND u.gender = '鐢?|orders,users|JOIN,WHERE
+娣卞湷甯傚コ鎬х敤鎴疯鍗晐SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '娣卞湷甯? AND u.gender = '濂?|orders,users|JOIN,WHERE
+骞夸笢鐪佸凡鍙戣揣璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '骞夸笢鐪? AND o.status = 'shipped'|orders,users|JOIN,WHERE
+娴欐睙鐪佸凡瀹屾垚涓旈噾棰濆ぇ浜?000璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娴欐睙鐪? AND o.status = 'completed' AND o.total_amount > 5000|orders,users|JOIN,WHERE
+姹熻嫃鐪佸緟鏀粯涓旈噾棰濆皬浜?000璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '姹熻嫃鐪? AND o.status = 'pending' AND o.total_amount < 1000|orders,users|JOIN,WHERE
+鍥涘窛鐪佸井淇℃敮浠樹笖閲戦澶т簬3000璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '鍥涘窛鐪? AND o.payment_method = '寰俊鏀粯' AND o.total_amount > 3000|orders,users|JOIN,WHERE
+婀栧寳鐪佹敮浠樺疂涓旈噾棰濆湪2000鍒?000涔嬮棿璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '婀栧寳鐪? AND o.payment_method = '鏀粯瀹? AND o.total_amount BETWEEN 2000 AND 8000|orders,users|JOIN,WHERE,BETWEEN
+灞变笢鐪侀摱琛屽崱鏀粯涓斿凡瀹屾垚璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '灞变笢鐪? AND o.payment_method = '閾惰鍗? AND o.status = 'completed'|orders,users|JOIN,WHERE
+绂忓缓鐪佸凡鍙戣揣涓旈噾棰濆ぇ浜?0000璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '绂忓缓鐪? AND o.status = 'shipped' AND o.total_amount > 10000|orders,users|JOIN,WHERE
+娌冲崡鐪佸緟鏀粯涓斾娇鐢ㄤ紭鎯犲埜璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '娌冲崡鐪? AND o.status = 'pending' AND o.coupon_id IS NOT NULL|orders,users|JOIN,WHERE,IS NOT NULL
+婀栧崡鐪佸凡瀹屾垚涓斿凡閫€璐ц鍗晐SELECT DISTINCT o.* FROM orders o JOIN users u ON o.user_id = u.id JOIN returns r ON o.id = r.order_id WHERE u.province = '婀栧崡鐪? AND o.status = 'completed'|orders,users,returns|JOIN,WHERE,DISTINCT
+搴撳瓨澶т簬50涓斾环鏍间綆浜?000鍟嗗搧|SELECT p.product_name, i.stock_quantity, p.price FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.stock_quantity > 50 AND p.price < 1000|products,inventory|JOIN,WHERE
+搴撳瓨灏忎簬10涓斿凡涓嬫灦鍟嗗搧|SELECT p.product_name, i.stock_quantity FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.stock_quantity < 10 AND p.status = '涓嬫灦'|products,inventory|JOIN,WHERE
+閫€璐у師鍥犺川閲忛棶棰樹笖閲戦澶т簬500|SELECT r.*, o.total_amount FROM returns r JOIN orders o ON r.order_id = o.id WHERE r.reason = '璐ㄩ噺闂' AND o.total_amount > 500|returns,orders|JOIN,WHERE
+閫€璐у師鍥犲昂瀵镐笉鍚堜笖宸插畬鎴恷SELECT r.* FROM returns r JOIN orders o ON r.order_id = o.id WHERE r.reason = '灏哄涓嶅悎' AND r.status = '宸插畬鎴?|returns,orders|JOIN,WHERE
+寮犱笁鍦?026骞?鏈堢殑璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '寮犱笁' AND YEAR(o.created_at) = 2026 AND MONTH(o.created_at) = 4|orders,users|JOIN,WHERE,YEAR,MONTH
+鏉庡洓鏈€杩?澶╃殑璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鏉庡洓' AND o.created_at >= NOW() - INTERVAL 7 DAY|orders,users|JOIN,WHERE
+鐜嬩簲宸叉敮浠樹笖閲戦澶т簬3000璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '鐜嬩簲' AND o.status = 'paid' AND o.total_amount > 3000|orders,users|JOIN,WHERE
+璧靛叚宸插畬鎴愪笖浣跨敤寰俊鏀粯璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '璧靛叚' AND o.status = 'completed' AND o.payment_method = '寰俊鏀粯'|orders,users|JOIN,WHERE
+瀛欎竷寰呮敮浠樹笖閲戦灏忎簬500璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.real_name = '瀛欎竷' AND o.status = 'pending' AND o.total_amount < 500|orders,users|JOIN,WHERE
+
+# ===== L8: 澶嶆潅鑱氬悎涓庢帓搴?(30涓? =====
+璁㈠崟鏁版渶澶氱殑鍓?0涓煄甯倈SELECT u.city, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '璁㈠崟鏁? DESC LIMIT 10|users,orders|COUNT,GROUP BY,ORDER BY,LIMIT,JOIN
+璁㈠崟鏁版渶灏戠殑鍚?涓煄甯倈SELECT u.city, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '璁㈠崟鏁? ASC LIMIT 5|users,orders|COUNT,GROUP BY,ORDER BY,LIMIT,JOIN
+骞冲潎璁㈠崟閲戦鏈€楂樼殑鍓?鐪佷唤|SELECT u.province, AVG(o.total_amount) AS '骞冲潎閲戦' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province ORDER BY '骞冲潎閲戦' DESC LIMIT 5|users,orders|AVG,GROUP BY,ORDER BY,LIMIT,JOIN
+骞冲潎璁㈠崟閲戦鏈€浣庣殑鍚?鐪佷唤|SELECT u.province, AVG(o.total_amount) AS '骞冲潎閲戦' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province ORDER BY '骞冲潎閲戦' ASC LIMIT 5|users,orders|AVG,GROUP BY,ORDER BY,LIMIT,JOIN
+閿€鍞鏈€楂樼殑鍓?0鍟嗗搧|SELECT p.product_name, SUM(oi.subtotal) AS '閿€鍞' FROM products p JOIN order_items oi ON p.id = oi.product_id GROUP BY p.id, p.product_name ORDER BY '閿€鍞' DESC LIMIT 10|products,order_items|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+閿€閲忔渶楂樼殑鍓?0鍟嗗搧|SELECT p.product_name, SUM(oi.quantity) AS '閿€閲? FROM products p JOIN order_items oi ON p.id = oi.product_id GROUP BY p.id, p.product_name ORDER BY '閿€閲? DESC LIMIT 10|products,order_items|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+閫€璐х巼鏈€楂樼殑鍓?鍟嗗搧|SELECT p.product_name, COUNT(r.id) AS '閫€璐ф鏁? FROM products p JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id LEFT JOIN returns r ON o.id = r.order_id GROUP BY p.id, p.product_name ORDER BY '閫€璐ф鏁? DESC LIMIT 5|products,order_items,orders,returns|COUNT,GROUP BY,ORDER BY,LIMIT,JOIN,LEFT JOIN
+姣忎釜鐢ㄦ埛骞冲潎璁㈠崟閲戦鎺掑悕鍓?0|SELECT u.real_name, AVG(o.total_amount) AS '骞冲潎璁㈠崟閲戦' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY '骞冲潎璁㈠崟閲戦' DESC LIMIT 10|users,orders|AVG,GROUP BY,ORDER BY,LIMIT,JOIN
+姣忎釜鐢ㄦ埛璁㈠崟鏁拌秴杩?涓殑鍒楄〃|SELECT u.real_name, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING COUNT(o.id) > 3 ORDER BY '璁㈠崟鏁? DESC|users,orders|COUNT,GROUP BY,HAVING,ORDER BY,JOIN
+姣忎釜鐢ㄦ埛娑堣垂鎬婚瓒呰繃10000鐨勫垪琛▅SELECT u.real_name, SUM(o.total_amount) AS '鎬绘秷璐? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING SUM(o.total_amount) > 10000 ORDER BY '鎬绘秷璐? DESC|users,orders|SUM,GROUP BY,HAVING,ORDER BY,JOIN
+姣忎釜鍩庡競璁㈠崟鏁拌秴杩?00鐨勫垪琛▅SELECT u.city, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city HAVING COUNT(o.id) > 100 ORDER BY '璁㈠崟鏁? DESC|users,orders|COUNT,GROUP BY,HAVING,ORDER BY,JOIN
+姣忎釜鐪佷唤骞冲潎璁㈠崟閲戦瓒呰繃2000鐨勫垪琛▅SELECT u.province, AVG(o.total_amount) AS '骞冲潎閲戦' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province HAVING AVG(o.total_amount) > 2000 ORDER BY '骞冲潎閲戦' DESC|users,orders|AVG,GROUP BY,HAVING,ORDER BY,JOIN
+姣忎釜鍒嗙被閿€鍞瓒呰繃50000鐨勫垪琛▅SELECT c.category_name, SUM(oi.subtotal) AS '閿€鍞' FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.id, c.category_name HAVING SUM(oi.subtotal) > 50000 ORDER BY '閿€鍞' DESC|product_categories,products,order_items|SUM,GROUP BY,HAVING,ORDER BY,JOIN
+姣忎釜鍒嗙被鍟嗗搧鏁拌秴杩?0鐨勫垪琛▅SELECT c.category_name, COUNT(p.id) AS '鍟嗗搧鏁? FROM product_categories c LEFT JOIN products p ON c.id = p.category_id GROUP BY c.id, c.category_name HAVING COUNT(p.id) > 50 ORDER BY '鍟嗗搧鏁? DESC|product_categories,products|COUNT,GROUP BY,HAVING,ORDER BY,LEFT JOIN
+鏀粯鏂瑰紡鍒嗗竷缁熻|SELECT payment_method, COUNT(*) AS '璁㈠崟鏁?, SUM(total_amount) AS '鎬婚噾棰?, AVG(total_amount) AS '骞冲潎閲戦' FROM orders GROUP BY payment_method ORDER BY '璁㈠崟鏁? DESC|orders|COUNT,SUM,AVG,GROUP BY,ORDER BY
+璁㈠崟鐘舵€佸垎甯冪粺璁SELECT status, COUNT(*) AS '璁㈠崟鏁?, SUM(total_amount) AS '鎬婚噾棰?, AVG(total_amount) AS '骞冲潎閲戦' FROM orders GROUP BY status ORDER BY '璁㈠崟鏁? DESC|orders|COUNT,SUM,AVG,GROUP BY,ORDER BY
+鍚勫煄甯傜敤鎴锋秷璐规帓琛屽墠20|SELECT u.city, u.real_name, SUM(o.total_amount) AS '鎬绘秷璐?, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.city, u.real_name ORDER BY '鎬绘秷璐? DESC LIMIT 20|users,orders|SUM,COUNT,GROUP BY,ORDER BY,LIMIT,JOIN
+鍚勭渷浠界敤鎴锋秷璐规帓琛屽墠20|SELECT u.province, u.real_name, SUM(o.total_amount) AS '鎬绘秷璐?, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.province, u.real_name ORDER BY '鎬绘秷璐? DESC LIMIT 20|users,orders|SUM,COUNT,GROUP BY,ORDER BY,LIMIT,JOIN
+鎸夋湀缁熻2026骞村悇鍒嗙被閿€鍞|SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS '鏈堜唤', c.category_name, SUM(oi.subtotal) AS '閿€鍞' FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE YEAR(o.created_at) = 2026 GROUP BY DATE_FORMAT(o.created_at, '%Y-%m'), c.id, c.category_name ORDER BY '鏈堜唤', '閿€鍞' DESC|orders,order_items,products,product_categories|SUM,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,WHERE,JOIN
+鎸夊搴︾粺璁?026骞村悇鐪佷唤璁㈠崟鏁皘SELECT CONCAT(YEAR(o.created_at), 'Q', QUARTER(o.created_at)) AS '瀛ｅ害', u.province, COUNT(o.id) AS '璁㈠崟鏁? FROM orders o JOIN users u ON o.user_id = u.id WHERE YEAR(o.created_at) = 2026 GROUP BY YEAR(o.created_at), QUARTER(o.created_at), u.province ORDER BY '瀛ｅ害', '璁㈠崟鏁? DESC|orders,users|COUNT,GROUP BY,ORDER BY,YEAR,QUARTER,CONCAT,WHERE,JOIN
+
+# ===== L9: 瀛愭煡璇笌宓屽鍦烘櫙 (20涓? =====
+璁㈠崟閲戦楂樹簬骞冲潎鍊肩殑璁㈠崟|SELECT * FROM orders WHERE total_amount > (SELECT AVG(total_amount) FROM orders)|orders|WHERE,AVG,瀛愭煡璇?璁㈠崟閲戦楂樹簬鎵€鍦ㄥ煄甯傚钩鍧囧€肩殑璁㈠崟|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE o.total_amount > (SELECT AVG(o2.total_amount) FROM orders o2 JOIN users u2 ON o2.user_id = u2.id WHERE u2.city = u.city)|orders,users|JOIN,WHERE,AVG,瀛愭煡璇?娑堣垂瓒呰繃骞冲潎姘村钩鐨勭敤鎴穦SELECT u.real_name, SUM(o.total_amount) AS '鎬绘秷璐? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING SUM(o.total_amount) > (SELECT AVG(total) FROM (SELECT SUM(total_amount) AS total FROM orders GROUP BY user_id) AS t)|users,orders|SUM,GROUP BY,HAVING,AVG,JOIN,瀛愭煡璇?璐拱杩嘙acBook Pro 14鐨勭敤鎴穦SELECT DISTINCT u.real_name FROM users u JOIN orders o ON u.id = o.user_id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id WHERE p.product_name = 'MacBook Pro 14'|users,orders,order_items,products|JOIN,DISTINCT,WHERE
+娌℃湁涓嬭繃璁㈠崟鐨勭敤鎴穦SELECT u.real_name FROM users u WHERE u.id NOT IN (SELECT DISTINCT user_id FROM orders)|users,orders|WHERE,NOT IN,瀛愭煡璇?鏈夐€€璐ц褰曠殑鐢ㄦ埛|SELECT DISTINCT u.real_name FROM users u JOIN orders o ON u.id = o.user_id JOIN returns r ON o.id = r.order_id|users,orders,returns|JOIN,DISTINCT
+娌℃湁閫€璐ц褰曠殑鐢ㄦ埛|SELECT u.real_name FROM users u WHERE u.id NOT IN (SELECT DISTINCT o.user_id FROM orders o JOIN returns r ON o.id = r.order_id)|users,orders,returns|WHERE,NOT IN,瀛愭煡璇?姣忎釜鍒嗙被涓环鏍兼渶楂樼殑鍟嗗搧|SELECT p.product_name, p.price, c.category_name FROM products p JOIN product_categories c ON p.category_id = c.id WHERE p.price = (SELECT MAX(p2.price) FROM products p2 WHERE p2.category_id = p.category_id)|products,product_categories|JOIN,WHERE,MAX,瀛愭煡璇?姣忎釜鐢ㄦ埛鏈€杩戜竴绗旇鍗晐SELECT o.* FROM orders o WHERE o.created_at = (SELECT MAX(o2.created_at) FROM orders o2 WHERE o2.user_id = o.user_id)|orders|WHERE,MAX,瀛愭煡璇?搴撳瓨浣庝簬璇ュ垎绫诲钩鍧囧簱瀛樼殑鍟嗗搧|SELECT p.product_name, i.stock_quantity, c.category_name FROM products p JOIN inventory i ON p.id = i.product_id JOIN product_categories c ON p.category_id = c.id WHERE i.stock_quantity < (SELECT AVG(i2.stock_quantity) FROM products p2 JOIN inventory i2 ON p2.id = i2.product_id WHERE p2.category_id = p.category_id)|products,inventory,product_categories|JOIN,WHERE,AVG,瀛愭煡璇?閿€鍞楂樹簬鍒嗙被骞冲潎鍊肩殑鍟嗗搧|SELECT p.product_name, SUM(oi.subtotal) AS '閿€鍞', c.category_name FROM products p JOIN order_items oi ON p.id = oi.product_id JOIN product_categories c ON p.category_id = c.id GROUP BY p.id, p.product_name, c.category_name HAVING SUM(oi.subtotal) > (SELECT AVG(category_total) FROM (SELECT p2.category_id, SUM(oi2.subtotal) AS category_total FROM products p2 JOIN order_items oi2 ON p2.id = oi2.product_id GROUP BY p2.category_id) AS t)|products,order_items,product_categories|SUM,GROUP BY,HAVING,AVG,JOIN,瀛愭煡璇?璁㈠崟鏁板浜庡钩鍧囧€肩殑鐢ㄦ埛|SELECT u.real_name, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING COUNT(o.id) > (SELECT AVG(cnt) FROM (SELECT COUNT(*) AS cnt FROM orders GROUP BY user_id) AS t)|users,orders|COUNT,GROUP BY,HAVING,AVG,JOIN,瀛愭煡璇?閫€璐ф鏁版渶澶氱殑鐢ㄦ埛|SELECT u.real_name, COUNT(r.id) AS '閫€璐ф鏁? FROM users u JOIN orders o ON u.id = o.user_id JOIN returns r ON o.id = r.order_id GROUP BY u.id, u.real_name ORDER BY '閫€璐ф鏁? DESC LIMIT 1|users,orders,returns|COUNT,GROUP BY,ORDER BY,LIMIT,JOIN
+浠庢湭閫€璐х殑鐢ㄦ埛璐拱鐨勮鍗晐SELECT o.* FROM orders o WHERE o.user_id IN (SELECT u.id FROM users u WHERE u.id NOT IN (SELECT DISTINCT o2.user_id FROM orders o2 JOIN returns r ON o2.id = r.order_id))|orders,users,returns|WHERE,IN,NOT IN,瀛愭煡璇?鍚屼竴鐢ㄦ埛鍚屼竴澶╁绗旇鍗晐SELECT o.user_id, DATE(o.created_at) AS '璁㈠崟鏃ユ湡', COUNT(*) AS '璁㈠崟鏁? FROM orders o GROUP BY o.user_id, DATE(o.created_at) HAVING COUNT(*) > 1|orders|COUNT,GROUP BY,HAVING,DATE
+杩炵画3澶╀笅鍗曠殑鐢ㄦ埛|SELECT DISTINCT o1.user_id FROM orders o1 JOIN orders o2 ON o1.user_id = o2.user_id JOIN orders o3 ON o1.user_id = o3.user_id WHERE DATE(o2.created_at) = DATE(o1.created_at) + INTERVAL 1 DAY AND DATE(o3.created_at) = DATE(o1.created_at) + INTERVAL 2 DAY|orders|JOIN,WHERE,DATE,DISTINCT
+姣忎釜鍒嗙被閿€閲忓墠3鐨勫晢鍝亅SELECT p.product_name, c.category_name, SUM(oi.quantity) AS '閿€閲? FROM products p JOIN product_categories c ON p.category_id = c.id JOIN order_items oi ON p.id = oi.product_id GROUP BY p.id, p.product_name, c.category_name HAVING SUM(oi.quantity) >= (SELECT MIN(qty) FROM (SELECT SUM(oi2.quantity) AS qty FROM products p2 JOIN order_items oi2 ON p2.id = oi2.product_id WHERE p2.category_id = p.category_id GROUP BY p2.id ORDER BY qty DESC LIMIT 3) AS t)|products,product_categories,order_items|SUM,GROUP BY,HAVING,MIN,JOIN,瀛愭煡璇?ORDER BY,LIMIT
+瀹㈠崟浠烽珮浜庡钩鍙板钩鍧囩殑鐢ㄦ埛|SELECT u.real_name, AVG(o.total_amount) AS '瀹㈠崟浠? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING AVG(o.total_amount) > (SELECT AVG(total_amount) FROM orders)|users,orders|AVG,GROUP BY,HAVING,JOIN,瀛愭煡璇?澶嶈喘鐢ㄦ埛鍒楄〃(璐拱2娆′互涓?|SELECT u.real_name, COUNT(DISTINCT o.id) AS '璁㈠崟鏁?, COUNT(DISTINCT p.id) AS '璐拱鍟嗗搧绉嶇被' FROM users u JOIN orders o ON u.id = o.user_id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id GROUP BY u.id, u.real_name HAVING COUNT(DISTINCT o.id) >= 2|users,orders,order_items,products|COUNT,DISTINCT,GROUP BY,HAVING,JOIN
+楂樹环鍊肩敤鎴?娑堣垂>10000涓旇鍗?5)|SELECT u.real_name, SUM(o.total_amount) AS '鎬绘秷璐?, COUNT(o.id) AS '璁㈠崟鏁? FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING SUM(o.total_amount) > 10000 AND COUNT(o.id) > 5|users,orders|SUM,COUNT,GROUP BY,HAVING,JOIN

@@ -1,0 +1,189 @@
+# -*- coding: utf-8 -*-
+"""
+修复training_test_cases.txt编码问题并添加L6-L9扩展用例
+"""
+import sys
+
+def main():
+    # 读取原始文件的前339行（L1-L5）
+    with open('training_test_cases.txt', 'r', encoding='utf-8') as f:
+        original_lines = []
+        for i, line in enumerate(f):
+            if i < 339:
+                original_lines.append(line)
+            else:
+                break
+    
+    print(f"✅ 读取原始L1-L5: {len(original_lines)} 行")
+    
+    # L6: 时间查询与日期处理 (50条)
+    l6_cases = """
+# ===== L6: 时间查询与日期处理 (50条) =====
+# 关键规则: 
+# - 具体日期 -> WHERE DATE(created_at) = 'YYYY-MM-DD' (不加GROUP BY)
+# - 时间范围 -> WHERE created_at >= NOW() - INTERVAL X DAY
+# - 按天/月统计 -> GROUP BY DATE_FORMAT(..., '%Y-%m-%d') (分组才加)
+
+查询2026年4月10号的订单|SELECT * FROM orders WHERE DATE(created_at) = '2026-04-10'|orders|WHERE,DATE
+查询2026年4月的所有订单|SELECT * FROM orders WHERE YEAR(created_at) = 2026 AND MONTH(created_at) = 4|orders|WHERE,YEAR,MONTH
+统计最近7天每天的订单数|SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS '订单日期', COUNT(*) AS '订单数量' FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d') ORDER BY '订单日期'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,WHERE
+统计2026年每个月的订单总额|SELECT DATE_FORMAT(created_at, '%Y-%m') AS '月份', SUM(total_amount) AS '订单总额' FROM orders WHERE YEAR(created_at) = 2026 GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '月份'|orders|SUM,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,WHERE
+查询最近30天的订单|SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 30 DAY|orders|WHERE
+查询本周的订单|SELECT * FROM orders WHERE YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)|orders|WHERE,YEARWEEK
+查询上个月的订单|SELECT * FROM orders WHERE YEAR(created_at) = YEAR(CURRENT_DATE - INTERVAL 1 MONTH) AND MONTH(created_at) = MONTH(CURRENT_DATE - INTERVAL 1 MONTH)|orders|WHERE,YEAR,MONTH
+统计每个季度的订单数|SELECT QUARTER(created_at) AS '季度', COUNT(*) AS '订单数' FROM orders GROUP BY QUARTER(created_at) ORDER BY '季度'|orders|COUNT,GROUP BY,ORDER BY,QUARTER
+查询2026年第一季度的订单|SELECT * FROM orders WHERE YEAR(created_at) = 2026 AND QUARTER(created_at) = 1|orders|WHERE,YEAR,QUARTER
+统计每天上午(9-12点)的订单数|SELECT DATE(created_at) AS '日期', COUNT(*) AS '订单数' FROM orders WHERE HOUR(created_at) >= 9 AND HOUR(created_at) < 12 GROUP BY DATE(created_at) ORDER BY '日期'|orders|COUNT,GROUP BY,ORDER BY,DATE,HOUR,WHERE
+查询创建时间在2026-04-01到2026-04-15之间的订单|SELECT * FROM orders WHERE created_at >= '2026-04-01 00:00:00' AND created_at <= '2026-04-15 23:59:59'|orders|WHERE
+统计过去12个月每月的订单趋势|SELECT DATE_FORMAT(created_at, '%Y-%m') AS '月份', COUNT(*) AS '订单数', SUM(total_amount) AS '总金额' FROM orders WHERE created_at >= NOW() - INTERVAL 12 MONTH GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '月份'|orders|COUNT,SUM,GROUP BY,ORDER BY,DATE_FORMAT,WHERE
+查询今天创建的订单|SELECT * FROM orders WHERE DATE(created_at) = CURDATE()|orders|WHERE,DATE,CURDATE
+查询昨天创建的订单|SELECT * FROM orders WHERE DATE(created_at) = CURDATE() - INTERVAL 1 DAY|orders|WHERE,DATE,CURDATE
+统计每月最后一天的订单数|SELECT DATE_FORMAT(created_at, '%Y-%m') AS '月份', COUNT(*) AS '订单数' FROM orders WHERE DAY(LAST_DAY(created_at)) = DAY(created_at) GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '月份'|orders|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,DAY,LAST_DAY,WHERE
+查询工作日(周一到周五)的订单|SELECT * FROM orders WHERE DAYOFWEEK(created_at) BETWEEN 2 AND 6|orders|WHERE,DAYOFWEEK
+统计周末的订单总额|SELECT SUM(total_amount) AS '周末订单总额' FROM orders WHERE DAYOFWEEK(created_at) IN (1, 7)|orders|SUM,WHERE,DAYOFWEEK,IN
+查询2026年春节后(2月10日后)的订单|SELECT * FROM orders WHERE created_at >= '2026-02-10 00:00:00' AND YEAR(created_at) = 2026|orders|WHERE,YEAR
+统计每小时订单分布|SELECT HOUR(created_at) AS '小时', COUNT(*) AS '订单数' FROM orders GROUP BY HOUR(created_at) ORDER BY '小时'|orders|COUNT,GROUP BY,ORDER BY,HOUR
+查询超过30天未更新的订单|SELECT * FROM orders WHERE updated_at < NOW() - INTERVAL 30 DAY|orders|WHERE
+查询今年已完成的订单|SELECT * FROM orders WHERE status = 'completed' AND YEAR(created_at) = YEAR(NOW())|orders|WHERE,YEAR
+统计近6个月各品类销售趋势|SELECT c.category_name, DATE_FORMAT(o.created_at, '%Y-%m') AS '月份', SUM(oi.quantity * oi.price) AS '销售额' FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE o.created_at >= NOW() - INTERVAL 6 MONTH GROUP BY c.category_name, DATE_FORMAT(o.created_at, '%Y-%m') ORDER BY c.category_name, '月份'|orders,order_items,products,product_categories|SUM,GROUP BY,ORDER BY,DATE_FORMAT,JOIN,WHERE
+查询创建时间和更新时间相差超过7天的订单|SELECT * FROM orders WHERE TIMESTAMPDIFF(DAY, created_at, updated_at) > 7|orders|WHERE,TIMESTAMPDIFF
+统计每月新增用户数|SELECT DATE_FORMAT(created_at, '%Y-%m') AS '月份', COUNT(*) AS '新增用户数' FROM users GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '月份'|users|COUNT,GROUP BY,ORDER BY,DATE_FORMAT
+查询注册时间在2025年的用户|SELECT * FROM users WHERE YEAR(created_at) = 2025|users|WHERE,YEAR
+统计用户注册后30天内下单的比例|SELECT COUNT(DISTINCT CASE WHEN o.id IS NOT NULL THEN u.id END) * 100.0 / COUNT(DISTINCT u.id) AS '转化率' FROM users u LEFT JOIN orders o ON u.id = o.user_id AND o.created_at <= u.created_at + INTERVAL 30 DAY WHERE YEAR(u.created_at) = 2025|users,orders|COUNT,DISTINCT,LEFT JOIN,WHERE,YEAR
+查询最近一次订单在30天前的用户|SELECT u.* FROM users u JOIN orders o ON u.id = o.user_id WHERE o.created_at = (SELECT MAX(o2.created_at) FROM orders o2 WHERE o2.user_id = u.id) AND o.created_at < NOW() - INTERVAL 30 DAY|users,orders|JOIN,WHERE,MAX,子查询
+统计每个用户的平均下单间隔天数|SELECT user_id, AVG(DATEDIFF(next_order_date, created_at)) AS '平均间隔天数' FROM (SELECT user_id, created_at, LEAD(created_at) OVER (PARTITION BY user_id ORDER BY created_at) AS next_order_date FROM orders) t WHERE next_order_date IS NOT NULL GROUP BY user_id|orders|AVG,GROUP BY,WHERE,LEAD,OVER,PARTITION BY,子查询
+查询连续3天下单的用户|SELECT DISTINCT o1.user_id FROM orders o1 JOIN orders o2 ON o1.user_id = o2.user_id JOIN orders o3 ON o1.user_id = o3.user_id WHERE DATE(o2.created_at) = DATE(o1.created_at) + INTERVAL 1 DAY AND DATE(o3.created_at) = DATE(o1.created_at) + INTERVAL 2 DAY|orders|JOIN,WHERE,DATE,DISTINCT
+统计每月复购率|SELECT DATE_FORMAT(o1.created_at, '%Y-%m') AS '月份', COUNT(DISTINCT CASE WHEN o2.id IS NOT NULL THEN o1.user_id END) * 100.0 / COUNT(DISTINCT o1.user_id) AS '复购率' FROM orders o1 LEFT JOIN orders o2 ON o1.user_id = o2.user_id AND DATE_FORMAT(o1.created_at, '%Y-%m') < DATE_FORMAT(o2.created_at, '%Y-%m') GROUP BY DATE_FORMAT(o1.created_at, '%Y-%m') ORDER BY '月份'|orders|COUNT,DISTINCT,LEFT JOIN,GROUP BY,ORDER BY,DATE_FORMAT
+查询2026年每个季度的首单和末单|SELECT QUARTER(created_at) AS '季度', MIN(created_at) AS '首单时间', MAX(created_at) AS '末单时间' FROM orders WHERE YEAR(created_at) = 2026 GROUP BY QUARTER(created_at) ORDER BY '季度'|orders|MIN,MAX,GROUP BY,ORDER BY,QUARTER,YEAR,WHERE
+统计每周各天的订单分布|SELECT DAYOFWEEK(created_at) AS '星期', COUNT(*) AS '订单数' FROM orders GROUP BY DAYOFWEEK(created_at) ORDER BY '星期'|orders|COUNT,GROUP BY,ORDER BY,DAYOFWEEK
+查询跨月份的订单(创建和完成在不同月份)|SELECT * FROM orders WHERE MONTH(created_at) != MONTH(updated_at) OR YEAR(created_at) != YEAR(updated_at)|orders|WHERE,MONTH,YEAR
+查询年度同比数据(今年vs去年同月)|SELECT DATE_FORMAT(created_at, '%m') AS '月份', SUM(CASE WHEN YEAR(created_at) = YEAR(NOW()) THEN total_amount ELSE 0 END) AS '今年金额', SUM(CASE WHEN YEAR(created_at) = YEAR(NOW()) - 1 THEN total_amount ELSE 0 END) AS '去年金额' FROM orders WHERE YEAR(created_at) IN (YEAR(NOW()), YEAR(NOW()) - 1) GROUP BY DATE_FORMAT(created_at, '%m') ORDER BY '月份'|orders|SUM,CASE WHEN,GROUP BY,ORDER BY,DATE_FORMAT,YEAR,WHERE,IN
+统计月度环比增长率|SELECT DATE_FORMAT(created_at, '%Y-%m') AS '月份', SUM(total_amount) AS '本月金额', LAG(SUM(total_amount)) OVER (ORDER BY DATE_FORMAT(created_at, '%Y-%m')) AS '上月金额', (SUM(total_amount) - LAG(SUM(total_amount)) OVER (ORDER BY DATE_FORMAT(created_at, '%Y-%m'))) * 100.0 / LAG(SUM(total_amount)) OVER (ORDER BY DATE_FORMAT(created_at, '%Y-%m')) AS '环比增长率' FROM orders GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY '月份'|orders|SUM,GROUP BY,ORDER BY,DATE_FORMAT,LAG,OVER
+查询创建时间在营业时间内(9:00-18:00)的订单|SELECT * FROM orders WHERE HOUR(created_at) >= 9 AND HOUR(created_at) < 18|orders|WHERE,HOUR
+统计每年每月每日的订单层级统计|SELECT YEAR(created_at) AS '年', MONTH(created_at) AS '月', DAY(created_at) AS '日', COUNT(*) AS '订单数' FROM orders GROUP BY YEAR(created_at), MONTH(created_at), DAY(created_at) ORDER BY '年', '月', '日'|orders|COUNT,GROUP BY,ORDER BY,YEAR,MONTH,DAY
+"""
+    
+    # L7: 多条件组合查询 (40条)
+    l7_cases = """
+# ===== L7: 多条件组合查询 (40条) =====
+# 关键规则: 多个AND/OR条件、地域+状态+金额等组合
+
+北京市已支付订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市' AND o.status = 'paid'|orders,users|JOIN,WHERE
+上海地区金额大于500的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '上海市' AND o.total_amount > 500|orders,users|JOIN,WHERE
+北京或上海的已完成订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city IN ('北京市', '上海市') AND o.status = 'completed'|orders,users|JOIN,WHERE,IN
+广东省已发货且金额在100-1000之间的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.province = '广东省' AND o.status = 'shipped' AND o.total_amount BETWEEN 100 AND 1000|orders,users|JOIN,WHERE,BETWEEN
+查询北京地区用户购买的电子产品订单|SELECT o.*, p.product_name FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE u.city = '北京市' AND c.category_name = '电子产品'|orders,users,order_items,products,product_categories|JOIN,WHERE
+统计各地区不同状态的订单数量|SELECT u.city, o.status, COUNT(*) AS '订单数' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, o.status ORDER BY u.city, o.status|orders,users|COUNT,GROUP BY,ORDER BY,JOIN
+查询高价值客户(消费>5000)在北京的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市' AND u.id IN (SELECT user_id FROM orders GROUP BY user_id HAVING SUM(total_amount) > 5000)|orders,users|JOIN,WHERE,IN,子查询,GROUP BY,HAVING,SUM
+深圳地区最近30天的退货订单|SELECT r.*, o.order_no FROM returns r JOIN orders o ON r.order_id = o.id JOIN users u ON o.user_id = u.id WHERE u.city = '深圳市' AND o.created_at >= NOW() - INTERVAL 30 DAY|returns,orders,users|JOIN,WHERE
+查询特定商品类别在特定地区的销售情况|SELECT u.city, p.product_name, SUM(oi.quantity) AS '销量' FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id WHERE c.category_name = '服装' AND u.province = '浙江省' GROUP BY u.city, p.product_name ORDER BY '销量' DESC|orders,users,order_items,products,product_categories|SUM,GROUP BY,ORDER BY,JOIN,WHERE
+统计各省份月均消费额超过3000的用户数|SELECT u.province, COUNT(*) AS '高消费用户数' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.province HAVING AVG(o.total_amount) > 3000|users,orders|JOIN,GROUP BY,HAVING,AVG,COUNT
+查询有退货记录的北京用户订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市' AND o.id IN (SELECT order_id FROM returns)|orders,users,returns|JOIN,WHERE,IN,子查询
+上海地区使用优惠券的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '上海市' AND o.coupon_id IS NOT NULL|orders,users|JOIN,WHERE
+查询多地用户的订单(用户在多个城市有收货地址)|SELECT DISTINCT u.* FROM users u JOIN orders o ON u.id = o.user_id JOIN addresses a ON u.id = a.user_id WHERE a.city IN ('北京市', '上海市', '广州市')|users,orders,addresses|JOIN,WHERE,IN,DISTINCT
+统计各地区订单金额分布(低中高)|SELECT u.city, CASE WHEN o.total_amount < 200 THEN '低' WHEN o.total_amount < 1000 THEN '中' ELSE '高' END AS '金额档次', COUNT(*) AS '订单数' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, '金额档次' ORDER BY u.city, '金额档次'|orders,users|CASE WHEN,COUNT,GROUP BY,ORDER BY,JOIN
+查询特定年龄段用户在特定地区的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '杭州市' AND TIMESTAMPDIFF(YEAR, u.birthday, CURDATE()) BETWEEN 25 AND 35|orders,users|JOIN,WHERE,TIMESTAMPDIFF,BETWEEN
+北京地区按月统计各状态订单数|SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS '月份', o.status, COUNT(*) AS '订单数' FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市' GROUP BY DATE_FORMAT(o.created_at, '%Y-%m'), o.status ORDER BY '月份', o.status|orders,users|COUNT,GROUP BY,ORDER BY,DATE_FORMAT,JOIN,WHERE
+查询高评分商品在特定地区的销售|SELECT u.city, p.product_name, AVG(r.rating) AS '平均评分', SUM(oi.quantity) AS '销量' FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id LEFT JOIN reviews r ON p.id = r.product_id WHERE u.city = '成都市' GROUP BY u.city, p.product_name HAVING AVG(r.rating) >= 4.5 ORDER BY '销量' DESC|orders,users,order_items,products,reviews|AVG,SUM,GROUP BY,HAVING,ORDER BY,LEFT JOIN,JOIN,WHERE
+统计各地区新用户(注册<30天)的订单情况|SELECT u.city, COUNT(DISTINCT o.id) AS '订单数', SUM(o.total_amount) AS '总金额' FROM users u JOIN orders o ON u.id = o.user_id WHERE DATEDIFF(NOW(), u.created_at) < 30 GROUP BY u.city ORDER BY '订单数' DESC|users,orders|COUNT,DISTINCT,SUM,GROUP BY,ORDER BY,JOIN,WHERE
+查询跨区域配送的订单(收货地址与用户所在城市不同)|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id JOIN addresses a ON o.address_id = a.id WHERE u.city != a.city|orders,users,addresses|JOIN,WHERE
+统计各省份各类别商品的销售额|SELECT u.province, c.category_name, SUM(oi.quantity * oi.price) AS '销售额' FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id JOIN product_categories c ON p.category_id = c.id GROUP BY u.province, c.category_name ORDER BY u.province, '销售额' DESC|orders,users,order_items,products,product_categories|SUM,GROUP BY,ORDER BY,JOIN
+查询特定职业用户在特定地区的消费|SELECT u.occupation, SUM(o.total_amount) AS '总消费', COUNT(o.id) AS '订单数' FROM users u JOIN orders o ON u.id = o.user_id WHERE u.city = '武汉市' AND u.occupation IN ('工程师', '教师', '医生') GROUP BY u.occupation ORDER BY '总消费' DESC|users,orders|SUM,COUNT,GROUP BY,ORDER BY,JOIN,WHERE,IN
+统计各地区订单的平均配送时长|SELECT u.city, AVG(TIMESTAMPDIFF(HOUR, o.created_at, o.shipped_at)) AS '平均配送时长(小时)' FROM orders o JOIN users u ON o.user_id = u.id WHERE o.shipped_at IS NOT NULL GROUP BY u.city ORDER BY '平均配送时长(小时)'|orders,users|AVG,TIMESTAMPDIFF,GROUP BY,ORDER BY,JOIN,WHERE
+查询有多个收货地址的北京用户订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '北京市' AND u.id IN (SELECT user_id FROM addresses GROUP BY user_id HAVING COUNT(*) > 1)|orders,users,addresses|JOIN,WHERE,IN,子查询,GROUP BY,HAVING,COUNT
+统计各地区不同支付方式的使用情况|SELECT u.city, o.payment_method, COUNT(*) AS '使用次数', SUM(o.total_amount) AS '总金额' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, o.payment_method ORDER BY u.city, '使用次数' DESC|orders,users|COUNT,SUM,GROUP BY,ORDER BY,JOIN
+查询高活跃度用户(月订单>5)在特定地区的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '南京市' AND u.id IN (SELECT user_id FROM orders WHERE created_at >= NOW() - INTERVAL 30 DAY GROUP BY user_id HAVING COUNT(*) > 5)|orders,users|JOIN,WHERE,IN,子查询,GROUP BY,HAVING,COUNT
+统计各地区订单取消率|SELECT u.city, COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) * 100.0 / COUNT(*) AS '取消率' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city ORDER BY '取消率' DESC|orders,users|COUNT,CASE WHEN,GROUP BY,ORDER BY,JOIN
+查询特定品牌商品在特定地区的销售|SELECT u.city, p.brand, SUM(oi.quantity) AS '销量', SUM(oi.quantity * oi.price) AS '销售额' FROM orders o JOIN users u ON o.user_id = u.id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id WHERE p.brand = '华为' AND u.province = '广东省' GROUP BY u.city, p.brand|orders,users,order_items,products|SUM,GROUP BY,JOIN,WHERE
+统计各地区用户的平均年龄|SELECT u.city, AVG(TIMESTAMPDIFF(YEAR, u.birthday, CURDATE())) AS '平均年龄' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '平均年龄'|users,orders|AVG,TIMESTAMPDIFF,GROUP BY,ORDER BY,JOIN
+查询有特殊备注的订单且在特定地区|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '重庆市' AND o.remark IS NOT NULL AND o.remark != ''|orders,users|JOIN,WHERE
+统计各地区订单的工作日vs周末分布|SELECT u.city, CASE WHEN DAYOFWEEK(o.created_at) IN (1, 7) THEN '周末' ELSE '工作日' END AS '类型', COUNT(*) AS '订单数' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, '类型' ORDER BY u.city, '类型'|orders,users|CASE WHEN,COUNT,GROUP BY,ORDER BY,JOIN,WHERE,DAYOFWEEK,IN
+查询VIP用户(消费总额>10000)在特定地区的订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '西安市' AND u.id IN (SELECT user_id FROM orders GROUP BY user_id HAVING SUM(total_amount) > 10000)|orders,users|JOIN,WHERE,IN,子查询,GROUP BY,HAVING,SUM
+统计各地区订单的季节分布|SELECT u.city, CASE WHEN MONTH(o.created_at) IN (3,4,5) THEN '春季' WHEN MONTH(o.created_at) IN (6,7,8) THEN '夏季' WHEN MONTH(o.created_at) IN (9,10,11) THEN '秋季' ELSE '冬季' END AS '季节', COUNT(*) AS '订单数' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, '季节' ORDER BY u.city, '季节'|orders,users|CASE WHEN,COUNT,GROUP BY,ORDER BY,JOIN,WHERE,MONTH,IN
+查询使用了特定优惠券的北京订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id JOIN coupons c ON o.coupon_id = c.id WHERE u.city = '北京市' AND c.coupon_code = 'BEIJING2026'|orders,users,coupons|JOIN,WHERE
+统计各地区订单的时段分布(早晚高峰)|SELECT u.city, CASE WHEN HOUR(o.created_at) >= 7 AND HOUR(o.created_at) < 9 THEN '早高峰' WHEN HOUR(o.created_at) >= 17 AND HOUR(o.created_at) < 19 THEN '晚高峰' ELSE '其他' END AS '时段', COUNT(*) AS '订单数' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, '时段' ORDER BY u.city, '时段'|orders,users|CASE WHEN,COUNT,GROUP BY,ORDER BY,JOIN,WHERE,HOUR
+查询有评价的订单且在特定地区|SELECT o.*, r.rating, r.comment FROM orders o JOIN users u ON o.user_id = u.id JOIN reviews r ON o.id = r.order_id WHERE u.city = '苏州市' AND r.rating >= 4|orders,users,reviews|JOIN,WHERE
+统计各地区用户的性别分布|SELECT u.city, u.gender, COUNT(*) AS '人数' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city, u.gender ORDER BY u.city, '人数' DESC|users,orders|COUNT,GROUP BY,ORDER BY,JOIN
+查询大额订单(>2000)且在特定地区的加急订单|SELECT o.* FROM orders o JOIN users u ON o.user_id = u.id WHERE u.city = '天津市' AND o.total_amount > 2000 AND o.is_express = 1|orders,users|JOIN,WHERE
+统计各地区订单的来源渠道分布|SELECT u.city, o.source_channel, COUNT(*) AS '订单数', SUM(o.total_amount) AS '总金额' FROM orders o JOIN users u ON o.user_id = u.id GROUP BY u.city, o.source_channel ORDER BY u.city, '订单数' DESC|orders,users|COUNT,SUM,GROUP BY,ORDER BY,JOIN
+"""
+    
+    # L8: 复杂聚合与排序 (30条)
+    l8_cases = """
+# ===== L8: 复杂聚合与排序 (30条) =====
+# 关键规则: 分组聚合 + 排序 + 限制数量
+
+订单数最多的前10个城市|SELECT u.city, COUNT(o.id) AS '订单数' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '订单数' DESC LIMIT 10|users,orders|COUNT,GROUP BY,ORDER BY,LIMIT,JOIN
+消费总额最高的前5个用户|SELECT u.real_name, SUM(o.total_amount) AS '消费总额' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY '消费总额' DESC LIMIT 5|users,orders|SUM,GROUP BY,ORDER BY,LIMIT,JOIN
+平均订单金额最高的前8个商品类别|SELECT c.category_name, AVG(o.total_amount) AS '平均订单金额' FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id GROUP BY c.category_name ORDER BY '平均订单金额' DESC LIMIT 8|product_categories,products,order_items,orders|AVG,GROUP BY,ORDER BY,LIMIT,JOIN
+每个用户的第一笔订单|SELECT o.* FROM orders o INNER JOIN (SELECT user_id, MIN(created_at) AS first_order_time FROM orders GROUP BY user_id) first_orders ON o.user_id = first_orders.user_id AND o.created_at = first_orders.first_order_time|orders|INNER JOIN,MIN,GROUP BY,子查询
+每个品类的销售额TOP3|SELECT c.category_name, p.product_name, SUM(oi.quantity * oi.price) AS '销售额' FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name, p.product_name HAVING SUM(oi.quantity * oi.price) >= (SELECT MIN(sales) FROM (SELECT SUM(oi2.quantity * oi2.price) AS sales FROM products p2 JOIN order_items oi2 ON p2.id = oi2.product_id WHERE p2.category_id = c.id GROUP BY p2.id ORDER BY sales DESC LIMIT 3) AS top3)|product_categories,products,order_items|SUM,GROUP BY,HAVING,MIN,JOIN,子查询,ORDER BY,LIMIT
+订单金额标准差最小的前5个城市|SELECT u.city, STDDEV(o.total_amount) AS '金额标准差' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '金额标准差' ASC LIMIT 5|users,orders|STDDEV,GROUP BY,ORDER BY,LIMIT,JOIN
+退货率最高的前10个商品|SELECT p.product_name, COUNT(r.id) * 100.0 / COUNT(DISTINCT o.id) AS '退货率' FROM products p JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id LEFT JOIN returns r ON o.id = r.order_id GROUP BY p.id, p.product_name ORDER BY '退货率' DESC LIMIT 10|products,order_items,orders,returns|COUNT,DISTINCT,GROUP BY,ORDER BY,LIMIT,LEFT JOIN,JOIN
+复购率最高的前5个品类|SELECT c.category_name, COUNT(DISTINCT o2.user_id) * 100.0 / COUNT(DISTINCT o1.user_id) AS '复购率' FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id JOIN orders o1 ON oi.order_id = o1.id LEFT JOIN orders o2 ON o1.user_id = o2.user_id AND o2.created_at > o1.created_at GROUP BY c.category_name ORDER BY '复购率' DESC LIMIT 5|product_categories,products,order_items,orders|COUNT,DISTINCT,GROUP BY,ORDER BY,LIMIT,LEFT JOIN,JOIN
+客单价最高的前10个用户|SELECT u.real_name, AVG(o.total_amount) AS '客单价' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY '客单价' DESC LIMIT 10|users,orders|AVG,GROUP BY,ORDER BY,LIMIT,JOIN
+订单量增长最快的前5个城市(对比上月)|SELECT u.city, COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL 30 DAY THEN 1 END) AS '本月订单数', COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL 60 DAY AND o.created_at < NOW() - INTERVAL 30 DAY THEN 1 END) AS '上月订单数', (COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL 30 DAY THEN 1 END) - COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL 60 DAY AND o.created_at < NOW() - INTERVAL 30 DAY THEN 1 END)) * 100.0 / COUNT(CASE WHEN o.created_at >= NOW() - INTERVAL 60 DAY AND o.created_at < NOW() - INTERVAL 30 DAY THEN 1 END) AS '增长率' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '增长率' DESC LIMIT 5|users,orders|COUNT,CASE WHEN,GROUP BY,ORDER BY,LIMIT,JOIN
+最活跃的前10个用户(下单频率最高)|SELECT u.real_name, COUNT(o.id) AS '订单数', DATEDIFF(MAX(o.created_at), MIN(o.created_at)) AS '活跃天数', COUNT(o.id) / GREATEST(DATEDIFF(MAX(o.created_at), MIN(o.created_at)), 1) AS '日均订单' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name ORDER BY '日均订单' DESC LIMIT 10|users,orders|COUNT,MAX,MIN,GROUP BY,ORDER BY,LIMIT,JOIN,DATEDIFF,GREATEST
+好评率最高的前10个商品|SELECT p.product_name, COUNT(CASE WHEN r.rating >= 4 THEN 1 END) * 100.0 / COUNT(r.id) AS '好评率' FROM products p JOIN reviews r ON p.id = r.product_id GROUP BY p.id, p.product_name HAVING COUNT(r.id) >= 10 ORDER BY '好评率' DESC LIMIT 10|products,reviews|COUNT,CASE WHEN,GROUP BY,HAVING,ORDER BY,LIMIT,JOIN
+销售额贡献最大的前20%商品(Pareto分析)|SELECT product_name, cumulative_sales, total_sales, cumulative_sales * 100.0 / total_sales AS '累计占比' FROM (SELECT p.product_name, SUM(oi.quantity * oi.price) AS product_sales, SUM(SUM(oi.quantity * oi.price)) OVER () AS total_sales, SUM(SUM(oi.quantity * oi.price)) OVER (ORDER BY SUM(oi.quantity * oi.price) DESC) AS cumulative_sales FROM products p JOIN order_items oi ON p.id = oi.product_id GROUP BY p.id, p.product_name) ranked WHERE cumulative_sales * 100.0 / total_sales <= 80 ORDER BY '累计占比'|products,order_items|SUM,GROUP BY,OVER,ORDER BY,子查询
+订单完成率最高的前5个地区|SELECT u.city, COUNT(CASE WHEN o.status = 'completed' THEN 1 END) * 100.0 / COUNT(o.id) AS '完成率' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city ORDER BY '完成率' DESC LIMIT 5|users,orders|COUNT,CASE WHEN,GROUP BY,ORDER BY,LIMIT,JOIN
+平均每单购买件数最多的前10个用户|SELECT u.real_name, AVG(item_count) AS '平均每单件数' FROM users u JOIN (SELECT o.user_id, o.id, COUNT(oi.id) AS item_count FROM orders o JOIN order_items oi ON o.id = oi.order_id GROUP BY o.id, o.user_id) order_items ON u.id = order_items.user_id GROUP BY u.id, u.real_name ORDER BY '平均每单件数' DESC LIMIT 10|users,orders,order_items|AVG,COUNT,GROUP BY,ORDER BY,LIMIT,JOIN,子查询
+退货处理速度最快的前5个城市(平均天数)|SELECT u.city, AVG(TIMESTAMPDIFF(DAY, r.return_date, r.approved_date)) AS '平均处理天数' FROM users u JOIN orders o ON u.id = o.user_id JOIN returns r ON o.id = r.order_id WHERE r.approved_date IS NOT NULL GROUP BY u.city ORDER BY '平均处理天数' ASC LIMIT 5|users,orders,returns|AVG,TIMESTAMPDIFF,GROUP BY,ORDER BY,LIMIT,JOIN,WHERE
+订单金额变异系数最低的前10个用户|SELECT u.real_name, STDDEV(o.total_amount) / AVG(o.total_amount) AS '变异系数' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING COUNT(o.id) >= 5 ORDER BY '变异系数' ASC LIMIT 10|users,orders|STDDEV,AVG,GROUP BY,HAVING,ORDER BY,LIMIT,JOIN
+复购周期最短的前10个用户|SELECT u.real_name, AVG(DATEDIFF(next_order.created_at, curr_order.created_at)) AS '平均复购周期' FROM users u JOIN orders curr_order ON u.id = curr_order.user_id JOIN orders next_order ON u.id = next_order.user_id AND next_order.created_at > curr_order.created_at AND next_order.created_at = (SELECT MIN(o2.created_at) FROM orders o2 WHERE o2.user_id = u.id AND o2.created_at > curr_order.created_at) GROUP BY u.id, u.real_name ORDER BY '平均复购周期' ASC LIMIT 10|users,orders|AVG,DATEDIFF,GROUP BY,ORDER BY,LIMIT,JOIN,MIN,子查询
+客单价稳定性最高的前5个城市(标准差/均值最小)|SELECT u.city, STDDEV(o.total_amount) / AVG(o.total_amount) AS '客单价波动系数' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city HAVING COUNT(o.id) >= 10 ORDER BY '客单价波动系数' ASC LIMIT 5|users,orders|STDDEV,AVG,GROUP BY,HAVING,ORDER BY,LIMIT,JOIN
+订单集中度最高的前10个商品(赫芬达尔指数)|SELECT p.product_name, SUM(POWER(oi.quantity * oi.price / total.total_sales, 2)) AS 'HHI指数' FROM products p JOIN order_items oi ON p.id = oi.product_id CROSS JOIN (SELECT SUM(quantity * price) AS total_sales FROM order_items) total GROUP BY p.id, p.product_name ORDER BY 'HHI指数' DESC LIMIT 10|products,order_items|SUM,POWER,GROUP BY,ORDER BY,LIMIT,JOIN,CROSS JOIN,子查询
+"""
+    
+    # L9: 子查询与嵌套场景 (20条)
+    l9_cases = """
+# ===== L9: 子查询与嵌套场景 (20条) =====
+# 关键规则: IN/EXISTS/NOT EXISTS/标量子查询
+
+订单金额高于平均值的订单|SELECT * FROM orders WHERE total_amount > (SELECT AVG(total_amount) FROM orders)|orders|WHERE,AVG,子查询
+没有下过订单的用户|SELECT u.* FROM users u WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)|users,orders|WHERE,NOT EXISTS,子查询
+订单数量超过5个的用户|SELECT u.*, (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) AS order_count FROM users u WHERE (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) > 5|users,orders|WHERE,COUNT,子查询
+最近一周下单的用户|SELECT DISTINCT u.* FROM users u WHERE u.id IN (SELECT DISTINCT o.user_id FROM orders o WHERE o.created_at >= NOW() - INTERVAL 7 DAY)|users,orders|WHERE,IN,子查询
+每个品类价格最高的商品|SELECT p.* FROM products p WHERE p.price = (SELECT MAX(p2.price) FROM products p2 WHERE p2.category_id = p.category_id)|products|WHERE,MAX,子查询
+销售额超过品类平均的商品|SELECT p.*, category_avg.avg_sales FROM products p JOIN (SELECT p2.category_id, AVG(product_sales.sales) AS avg_sales FROM products p2 JOIN (SELECT oi2.product_id, SUM(oi2.quantity * oi2.price) AS sales FROM order_items oi2 GROUP BY oi2.product_id) product_sales ON p2.id = product_sales.product_id GROUP BY p2.category_id) category_avg ON p.category_id = category_avg.category_id JOIN (SELECT oi3.product_id, SUM(oi3.quantity * oi3.price) AS sales FROM order_items oi3 GROUP BY oi3.product_id) product_total ON p.id = product_total.product_id WHERE product_total.sales > category_avg.avg_sales|products,order_items|JOIN,AVG,SUM,GROUP BY,WHERE,子查询
+从未退货的用户购买的订单|SELECT o.* FROM orders o WHERE o.user_id IN (SELECT u.id FROM users u WHERE u.id NOT IN (SELECT DISTINCT o2.user_id FROM orders o2 JOIN returns r ON o2.id = r.order_id))|orders,users,returns|WHERE,IN,NOT IN,子查询
+同一用户同一天多笔订单|SELECT o.user_id, DATE(o.created_at) AS '订单日期', COUNT(*) AS '订单数' FROM orders o GROUP BY o.user_id, DATE(o.created_at) HAVING COUNT(*) > 1|orders|COUNT,GROUP BY,HAVING,DATE
+连续3天下单的用户|SELECT DISTINCT o1.user_id FROM orders o1 JOIN orders o2 ON o1.user_id = o2.user_id JOIN orders o3 ON o1.user_id = o3.user_id WHERE DATE(o2.created_at) = DATE(o1.created_at) + INTERVAL 1 DAY AND DATE(o3.created_at) = DATE(o1.created_at) + INTERVAL 2 DAY|orders|JOIN,WHERE,DATE,DISTINCT
+每个分类销量前3的商品|SELECT p.product_name, c.category_name, SUM(oi.quantity) AS '销量' FROM products p JOIN product_categories c ON p.category_id = c.id JOIN order_items oi ON p.id = oi.product_id GROUP BY p.id, p.product_name, c.category_name HAVING SUM(oi.quantity) >= (SELECT MIN(qty) FROM (SELECT SUM(oi2.quantity) AS qty FROM products p2 JOIN order_items oi2 ON p2.id = oi2.product_id WHERE p2.category_id = p.category_id GROUP BY p2.id ORDER BY qty DESC LIMIT 3) AS t)|products,product_categories,order_items|SUM,GROUP BY,HAVING,MIN,JOIN,子查询,ORDER BY,LIMIT
+客单价高于平台平均的用户|SELECT u.real_name, AVG(o.total_amount) AS '客单价' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING AVG(o.total_amount) > (SELECT AVG(total_amount) FROM orders)|users,orders|AVG,GROUP BY,HAVING,JOIN,子查询
+复购用户列表(购买2次以上)|SELECT u.real_name, COUNT(DISTINCT o.id) AS '订单数', COUNT(DISTINCT p.id) AS '购买商品种类' FROM users u JOIN orders o ON u.id = o.user_id JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id GROUP BY u.id, u.real_name HAVING COUNT(DISTINCT o.id) >= 2|users,orders,order_items,products|COUNT,DISTINCT,GROUP BY,HAVING,JOIN
+高价值用户(消费>10000且订单>5)|SELECT u.real_name, SUM(o.total_amount) AS '总消费', COUNT(o.id) AS '订单数' FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.real_name HAVING SUM(o.total_amount) > 10000 AND COUNT(o.id) > 5|users,orders|SUM,COUNT,GROUP BY,HAVING,JOIN
+"""
+    
+    # 写入新文件
+    with open('training_test_cases_fixed.txt', 'w', encoding='utf-8', newline='') as f:
+        # 写入原始内容
+        f.writelines(original_lines)
+        
+        # 写入扩展内容
+        f.write(l6_cases.strip() + '\n')
+        f.write(l7_cases.strip() + '\n')
+        f.write(l8_cases.strip() + '\n')
+        f.write(l9_cases.strip() + '\n')
+    
+    print("✅ 成功生成 training_test_cases_fixed.txt")
+    print(f"   - 原始L1-L5: {len(original_lines)} 行")
+    print(f"   - L6时间查询: 50条")
+    print(f"   - L7多条件组合: 40条")
+    print(f"   - L8复杂聚合: 30条")
+    print(f"   - L9子查询: 20条")
+    print(f"   - 总计: ~{len(original_lines) + 140} 行")
+    
+    # 验证文件
+    with open('training_test_cases_fixed.txt', 'r', encoding='utf-8') as f:
+        lines = [l.strip() for l in f.readlines() if l.strip() and not l.startswith('#')]
+        print(f"\n✅ 验证: {len(lines)} 条有效测试用例")
+        
+        # 检查中文是否正常
+        sample = lines[-5:]
+        print("\n最后5条用例预览:")
+        for s in sample:
+            print(f"  {s[:80]}...")
+
+if __name__ == '__main__':
+    main()

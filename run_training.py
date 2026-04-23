@@ -3,8 +3,15 @@ import random
 import json
 import re
 import mysql.connector
+import sys
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# ✅ 关键修复：设置标准输出编码为UTF-8
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr.reconfigure(encoding='utf-8')
 
 TOKEN = "f4bef8749a264cbcad59b2b0e634cb3f"
 API_URL = "http://localhost:8080/api/agent/chat/test"
@@ -21,7 +28,7 @@ DB_CONFIG = {
 
 # 读取测试用例
 test_cases = []
-with open('training_test_cases.txt', 'r', encoding='utf-8') as f:
+with open('training_test_cases.txt', 'r', encoding='utf-8-sig') as f:  # ✅ utf-8-sig自动处理BOM
     for line in f:
         line = line.strip()
         if not line or line.startswith('#'):
@@ -432,9 +439,9 @@ for round_num in range(1, 11):
     print(f"Round {round_num}/10")
     print('='*50)
     
-    # 第1轮全量200个，后续随机30个
+    # 第1轮全量测试，后续随机30个
     if round_num == 1:
-        selected = test_cases[:min(200, len(test_cases))]  # 最多200个
+        selected = test_cases  # 第一轮跑完所有测试用例
         print(f"Full test: {len(selected)} cases")
     else:
         sample_size = min(30, len(test_cases))
@@ -584,7 +591,7 @@ for round_num in range(1, 11):
         reason = r.get('Reason', 'N/A')
         report += f"| {j} | {r['Question']} | {r['Score']}⭐ | {reason} | {details} |\n"
     
-    with open(f'training_round_{round_num}.md', 'w', encoding='utf-8') as f:
+    with open(f'training_round_{round_num}.md', 'w', encoding='utf-8') as f:  # ✅ 明确指定UTF-8编码
         f.write(report)
     
     print(f"\nRound {round_num} saved (Avg: {avg_score:.2f})")

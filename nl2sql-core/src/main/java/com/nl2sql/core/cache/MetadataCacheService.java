@@ -240,9 +240,9 @@ public class MetadataCacheService {
                     queryCacheVectorService.findBestMatch(query, datasourceId);
                 
                 if (bestMatch != null && bestMatch.getScore() >= threshold) {
-                    // ✅ 二次校验：Jaccard关键词重叠度检查(阈值0.4)
+                    // ✅ 二次校验：Jaccard关键词重叠度检查(阈值降低至0.25,避免误杀同义表达)
                     double jaccardScore = calculateKeywordOverlap(query, bestMatch.getCachedQuery());
-                    if (jaccardScore < 0.4) {
+                    if (jaccardScore < 0.25) {
                         log.warn("[MetadataCache] ⚠️ Chroma匹配但Jaccard校验失败: query='{}', similar='{}', vectorScore={}, jaccardScore={}", 
                             query, bestMatch.getCachedQuery(), String.format("%.3f", bestMatch.getScore()), String.format("%.3f", jaccardScore));
                         return null; // 拒绝低质量匹配
@@ -374,8 +374,19 @@ public class MetadataCacheService {
     
     /**
      * ✅ 新增：记录查询到语义索引（供L3使用）
+     * 
+     * @param datasourceId 数据源ID
+     * @param query 用户查询
+     * @param tables 召回的表列表
+     * @param rating 用户评分(可选，null表示未评分)
      */
-    public void recordQueryToSemanticIndex(Long datasourceId, String query, List<String> tables) {
+    public void recordQueryToSemanticIndex(Long datasourceId, String query, List<String> tables, Integer rating) {
+        // ✅ 过滤低分查询：rating <= 2 的不记录到语义索引
+        if (rating != null && rating <= 2) {
+            log.debug("[MetadataCache] L3语义索引跳过低分查询: query='{}', rating={}", query, rating);
+            return;
+        }
+        
         semanticIndexByDatasource.computeIfAbsent(datasourceId, k -> new java.util.ArrayList<>());
         
         java.util.List<CachedQueryEntry> index = semanticIndexByDatasource.get(datasourceId);
@@ -400,6 +411,40 @@ public class MetadataCacheService {
         
         log.debug("[MetadataCache] L3语义索引更新: datasourceId={}, totalEntries={}", 
             datasourceId, index.size());
+    }
+    
+    /**
+     * ✅ 新增：从语义索引中移除低分查询（用户反馈后调用）
+     * 
+     * @param datasourceId 数据源ID(null表示遍历所有数据源)
+     * @param query 用户查询
+     */
+    public void removeFromSemanticIndex(Long datasourceId, String query) {
+        if (datasourceId != null) {
+            // 指定数据源
+            java.util.List<CachedQueryEntry> index = semanticIndexByDatasource.get(datasourceId);
+            if (index == null || index.isEmpty()) {
+                return;
+            }
+            
+            boolean removed = index.removeIf(entry -> entry.originalQuery.equals(query));
+            if (removed) {
+                log.info("[MetadataCache] ✅ 从L3语义索引移除低分查询: datasourceId={}, query='{}'", 
+                    datasourceId, query);
+            }
+        } else {
+            // 遍历所有数据源
+            for (Map.Entry<Long, java.util.List<CachedQueryEntry>> entry : semanticIndexByDatasource.entrySet()) {
+                Long dsId = entry.getKey();
+                java.util.List<CachedQueryEntry> index = entry.getValue();
+                
+                boolean removed = index.removeIf(e -> e.originalQuery.equals(query));
+                if (removed) {
+                    log.info("[MetadataCache] ✅ 从L3语义索引移除低分查询: datasourceId={}, query='{}'", 
+                        dsId, query);
+                }
+            }
+        }
     }
     
     /**

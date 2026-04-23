@@ -4,12 +4,15 @@ import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.cache.QueryCacheVectorService;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
+import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -24,18 +27,33 @@ public class VectorRetriever {
     @Autowired(required = false)
     private QueryCacheVectorService queryCacheVectorService;
     
-    private final EmbeddingModel embeddingModel;
+    @Value("${ollama.base-url:http://localhost:11434}")
+    private String ollamaBaseUrl;
+    
+    @Value("${ollama.embedding-model:bge-m3}")
+    private String embeddingModelName;
+    
+    private EmbeddingModel embeddingModel;
     // ✅ 按数据源隔离的向量索引: datasourceId -> (tableName -> Embedding)
     private final Map<Long, Map<String, Embedding>> tableEmbeddingsByDatasource = new ConcurrentHashMap<>();
     private final Map<Long, Map<String, Embedding>> columnEmbeddingsByDatasource = new ConcurrentHashMap<>();
     
+    // ✅ 当前查询文本(用于意图检测)
+    private String currentQuery;
+    
     public VectorRetriever() {
-        this.embeddingModel = new AllMiniLmL6V2EmbeddingModel();
+        // 构造函数中不初始化,等待@PostConstruct
     }
     
     @PostConstruct
     public void init() {
-        log.info("向量检索器初始化完成");
+        // ✅ 使用Ollama bge-m3模型(1024维,中文优化)
+        this.embeddingModel = OllamaEmbeddingModel.builder()
+            .baseUrl(ollamaBaseUrl)
+            .modelName(embeddingModelName)
+            .timeout(Duration.ofSeconds(30))
+            .build();
+        log.info("向量检索器初始化完成,使用模型: {}", embeddingModelName);
     }
     
     /**
@@ -101,6 +119,9 @@ public class VectorRetriever {
      * 检索指定数据源的相关表
      */
     public List<String> retrieveTopTables(String query, Long datasourceId, int topK) {
+        // ✅ 设置当前查询(用于意图检测)
+        this.currentQuery = query;
+        
         // ⚠️ P0优化：L1 精确匹配缓存
         if (cacheService != null) {
             String cacheKey = String.format("%d:%s", datasourceId, query);
@@ -173,18 +194,26 @@ public class VectorRetriever {
         
         List<String> result = new ArrayList<>();
         
-        // ✅ 优化：固定返回Top-10表 + 相似度阈值过滤（保底机制）
-        int maxTables = Math.min(similarities.size(), 10); // 提高到10个表，避免遗漏关键表
-        double similarityThreshold = 0.15; // 降低阈值，避免误杀
+        // ✅ 动态阈值：根据查询长度和最高相似度自适应调整
+        double similarityThreshold = calculateDynamicThreshold(query, similarities);
+        log.info("[VectorRetriever] 动态阈值计算: query='{}', length={}, maxSimilarity={}, threshold={}",
+            query, query.length(), 
+            similarities.isEmpty() ? 0 : String.format("%.3f", similarities.get(0).getValue()),
+            String.format("%.3f", similarityThreshold));
         
-        for (int i = 0; i < maxTables; i++) {
+        // ✅ 优化策略：保底返回Top-5表 + 高置信度标记（不再硬性截断）
+        int guaranteedCount = Math.min(similarities.size(), 5); // 保底至少返回5个表
+        
+        for (int i = 0; i < guaranteedCount; i++) {
             Map.Entry<String, Double> entry = similarities.get(i);
+            result.add(entry.getKey());
+            
             if (entry.getValue() >= similarityThreshold) {
-                result.add(entry.getKey());
+                log.debug("[VectorRetriever] 高置信度表: {} (相似度: {})", 
+                    entry.getKey(), String.format("%.3f", entry.getValue()));
             } else {
-                log.info("[VectorRetriever] 过滤低相关性表: {} (相似度: {} < 阈值: {})", 
+                log.debug("[VectorRetriever] 低置信度表(保底召回): {} (相似度: {} < 阈值: {})", 
                     entry.getKey(), String.format("%.3f", entry.getValue()), String.format("%.3f", similarityThreshold));
-                break; // 由于已排序，后续表的相关性更低，直接跳出
             }
         }
         
@@ -217,8 +246,9 @@ public class VectorRetriever {
             }
             
             // ✅ 新增：L3 记录到语义索引（Jaccard降级方案）
+            // ⚠️ 注意：向量检索阶段还不知道用户评分，传null表示未评分，允许记录
             if (cacheService != null && !result.isEmpty()) {
-                cacheService.recordQueryToSemanticIndex(datasourceId, query, result);
+                cacheService.recordQueryToSemanticIndex(datasourceId, query, result, null);
                 log.debug("[VectorRetriever] Jaccard语义索引已更新: datasourceId={}, query='{}'", 
                     datasourceId, query);
             }
@@ -289,6 +319,45 @@ public class VectorRetriever {
     }
     
     /**
+     * ✅ 新增：动态计算相似度阈值
+     * 
+     * @param query 用户查询
+     * @param similarities 所有表的相似度列表(已排序)
+     * @return 动态阈值
+     */
+    private double calculateDynamicThreshold(String query, List<Map.Entry<String, Double>> similarities) {
+        // ✅ 基础阈值提高: 0.45 → 0.50 (更严格过滤边缘相关表)
+        double baseThreshold = 0.50;
+        
+        if (similarities.isEmpty()) {
+            return baseThreshold;
+        }
+        
+        // 1. 根据查询长度调整
+        int queryLength = query.length();
+        if (queryLength <= 5) {
+            // 短查询：降低阈值，容忍度高
+            baseThreshold -= 0.10;
+        } else if (queryLength > 15) {
+            // 长查询：提高阈值，更严格
+            baseThreshold += 0.10;
+        }
+        
+        // 2. 根据最高相似度调整
+        double maxSimilarity = similarities.get(0).getValue();
+        if (maxSimilarity > 0.7) {
+            // 最高相似度高：说明匹配明确，可以降低阈值召回更多相关表
+            baseThreshold -= 0.05;
+        } else if (maxSimilarity < 0.4) {
+            // 最高相似度低：说明匹配不明确，提高阈值避免误召回
+            baseThreshold += 0.10;
+        }
+        
+        // 3. 确保阈值在合理范围 [0.30, 0.60]
+        return Math.max(0.30, Math.min(0.60, baseThreshold));
+    }
+    
+    /**
      * ✅ 新增：查询文本归一化 - 去除可变实体，保留查询结构
      */
     private String normalizeQuery(String query) {
@@ -323,12 +392,8 @@ public class VectorRetriever {
         // 5. 去除具体金额
         normalized = normalized.replaceAll("\\d+[万千元亿]?(?:以上|以下|之间)?", "{AMOUNT}");
         
-        // 6. 去除商品品牌/型号（常见品牌）
-        String[] brands = {"苹果", "华为", "小米", "OPPO", "vivo", "三星", "索尼", "海尔", "美的", "格力",
-                          "联想", "戴尔", "惠普", "华硕", "ThinkPad", "MacBook", "iPhone", "iPad"};
-        for (String brand : brands) {
-            normalized = normalized.replaceAll(brand, "{BRAND}");
-        }
+        // ✅ 注意：品牌/商品等行业特定实体不在这里处理
+        // 应通过 IndustryConceptExtension.getBusinessEntityPatterns() 配置
         
         return normalized.trim();
     }

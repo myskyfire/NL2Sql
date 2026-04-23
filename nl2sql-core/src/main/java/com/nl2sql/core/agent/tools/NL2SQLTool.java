@@ -199,7 +199,8 @@ public class NL2SQLTool {
             
             publishProgress("generating_sql", "🔍 正在分析问题...");
             
-            // 0. 同义词扩展（增强语义理解）
+            // 0. 同义词扩展（增强语义理解）--这里坑比较深，春错的同义词替换有可能导致整个查询完全不可用，目前只支持行业
+            //概念扩展，并且一定要慎重
             String expandedQuery = synonymService.expandSynonyms(query, datasourceId);
             if (!expandedQuery.equals(query)) {
                 log.info("[NL2SQLTool] 查询扩展: {} -> {}", query, expandedQuery);
@@ -233,13 +234,14 @@ public class NL2SQLTool {
                     datasourceId, new ArrayList<>(allTables));
                 
                 // 继续后续逻辑...
-                return generateSQLWithTables(expandedQuery, allTables, schemaInfo, relationshipInfo, datasourceId, query);
+                return generateSQLWithTables(expandedQuery, allTables, schemaInfo, relationshipInfo, datasourceId, query, null);
             }
             
             // 2. 迭代式表发现 + 回溯机制
             Set<String> allTables = new HashSet<>(initialTables);
             boolean needsClarification = false;
             String clarificationMessage = "";
+            String lastLlmResponse = null; // ✅ 保存最后一次LLM响应，用于判断是否需要扩展
                         
             for (int iteration = 0; iteration < 3; iteration++) {  // 最多3轮迭代
                 log.info("[NL2SQLTool] 第{}轮迭代，当前表数量: {}", iteration + 1, allTables.size());
@@ -256,6 +258,7 @@ public class NL2SQLTool {
                 publishProgress("llm_selecting_tables", "🤖 AI分析表依赖关系...");
                 String checkPrompt = buildTableCheckPrompt(expandedQuery, schemaInfo, relationshipInfo, datasourceId);
                 String llmResponse = modelRouter.smartGenerateSQL(checkPrompt, expandedQuery);
+                lastLlmResponse = llmResponse; // ✅ 保存最后一次响应
                             
                 log.info("[NL2SQLTool] ========== LLM原始响应 ==========");
                 log.info("[NL2SQLTool] {}", llmResponse);
@@ -410,7 +413,7 @@ public class NL2SQLTool {
             }
             
             // 5. 调用独立方法生成 SQL（支持单数据源快速路径和多数据源完整流程）
-            return generateSQLWithTables(expandedQuery, allTables, "", "", datasourceId, query);
+            return generateSQLWithTables(expandedQuery, allTables, "", "", datasourceId, query, lastLlmResponse);
             
         } catch (Exception e) {
             log.error("[NL2SQLTool] 生成SQL失败", e);
@@ -423,7 +426,7 @@ public class NL2SQLTool {
      */
     private String generateSQLWithTables(String expandedQuery, Set<String> allTables, 
                                         String schemaInfo, String relationshipInfo,
-                                        Long datasourceId, String originalQuery) {
+                                        Long datasourceId, String originalQuery, String llmResponse) {
         try {
             // 1. RAG 检索相似问答对（中等复杂度查询）
             String ragEnhancement = "";
@@ -486,22 +489,41 @@ public class NL2SQLTool {
             
             publishProgress("expanding_relationships", "🔗 分析表关联关系...");
             
+            // ⚠️ 关键：只在LLM明确请求缺失表时才进行智能扩展
+            // 如果LLM在追问阶段已确认"表已足够"，则不强制扩展，尊重LLM判断
+            boolean shouldExpand = false;
+            
+            // 检查是否有missing_tables信号（说明LLM知道自己缺表）
+            if (llmResponse != null && llmResponse.contains("missing_tables")) {
+                shouldExpand = true;
+                log.info("[NL2SQLTool] 检测到LLM请求缺失表，启用智能扩展");
+            }
+            
             // 第一次：基于LLM选的表获取关联关系
             String fullRelationshipInfo = relationshipInfo;
-            if (fullRelationshipInfo.isEmpty()) {
+            if (fullRelationshipInfo.isEmpty() && shouldExpand) {
                 fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
                     datasourceId, new ArrayList<>(allTables));
             }
             
             // 从关联关系中提取所有涉及的表名，并添加到expandedTables
-            if (!fullRelationshipInfo.isEmpty()) {
+            if (shouldExpand && !fullRelationshipInfo.isEmpty()) {
                 java.util.regex.Pattern tablePattern = java.util.regex.Pattern.compile("\\b(\\w+)\\.\\w+\\s*->\\s*(\\w+)\\.\\w+");
                 java.util.regex.Matcher matcher = tablePattern.matcher(fullRelationshipInfo);
-                while (matcher.find()) {
+                
+                int expandedCount = 0;
+                int maxExpansion = 2; // 最多扩展2个表，避免过度扩展
+                
+                while (matcher.find() && expandedCount < maxExpansion) {
                     String sourceTable = matcher.group(1).toLowerCase();
                     String targetTable = matcher.group(2).toLowerCase();
-                    expandedTables.add(sourceTable);
-                    expandedTables.add(targetTable);
+                    
+                    // 只扩展不在原表列表中的表
+                    if (!allTables.contains(targetTable)) {
+                        expandedTables.add(targetTable);
+                        expandedCount++;
+                        log.info("[NL2SQLTool] 智能扩展表: {} -> {}", sourceTable, targetTable);
+                    }
                 }
                 
                 if (expandedTables.size() > allTables.size()) {
@@ -511,6 +533,8 @@ public class NL2SQLTool {
                     log.info("[NL2SQLTool] 新增表: {}", newTables);
                     publishProgress("relationships_expanded", "🔗 基于关联关系扩展至 " + expandedTables.size() + " 张表");
                 }
+            } else if (!shouldExpand) {
+                log.info("[NL2SQLTool] LLM已确认表足够，跳过自动扩展，使用原始表列表: {}", allTables);
             }
             
             // ⚠️ 关键：基于扩展后的表重新获取完整的关联关系
@@ -569,23 +593,36 @@ public class NL2SQLTool {
                 }
             }
             
-            // ✅ 关键：明确列出可用表清单，强化约束
+            // ✅ 关键：明确列出可用表清单，分级提示（不再硬性限制）
             String availableTablesList = String.join(", ", expandedTables);
             
             publishProgress("generating_final_sql", "🤖 生成最终SQL...");
             
             String sqlPrompt = String.format(
                 "你是一个MySQL SQL专家。根据以下数据库结构和用户问题，生成一条MySQL查询SQL。\n\n" +
-                "⚠️ **重要约束：你只能使用以下 %d 张表**：%s\n" +
-                "**严禁使用未列出的任何表！**如果需要的表不在上述列表中，说明表选择阶段有误，请基于现有表生成SQL。\n\n" +
+                "📋 **可用表清单（共 %d 张）**：%s\n" +
+                "💡 **建议**：优先使用与用户问题最相关的表。如果单表无法满足需求，可以根据'表之间的关联关系'进行JOIN。\n" +
+                "⚠️ **注意**：严禁使用上述列表之外的任何表！\n\n" +
                 "数据库表结构：\n%s\n\n" +
                 "%s" +
                 "%s" +
                 "%s" +  // ✅ Layer 1: 负面示例
+                "⏰ **时间查询关键区分（重要）**：\n" +
+                "- ❌ 错误理解：'查询2026年4月10号的订单' → WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY ...\n" +
+                "- ✅ 正确理解：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （单表查询，不要GROUP BY）\n" +
+                "- **判断规则**：用户说'X月X号'或'X年X月X日'是查具体某一天的数据，不是按天统计！\n\n" +
+                "🚫 **严禁同义词替换（极其重要）**：\n" +
+                "- 永远不要对用户原句做字面同义词替换改写，不要把词语强行换成近义词\n" +
+                "- 若问句中已经出现具体日期、具体数字、具体名称、具体对象等明确实体：\n" +
+                "  所有代词：当天、当日、该月、这家、此项、该商品、其上、对应等\n" +
+                "  一律就近绑定前面已出现的具体实体\n" +
+                "- 严禁私自泛化替换成全局默认值：今天、当前本月、全部、本店、系统当前时间\n" +
+                "- 生成 SQL 禁止同时出现固定指定值 + 系统动态当前值，避免逻辑冲突\n\n" +
                 "用户问题：%s\n\n" +
                 "要求：\n" +
                 "1. 只输出SQL语句，不要包含```sql或其他标记\n" +
-                "2. **严格限制：只能使用上面'数据库表结构'中列出的表和字段**\n" +
+                "2. **表使用规范**：\n" +
+                "   - 优先使用'可用表清单'中的表\n" +
                 "   - ❌ 错误：SELECT u.province ... FROM orders o JOIN user_addresses ua ... （u表不在FROM/JOIN中）\n" +
                 "   - ✅ 正确：SELECT ua.province ... FROM orders o JOIN user_addresses ua ... （ua在JOIN中）\n" +
                 "   - **所有SELECT中的字段必须属于FROM或JOIN中的表**\n" +
@@ -614,6 +651,10 @@ public class NL2SQLTool {
                 "   - 按年统计：DATE_FORMAT(created_at, '%%Y') AS '订单年份'\n" +
                 "   - ❌ 错误：DATE(created_at) 会返回带时分秒的格式\n" +
                 "   - ✅ 正确：DATE_FORMAT(created_at, '%%Y-%%m-%%d') 只返回日期部分\n" +
+                "   - ⚠️ **重要区分**：\n" +
+                "     * **指定具体日期**：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （不要GROUP BY）\n" +
+                "     * **按天分组统计**：'统计最近7天每天的订单数' → GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d') （需要GROUP BY）\n" +
+                "     * **关键判断**：用户说'X月X号'是查那一天的数据，不是按天分组！\n" +
                 "8. **ORDER BY 别名一致性规则（重要）**：\n" +
                 "   - ⚠️ **强制规则**：ORDER BY 中使用的字段名或别名，必须与 SELECT 中定义的完全一致\n" +
                 "   - 错误示例：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY order_date\n" +
@@ -633,8 +674,6 @@ public class NL2SQLTool {
                 "   - 错误示例：JOIN user_addresses ua ON orders.user_id = ua.user_id （一个用户可能有多个地址，导致订单金额重复计算）\n" +
                 "   - 正确示例：JOIN user_addresses ua ON orders.user_id = ua.user_id AND ua.is_default = 1 （只取默认地址）\n" +
                 "   - 或者优先使用主表的字段：直接使用users表的地区字段，而非user_addresses\n" +
-                "   - 只有在完全没有关联关系信息且确实需要多表JOIN时，才返回'CLARIFY_RELATIONSHIP:表A,表B'\n" +
-                "   - 当前场景已有明确的关联关系，请不要返回CLARIFY_RELATIONSHIP\n" +
                 "10. **⚠️ 语义一致性强制规则（重要）**：\n" +
                 "    - **对于相同语义的查询（如'查询用户X的订单'），必须保持SQL结构完全一致**\n" +
                 "    - 例如：'查询用户张三的订单'和'查询用户李四的订单'应该生成相同的SQL结构，只是WHERE条件不同\n" +

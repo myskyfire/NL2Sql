@@ -30,6 +30,9 @@ public class FeedbackLearningService {
     @Autowired(required = false)
     private LLMService llmService;
     
+    @Autowired(required = false)
+    private com.nl2sql.core.cache.MetadataCacheService metadataCacheService;
+    
     /**
      * 处理低分反馈，触发Agent学习修正
      * 
@@ -55,6 +58,12 @@ public class FeedbackLearningService {
             
             // 3. 标记为负面示例（供后续过滤）
             markAsNegativeExample(feedbackId, errorCategories);
+            
+            // ✅ 新增：从L3语义索引中移除低分查询，避免污染缓存
+            if (metadataCacheService != null) {
+                metadataCacheService.removeFromSemanticIndex(null, question); // datasourceId暂时传null，需要从feedback表查询
+                log.info("[反馈学习] 已从L3语义索引移除: query='{}'", question);
+            }
             
             // 4. ✅ 已禁用：不再调用LLM重新生成SQL，只记录用户反馈
             // autoCorrectAndSave(question, generatedSql, feedbackText, errorCategories);

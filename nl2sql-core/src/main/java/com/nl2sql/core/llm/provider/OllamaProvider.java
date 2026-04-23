@@ -164,6 +164,7 @@ public class OllamaProvider implements LLMProvider {
             }
             
             String jsonBody = objectMapper.writeValueAsString(requestBody);
+            log.info("调用LLM,json body is {}",jsonBody);
             
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/chat"))

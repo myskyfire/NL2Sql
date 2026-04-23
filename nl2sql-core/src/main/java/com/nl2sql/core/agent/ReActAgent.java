@@ -107,7 +107,7 @@ public class ReActAgent {
                 Map<String, Object> llmResponse = llmService.generateWithTools(messages, 0.7, toolsDef);
                 
                 // 调试：打印完整响应
-                log.debug("[ReActAgent] LLM 完整响应: {}", objectMapper.writeValueAsString(llmResponse));
+                log.info("[ReActAgent] LLM 完整响应: {}", objectMapper.writeValueAsString(llmResponse));
                 
                 // 解析响应
                 Map<String, Object> message = (Map<String, Object>) llmResponse.get("message");
