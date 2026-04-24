@@ -2,8 +2,10 @@ package com.nl2sql.core.rag;
 
 import com.nl2sql.core.cache.QueryCacheService;
 import com.nl2sql.core.rag.dto.SQLFeedbackRequest;
+import com.nl2sql.common.util.QueryNormalizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +38,9 @@ public class SQLFeedbackService {
     
     @Autowired(required = false)
     private com.nl2sql.core.cache.MetadataCacheService metadataCacheService;
+    
+    @Autowired(required = false)
+    private StringRedisTemplate redisTemplate;
     
     /**
      * 提交SQL反馈
@@ -125,11 +130,19 @@ public class SQLFeedbackService {
                 log.warn("低分反馈 [{}星]: question={}, reason={}", 
                     request.getRating(), request.getQuestion(), request.getFeedbackText());
                 
-                // ✅ 关键：清除该问题的 SQL 缓存（避免下次仍返回错误 SQL）
+                // ✅ 关键修复：清除该问题的 SQL 缓存（使用规范化查询文本）
                 if (queryCacheService != null) {
                     try {
+                        String normalizedQuery = normalizeQuery(request.getQuestion());
+                        // 同时清除原始问题和规范化后的key
                         queryCacheService.invalidateCache(request.getQuestion());
-                        log.info("[反馈处理] ✅ 已清除 SQL 缓存: question={}", request.getQuestion());
+                        
+                        // ✅ 新增：清除模板缓存（Redis key: query_cache:query:{md5}）
+                        String redisKey = "query_cache:query:" + md5Hash(normalizedQuery);
+                        redisTemplate.delete(redisKey);
+                        
+                        log.info("[反馈处理] ✅ 已清除 SQL 缓存: question={}, normalized={}", 
+                            request.getQuestion(), normalizedQuery);
                     } catch (Exception e) {
                         log.warn("[反馈处理] 清除缓存失败", e);
                     }
@@ -201,10 +214,13 @@ public class SQLFeedbackService {
                     Long existingId = existingItems.get(0).getId();
                     float scoreChange = calculateScoreChange(rating);
                     ragKnowledgeBaseService.updateQualityScore(existingId, scoreChange);
-                    
+                                
                     log.info("[反馈同步] ✅ 发现相似示例，更新质量评分: id={}, change={}", 
                         existingId, scoreChange);
-                    return;
+                                
+                    // ✅ 关键修复：即使RAG已存在，仍需注入表缓存和SQL模板
+                    // 因为用户可能对同一问题的不同参数（如3天→7天）给出新反馈
+                    return;  // 仅跳过RAG新增，继续执行后续的injectTableSelectionToCache
                 }
             }
             
@@ -249,41 +265,72 @@ public class SQLFeedbackService {
             
         try {
             String question = request.getQuestion();
-            String sql = request.getGeneratedSql();
+            // ✅ 关键修复：优先使用executedSql（实际执行的SQL），降级为generatedSql
+            String sql = (request.getExecutedSql() != null && !request.getExecutedSql().trim().isEmpty()) 
+                ? request.getExecutedSql() 
+                : request.getGeneratedSql();
             int rating = request.getRating();
                 
-            // 1. 从 SQL中提取实际使用的表
-            java.util.Set<String> usedTables = extractTablesFromSQL(sql);
-            if (usedTables.isEmpty()) {
-                log.warn("[表缓存注入] 无法从SQL提取表: sql={}", sql);
-                return;
-            }
-                
-            log.info("[表缓存注入] 开始处理: rating={}, question={}, tables={}", 
-                rating, question, usedTables);
-                
-            // 2. 获取datasourceId（从nl2sql_query_log查询）
+            // 1. ✅ 获取datasourceId和usedTables（从nl2sql_query_log查询）
             Long datasourceId = null;
+            List<String> usedTablesFromLog = null;
             if (request.getSessionId() != null) {
                 try {
                     List<Map<String, Object>> logs = jdbcTemplate.queryForList(
-                        "SELECT datasource_id FROM nl2sql_query_log WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+                        "SELECT datasource_id, selected_tables FROM nl2sql_query_log WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
                         request.getSessionId()
                     );
                     if (!logs.isEmpty()) {
-                        datasourceId = ((Number) logs.get(0).get("datasource_id")).longValue();
+                        Object dsIdObj = logs.get(0).get("datasource_id");
+                        if (dsIdObj != null) {
+                            datasourceId = ((Number) dsIdObj).longValue();
+                        }
+                        
+                        // ✅ 关键修复：从日志中获取selected_tables
+                        Object tablesObj = logs.get(0).get("selected_tables");
+                        if (tablesObj != null && tablesObj instanceof String) {
+                            String tablesJson = (String) tablesObj;
+                            if (!tablesJson.trim().isEmpty()) {
+                                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                @SuppressWarnings("unchecked")
+                                List<String> tablesList = mapper.readValue(tablesJson, List.class);
+                                usedTablesFromLog = tablesList;
+                                log.info("[表缓存注入] ✅ 从日志获取表列表: {}", usedTablesFromLog);
+                            }
+                        }
                     }
                 } catch (Exception e) {
-                    log.warn("[表缓存注入] 查询datasourceId失败", e);
+                    log.warn("[表缓存注入] 查询datasourceId/usedTables失败", e);
                 }
             }
-                
+            
             if (datasourceId == null) {
                 log.warn("[表缓存注入] 无法获取datasourceId，跳过");
                 return;
             }
                 
-            // 3. 注入到L2模糊向量缓存（归一化key）
+            // 2. ✅ 关键修复：优先级顺序：传入的usedTables > 日志中的selected_tables > 从SQL提取
+            java.util.Set<String> usedTables;
+            if (request.getUsedTables() != null && !request.getUsedTables().isEmpty()) {
+                usedTables = new HashSet<>(request.getUsedTables());
+                log.info("[表缓存注入] ✅ 使用传入的表列表: {}", usedTables);
+            } else if (usedTablesFromLog != null && !usedTablesFromLog.isEmpty()) {
+                usedTables = new HashSet<>(usedTablesFromLog);
+                log.info("[表缓存注入] ✅ 使用日志中的表列表: {}", usedTables);
+            } else {
+                // 从 SQL中提取实际使用的表
+                usedTables = extractTablesFromSQL(sql);
+                if (usedTables.isEmpty()) {
+                    log.warn("[表缓存注入] ❌ 无法从SQL提取表: sql={}", sql);
+                    return;
+                }
+                log.info("[表缓存注入] ⚠️ 从SQL提取表: {}", usedTables);
+            }
+                
+            log.info("[表缓存注入] 开始处理: rating={}, question={}, tables={}", 
+                rating, question, usedTables);
+                
+            // 3. ✅ 关键修复：注入到L2模糊向量缓存（使用归一化key）
             String normalizedQuery = normalizeQuery(question);
             List<String> tableList = new ArrayList<>(usedTables);
             metadataCacheService.putFuzzyVectorRetrieval(normalizedQuery, tableList);
@@ -291,8 +338,8 @@ public class SQLFeedbackService {
             log.info("[表缓存注入] ✅ 已注入L2缓存: question='{}', normalized='{}', tables={}", 
                 question, normalizedQuery, tableList);
                 
-            // 4. 注入到L3语义索引（供Jaccard匹配）
-            metadataCacheService.recordQueryToSemanticIndex(datasourceId, question, tableList, rating);
+            // 4. ✅ 关键修复：注入到L3语义索引（使用归一化查询）
+            metadataCacheService.recordQueryToSemanticIndex(datasourceId, normalizedQuery, tableList, rating);
                 
             log.info("[表缓存注入] ✅ 已注入L3语义索引: datasourceId={}, tables={}", 
                 datasourceId, tableList);
@@ -300,6 +347,8 @@ public class SQLFeedbackService {
             // ✅ P0优化：5分反馈额外注入SQL模板到QueryCache
             if (rating == 5 && queryCacheService != null) {
                 injectSQLTemplateToCache(question, sql, usedTables, normalizedQuery, rating);
+            } else if (rating == 4) {
+                log.debug("[表缓存注入] 4分反馈，跳过SQL模板注入（仅5分）");
             }
                 
             // ✅ P1优化：提取列名映射并缓存
@@ -390,8 +439,8 @@ public class SQLFeedbackService {
             cachedResult.setUserRating(rating);
             cachedResult.setNormalizedQuery(normalizedQuery);
             
-            // 使用归一化查询作为key，提高泛化能力
-            queryCacheService.putToCache(normalizedQuery, cachedResult, 1440); // 缓存24小时
+            // ✅ 关键修复：使用规范化查询文本作为key，存入模板缓存
+            queryCacheService.putTemplateToCache(normalizedQuery, cachedResult, 1440); // 缓存24小时
             
             log.info("[SQL模板缓存] ✅ 5分反馈已注入: question='{}', normalized='{}'", 
                 question, normalizedQuery);
@@ -532,26 +581,11 @@ public class SQLFeedbackService {
     }
     
     /**
-     * ✅ 归一化查询文本（用于缓存key）
-     * 去除时间、数字等变量，保留语义结构
+     * ✅ 归一化查询文本（用于缓存key）- 与SchemaRetrievalService保持一致
+     * 业界标准：https://help.aliyun.com/zh/polardb/polardb-for-mysql/llm-based-nl2sql
      */
     private String normalizeQuery(String query) {
-        if (query == null) return "";
-        
-        // 替换数字为占位符
-        String normalized = query.replaceAll("\\d+", "<NUM>");
-        
-        // 替换具体日期为占位符
-        normalized = normalized.replaceAll("\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}", "<DATE>");
-        
-        // 替换相对时间为占位符
-        normalized = normalized.replaceAll("最近\\d+天", "最近<NUM>天");
-        normalized = normalized.replaceAll("过去\\d+天", "过去<NUM>天");
-        
-        // 去除多余空格
-        normalized = normalized.trim().replaceAll("\\s+", " ");
-        
-        return normalized;
+        return QueryNormalizer.normalize(query);
     }
     
     /**
@@ -698,6 +732,29 @@ public class SQLFeedbackService {
         } catch (Exception e) {
             log.error("[默认评分] 应用默认评分失败: sessionId={}", sessionId, e);
             return false;
+        }
+    }
+    
+    /**
+     * ✅ MD5哈希（用于Redis key生成）
+     */
+    private String md5Hash(String input) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            byte[] hashBytes = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hashBytes) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (Exception e) {
+            log.error("[MD5] 哈希失败", e);
+            return input.hashCode() + ""; // 降级方案
         }
     }
 }

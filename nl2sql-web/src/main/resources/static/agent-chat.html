@@ -394,6 +394,27 @@
             document.getElementById('chatInput').focus();
         };
         
+        // ✅ 新增：统一的 fetch 封装，自动处理 401 Token 过期
+        async function authenticatedFetch(url, options = {}) {
+            try {
+                const response = await fetch(url, options);
+                
+                // ✅ 检查 Token 是否过期（401 未授权）
+                if (response.status === 401) {
+                    console.warn('⚠️ Token 已过期，跳转到登录页');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('userInfo');
+                    window.location.href = '/login.html';
+                    return null; // 阻止后续处理
+                }
+                
+                return response;
+            } catch (error) {
+                console.error('❌ 网络请求失败:', error);
+                throw error;
+            }
+        }
+        
         // 发送消息
         async function sendMessage(customMessage = null) {
             const input = document.getElementById('chatInput');
@@ -413,7 +434,7 @@
             showTypingIndicator();
             
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -425,6 +446,8 @@
                         datasourceId: currentContext?.datasourceId || null  // ✅ 传递当前上下文中的数据源ID
                     })
                 });
+                
+                if (!response) return; // Token过期，已跳转
                 
                 const result = await response.json();
                 removeTypingIndicator();
@@ -865,7 +888,7 @@
             
             try {
                 // 发送回答，带上之前的 datasourceId
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -901,7 +924,7 @@
             }
             
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -946,7 +969,7 @@
             }
             
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -998,7 +1021,7 @@
             
             try {
                 // 发送结构化意图，让 Agent 自主决策
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1164,7 +1187,7 @@
             showTypingIndicator();
             
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1216,7 +1239,7 @@
             showTypingIndicator();
             
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1360,7 +1383,7 @@
             showTypingIndicator();
             
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1496,7 +1519,7 @@
         // 发送消息并指定数据源
         async function sendMessagewithDatasource(message, datasourceId) {
             try {
-                const response = await fetch('/api/agent/chat', {
+                const response = await authenticatedFetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1540,7 +1563,7 @@
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
                     
-                    const response = await fetch('/api/translate/column-names', {
+                    const response = await authenticatedFetch('/api/translate/column-names', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2004,7 +2027,7 @@
             
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/feedback/submit', {
+                const response = await authenticatedFetch('/api/feedback/submit', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -2066,7 +2089,7 @@
                 };
                 console.log('[SQL反馈] 请求体:', requestBody);
                 
-                const response = await fetch('/api/feedback/submit', {
+                const response = await authenticatedFetch('/api/feedback/submit', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',

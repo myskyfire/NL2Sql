@@ -55,22 +55,17 @@ class StandardQuerySkill {
             SchemaRetrievalService schemaRetrievalService = context.getBean(SchemaRetrievalService.class)
             SQLExecutionTool sqlExecutionTool = context.getBean(SQLExecutionTool.class)
             LLMService llmService = context.getBean(LLMService.class)
-            SQLRiskAnalyzer riskAnalyzer = null
-            try {
-                riskAnalyzer = context.getBean(SQLRiskAnalyzer.class)
-            } catch (Exception e) {
-                println "[StandardQuerySkill] SQLRiskAnalyzer 未配置，跳过风险评估"
-            }
+            SQLRiskAnalyzer riskAnalyzer = context.getBean(SQLRiskAnalyzer.class)
             
             // ✅ 行业概念扩展点（可选）
             def conceptExtensions = []
-            try {
-                conceptExtensions = context.getBeansOfType(com.nl2sql.core.llm.extension.IndustryConceptExtension.class)
-                println "[StandardQuerySkill] 加载到 ${conceptExtensions.size()} 个行业扩展点"
-            } catch (Exception e) {
-                println "[StandardQuerySkill] 未找到行业扩展点: ${e.message}"
-            }
-            
+
+            def appContext = context.getClass().getDeclaredField("applicationContext")
+            appContext.setAccessible(true)
+            def applicationContext = appContext.get(context)
+            conceptExtensions = applicationContext.getBeansOfType(com.nl2sql.core.llm.extension.IndustryConceptExtension.class).values()
+            println "[StandardQuerySkill] 加载到 ${conceptExtensions.size()} 个行业扩展点"
+
             // ✅ 检测用户是否要求生成图表（如“并生成柱状图”）
             String chartType = extractChartTypeFromQuestion(question)
             if (chartType != null) {
@@ -86,6 +81,13 @@ class StandardQuerySkill {
             publishEvent(context, sessionId, "retrieving_schema", "🔍 检索表结构...")
             String schema = schemaRetrievalService.retrieveSchema(question, datasourceId)
             publishEvent(context, sessionId, "schema_retrieved", "✅ 表结构检索完成")
+            
+            // ✅ 关键优化：从schema中提取表名，设置到ThreadLocal供TableSelectionOrchestrator复用
+            List<String> retrievedTables = extractTableNamesFromSchema(schema)
+            if (retrievedTables != null && !retrievedTables.isEmpty()) {
+                com.nl2sql.core.service.TableSelectionOrchestrator.setPreRetrievedTables(retrievedTables)
+                println "[StandardQuerySkill] ⚡ 已设置预检索表列表: ${retrievedTables}"
+            }
                         
             // Step 2: 生成SQL
             println "[StandardQuerySkill] Step 2: 生成SQL"
@@ -1178,6 +1180,26 @@ ${sql}
         void setSuggestion(String value) { this.suggestion = value }
         String getExpectedImprovement() { return expectedImprovement }
         void setExpectedImprovement(String value) { this.expectedImprovement = value }
+    }
+    
+    /**
+     * ✅ 新增：从 schema 文本中提取表名列表
+     * @param schema schema文本（格式："\n表名: orders\n  - id (INT) [主键]\n  ..."）
+     * @return 表名列表
+     */
+    private List<String> extractTableNamesFromSchema(String schema) {
+        if (schema == null || schema.isEmpty()) {
+            return []
+        }
+        
+        List<String> tables = []
+        def matcher = schema =~ /\n表名:\s*(\w+)/
+        while (matcher.find()) {
+            String tableName = matcher.group(1).toLowerCase()
+            tables.add(tableName)
+        }
+        
+        return tables
     }
 }
 

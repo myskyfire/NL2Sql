@@ -84,7 +84,68 @@ public class QueryCacheService {
     }
     
     /**
-     * 将查询结果存入缓存
+     * ✅ 新增：从规范化查询文本检索5分SQL模板
+     * 
+     * @param normalizedQuery 规范化后的查询文本（如"查询最近<NUM>天订单列表"）
+     * @return 缓存结果，未命中返回null
+     */
+    public CachedResult getFromNormalizedQuery(String normalizedQuery) {
+        try {
+            if (normalizedQuery == null || normalizedQuery.trim().isEmpty()) {
+                return null;
+            }
+            
+            String redisKey = CACHE_PREFIX + "query:" + md5(normalizedQuery);
+            Object cached = redisTemplate.opsForValue().get(redisKey);
+            
+            if (cached != null) {
+                String json;
+                if (cached instanceof String) {
+                    json = (String) cached;
+                } else {
+                    json = objectMapper.writeValueAsString(cached);
+                }
+                
+                CachedResult result = objectMapper.readValue(json, CachedResult.class);
+                
+                log.info("[QueryCache] 模板命中: query={}, rating={}", 
+                    normalizedQuery, result.getUserRating());
+                
+                return result;
+            }
+            
+            log.debug("[QueryCache] 模板未命中: query={}", normalizedQuery);
+            return null;
+            
+        } catch (Exception e) {
+            log.error("[QueryCache] 读取失败", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 将5分SQL模板存入缓存（基于规范化查询文本）
+     * 
+     * @param normalizedQuery 规范化查询文本
+     * @param result 包含SQL模板的缓存结果
+     * @param ttlMinutes 缓存时间（分钟）
+     */
+    public void putTemplateToCache(String normalizedQuery, CachedResult result, int ttlMinutes) {
+        try {
+            String redisKey = CACHE_PREFIX + "query:" + md5(normalizedQuery);
+            String json = objectMapper.writeValueAsString(result);
+            redisTemplate.opsForValue().set(redisKey, json, ttlMinutes, TimeUnit.MINUTES);
+            
+            log.info("[QueryCache] 模板写入成功: query={}, rating={}, sql={}", 
+                normalizedQuery, result.getUserRating(), result.getSql());
+            
+        } catch (Exception e) {
+            log.error("[QueryCache] 模板写入失败", e);
+        }
+    }
+    
+    /**
+     * 将查询结果存入缓存（基于规范化SQL）
      * 
      * @param sql SQL语句
      * @param result 查询结果

@@ -245,9 +245,9 @@ public class MetadataCacheService {
                     queryCacheVectorService.findBestMatch(query, datasourceId);
                 
                 if (bestMatch != null && bestMatch.getScore() >= threshold) {
-                    // ✅ 二次校验：Jaccard关键词重叠度检查(阈值降低至0.25,避免误杀同义表达)
+                    // ✅ 二次校验：Jaccard关键词重叠度检查(阈值降低至0.15,允许时间词替换)
                     double jaccardScore = calculateKeywordOverlap(query, bestMatch.getCachedQuery());
-                    if (jaccardScore < 0.25) {
+                    if (jaccardScore < 0.15) {
                         log.warn("[MetadataCache] ⚠️ Chroma匹配但Jaccard校验失败: query='{}', similar='{}', vectorScore={}, jaccardScore={}", 
                             query, bestMatch.getCachedQuery(), String.format("%.3f", bestMatch.getScore()), String.format("%.3f", jaccardScore));
                         return null; // 拒绝低质量匹配
@@ -271,10 +271,10 @@ public class MetadataCacheService {
                                     .map(c -> c.getCachedQuery())
                                     .collect(java.util.stream.Collectors.toList());
                                 
-                                // 3. 调用Jina Reranker精排
-                                List<JinaReranker.RerankedDocument> reranked = 
-                                    jinaReranker.rerank(query, candidateDocs);
-                                
+                                // 3. 调用Jina Reranker精排 TODO 后面再放开
+                                /*List<JinaReranker.RerankedDocument> reranked =
+                                    jinaReranker.rerank(query, candidateDocs);*/
+                                List<JinaReranker.RerankedDocument> reranked = new ArrayList<>();
                                 if (!reranked.isEmpty()) {
                                     // 4. 取Top-1最佳匹配
                                     JinaReranker.RerankedDocument bestDoc = reranked.get(0);
@@ -518,6 +518,8 @@ public class MetadataCacheService {
         String[] words2 = tokenize(query2);
         
         if (words1.length == 0 || words2.length == 0) {
+            log.warn("[MetadataCache] ⚠️ 分词结果为空: query1='{}' ({}个词), query2='{}' ({}个词)", 
+                query1, words1.length, query2, words2.length);
             return 0.0;
         }
         
@@ -547,7 +549,14 @@ public class MetadataCacheService {
         double bm25Score = totalWeight > 0 ? weightedScore / (set1.size() + set2.size()) : 0.0;
         
         // ✅ 最终得分: 基础Jaccard占40%, BM25加权占60%
-        return baseJaccard * 0.4 + bm25Score * 0.6;
+        double finalScore = baseJaccard * 0.4 + bm25Score * 0.6;
+        
+        // ✅ 调试日志：输出详细分词信息
+        log.debug("[MetadataCache] Jaccard计算详情: query1='{}' -> {}, query2='{}' -> {}, intersection={}, union={}, baseJaccard={}, bm25Score={}, finalScore={}",
+            query1, Arrays.toString(words1), query2, Arrays.toString(words2), 
+            intersection, union, String.format("%.3f", baseJaccard), String.format("%.3f", bm25Score), String.format("%.3f", finalScore));
+        
+        return finalScore;
     }
     
     /**
@@ -558,15 +567,34 @@ public class MetadataCacheService {
             return new String[0];
         }
         
-        // 去除标点符号和空格
-        String cleaned = text.replaceAll("[\\s\\p{Punct}]+", " ");
-        
-        // 简单分词：按常见模式切分（实际项目建议使用HanLP或IK Analyzer）
-        // 这里采用保守策略：保留2字以上连续中文字符作为词
+        // ✅ 修复：先按常见分隔符切分，再提取2字以上连续中文字符
         List<String> tokens = new ArrayList<>();
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\u4e00-\\u9fa5]{2,}|[a-zA-Z0-9]+").matcher(cleaned);
-        while (matcher.find()) {
-            tokens.add(matcher.group());
+        
+        // 方法1：按"的"、"是"、"在"等常见助词切分
+        String[] segments = text.split("[的是在有个与和及或]");
+        
+        for (String segment : segments) {
+            if (segment.length() >= 2) {
+                // 提取2字以上的连续中文字符
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\u4e00-\\u9fa5]{2,}").matcher(segment);
+                while (matcher.find()) {
+                    tokens.add(matcher.group());
+                }
+            }
+        }
+        
+        // 方法2：如果方法1没分出词，尝试直接提取所有2字以上词组
+        if (tokens.isEmpty()) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\u4e00-\\u9fa5]{2,}").matcher(text);
+            while (matcher.find()) {
+                tokens.add(matcher.group());
+            }
+        }
+        
+        // 添加英文/数字词
+        java.util.regex.Matcher enMatcher = java.util.regex.Pattern.compile("[a-zA-Z0-9]+").matcher(text);
+        while (enMatcher.find()) {
+            tokens.add(enMatcher.group());
         }
         
         return tokens.toArray(new String[0]);

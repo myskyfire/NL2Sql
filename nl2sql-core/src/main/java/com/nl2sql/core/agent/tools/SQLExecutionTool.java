@@ -81,7 +81,7 @@ public class SQLExecutionTool {
                     
                     // 尝试修正SQL并重试
                     log.info("[SQLExecutionTool] 尝试修正SQL并重试 (attempt={})", attempt + 1);
-                    sql = attemptAutoCorrection(sql, result.getError(), errorType);
+                    sql = attemptAutoCorrection(sql, result.getError(), errorType, datasourceId);
                     continue;
                 }
                 
@@ -126,7 +126,7 @@ public class SQLExecutionTool {
                 }
                 
                 // 网络异常等可以重试
-                sql = attemptAutoCorrection(sql, e.getMessage(), ErrorType.NETWORK_ERROR);
+                sql = attemptAutoCorrection(sql, e.getMessage(), ErrorType.NETWORK_ERROR, datasourceId);
             }
         }
         
@@ -168,14 +168,14 @@ public class SQLExecutionTool {
     /**
      * 尝试自动修正SQL
      */
-    private String attemptAutoCorrection(String failedSql, String errorMessage, ErrorType errorType) {
+    private String attemptAutoCorrection(String failedSql, String errorMessage, ErrorType errorType, Long datasourceId) {
         switch (errorType) {
             case SYNTAX_ERROR:
             case TABLE_NOT_FOUND:
             case COLUMN_NOT_FOUND:
             case AMBIGUOUS_COLUMN:
-                // 调用 NL2SQLService 的 autoFixSQL 方法
-                return nl2sqlService.autoFixSQL(failedSql, errorMessage);
+                // ✅ 关键修复：传入 datasourceId，让 autoFixSQL 能获取表结构
+                return nl2sqlService.autoFixSQL(failedSql, errorMessage, datasourceId);
             
             case TIMEOUT:
                 // 超时错误，添加 LIMIT 限制

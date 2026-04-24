@@ -315,6 +315,15 @@ public class AgentChatService {
         if (request.getDatasourceId() != null && !response.containsKey("datasourceId")) {
             response.put("datasourceId", request.getDatasourceId());
         }
+        
+        // ✅ 新增：从 SessionContextManager 获取 selected_tables 并放入 response
+        if (sessionContextManager != null) {
+            java.util.List<String> selectedTables = sessionContextManager.getSelectedTables();
+            if (selectedTables != null && !selectedTables.isEmpty()) {
+                response.put("selectedTables", selectedTables);
+                log.debug("[enrichResponse] 已添加 selectedTables: {}", selectedTables);
+            }
+        }
     }
     
     /**
@@ -345,47 +354,60 @@ public class AgentChatService {
      * 记录查询日志到数据库
      */
     private void logQueryToDatabase(
-        ChatRequest request, 
-        Map<String, Object> response, 
+        ChatRequest request,
+        Map<String, Object> response,
         AuthService.UserInfo userInfo
     ) {
         if (jdbcTemplate == null) {
             log.debug("[查询日志] JdbcTemplate 未注入，跳过日志记录");
             return;
         }
-        
+            
         try {
             Boolean success = (Boolean) response.get("success");
             String sql = (String) response.get("sql");
+                
+            // ✅ 关键修复：无论成功失败都记录，确保 feedback 能获取 datasourceId
+            String insertSql = "INSERT INTO nl2sql_query_log " +
+                "(session_id, user_id, question, generated_sql, executed_sql, " +
+                "execution_success, row_count, execution_time_ms, datasource_id, selected_tables) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                
+            String sessionId = request.getSessionId() != null ? 
+                request.getSessionId() : "default_" + userInfo.getUserId();
+                
+            Integer rowCount = response.get("rowCount") != null ? 
+                (Integer) response.get("rowCount") : 0;
+            Long executionTime = response.get("executionTime") != null ? 
+                (Long) response.get("executionTime") : 0L;
             
-            if (success != null && success && sql != null && !sql.trim().isEmpty()) {
-                String insertSql = "INSERT INTO nl2sql_query_log " +
-                    "(session_id, user_id, question, generated_sql, executed_sql, " +
-                    "execution_success, row_count, execution_time_ms, datasource_id) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                
-                String sessionId = request.getSessionId() != null ? 
-                    request.getSessionId() : "default_" + userInfo.getUserId();
-                
-                Integer rowCount = response.get("rowCount") != null ? 
-                    (Integer) response.get("rowCount") : 0;
-                Long executionTime = response.get("executionTime") != null ? 
-                    (Long) response.get("executionTime") : 0L;
-                
-                jdbcTemplate.update(insertSql,
-                    sessionId,
-                    userInfo.getUserId(),
-                    request.getMessage(),
-                    sql,
-                    sql,
-                    success,
-                    rowCount,
-                    executionTime,
-                    request.getDatasourceId()
-                );
-                
-                log.debug("[查询日志] 记录成功: sessionId={}", sessionId);
+            // ✅ 新增：获取 selected_tables（从 TableSelectionOrchestrator 的 ThreadLocal）
+            String selectedTablesJson = null;
+            try {
+                List<String> tablesList = com.nl2sql.core.service.TableSelectionOrchestrator.getFinalSelectedTables();
+                if (tablesList != null && !tablesList.isEmpty()) {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    selectedTablesJson = mapper.writeValueAsString(tablesList);
+                    log.debug("[查询日志] 从ThreadLocal获取 selected_tables: {}", tablesList);
+                }
+            } catch (Exception e) {
+                log.debug("[查询日志] 获取 selected_tables 失败", e);
             }
+                
+            jdbcTemplate.update(insertSql,
+                sessionId,
+                userInfo.getUserId(),
+                request.getMessage(),
+                sql != null ? sql : "",
+                sql != null ? sql : "",
+                success != null ? success : false,
+                rowCount,
+                executionTime,
+                request.getDatasourceId(),
+                selectedTablesJson
+            );
+                
+            log.debug("[查询日志] 记录成功: sessionId={}, success={}", sessionId, success);
         } catch (Exception e) {
             log.warn("[查询日志] 记录失败", e);
         }
@@ -430,6 +452,15 @@ public class AgentChatService {
      * @return 摘要文本
      */
     private String extractSummaryFromResponse(String agentResponse) {
+        // ✅ 先检查是否为 JSON 格式
+        if (agentResponse == null || !agentResponse.trim().startsWith("{")) {
+            log.debug("[对话历史] 响应非 JSON 格式，直接截断保存");
+            if (agentResponse != null && agentResponse.length() > 1000) {
+                return agentResponse.substring(0, 1000) + "... [已截断]";
+            }
+            return agentResponse;
+        }
+        
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             Map<String, Object> response = mapper.readValue(agentResponse, Map.class);

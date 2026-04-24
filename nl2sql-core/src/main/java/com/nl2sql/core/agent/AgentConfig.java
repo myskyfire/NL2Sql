@@ -117,6 +117,9 @@ public class AgentConfig {
     private RetrieveTableSchemaTool retrieveTableSchemaTool;
     
     @Autowired(required = false)
+    private GenerateSQLTool generateSQLTool;  // ✅ 新增
+    
+    @Autowired(required = false)
     private GenerateSQLFromSchemaTool generateSQLFromSchemaTool;
     
     @Autowired(required = false)
@@ -632,9 +635,19 @@ public class AgentConfig {
                 String question = (String) args.get("question");
                 Long datasourceId = args.get("datasourceId") != null ? 
                     ((Number) args.get("datasourceId")).longValue() : dsId;
-                return retrieveTableSchemaTool.retrieveTableSchema(question, datasourceId);
-            }, "根据用户问题检索相关的表结构信息。这是Workflow专用原子能力，供声明式Workflow调用。输入问题和数据源ID，返回匹配的表名、字段列表和注释");
-            log.info("启用 RetrieveTableSchemaTool [Workflow]");
+                return retrieveTableSchemaTool.execute(question, datasourceId);
+            }, "根据用户问题检索相关的数据库表结构信息，返回表的字段、类型、注释等元数据");
+            log.info("启用 RetrieveTableSchemaTool");
+        }
+        
+        if (generateSQLTool != null) {  // ✅ 新增
+            agent.registerTool("generate_sql", (args, dsId, userId, username, userMessage) -> {
+                String question = (String) args.get("question");
+                Long datasourceId = args.get("datasourceId") != null ? 
+                    ((Number) args.get("datasourceId")).longValue() : dsId;
+                return generateSQLTool.execute(question, datasourceId);
+            }, "基于用户问题和数据源生成 SQL 查询语句（内部会自动检索表结构）");
+            log.info("启用 GenerateSQLTool");
         }
         
         if (generateSQLFromSchemaTool != null) {

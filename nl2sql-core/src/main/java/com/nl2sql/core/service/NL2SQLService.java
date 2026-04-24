@@ -318,8 +318,7 @@ public class NL2SQLService {
             String sqlPrompt = String.format(
                 "你是一个MySQL SQL专家。根据以下数据库结构和用户问题，生成一条MySQL查询SQL。\n\n" +
                 "📋 **可用表清单（共 %d 张）**：%s\n" +
-                "💡 **建议**：优先使用与用户问题最相关的表。如果单表无法满足需求，可以根据'表之间的关联关系'进行JOIN。\n" +
-                "⚠️ **注意**：严禁使用上述列表之外的任何表！\n\n" +
+                "💡 **建议**：优先使用与用户问题最相关的表。如果单表无法满足需求，可以根据'表之间的关联关系'进行JOIN。\n\n" +
                 "数据库表结构：\n%s\n\n" +
                 "%s" +
                 "%s" +
@@ -413,6 +412,122 @@ public class NL2SQLService {
             log.info("[NL2SQLService] 生成的SQL: {}", sql);
             sessionContextManager.publishProgress(this, "sql_generated", "✅ SQL生成完成");
             
+            // ✅ 关键修复：检测SQL中使用的表是否都在expandedTables中，如果有新表则补充schema并重新生成
+            Set<String> tablesInSQL = extractTablesFromSQL(sql);
+            Set<String> missingTables = new HashSet<>(tablesInSQL);
+            missingTables.removeAll(expandedTables);
+            
+            if (!missingTables.isEmpty()) {
+                log.warn("[NL2SQLService] ⚠️ SQL中使用了未提供schema的表: {}", missingTables);
+                log.warn("[NL2SQLService] 原始expandedTables: {}", expandedTables);
+                
+                // 补充缺失表的schema
+                expandedTables.addAll(missingTables);
+                String updatedSchemaInfo = buildTableSchemaInfo(new ArrayList<>(expandedTables), datasourceId);
+                String updatedRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                    datasourceId, new ArrayList<>(expandedTables));
+                
+                log.info("[NL2SQLService] 已补充表schema，重新生成SQL");
+                sessionContextManager.publishProgress(this, "regenerating_sql_with_full_schema", "⚠️ 检测到缺失表，补充schema后重新生成...");
+                
+                // 重新构建Prompt
+                String updatedAvailableTablesList = String.join(", ", expandedTables);
+                String updatedSqlPrompt = String.format(
+                    "你是一个MySQL SQL专家。根据以下数据库结构和用户问题，生成一条MySQL查询SQL。\n\n" +
+                    "📋 **可用表清单（共 %d 张）**：%s\n" +
+                    "💡 **建议**：优先使用与用户问题最相关的表。如果单表无法满足需求，可以根据'表之间的关联关系'进行JOIN。\n\n" +
+                    "数据库表结构：\n%s\n\n" +
+                    "%s" +
+                    "%s" +
+                    "%s" +  // ✅ Layer 1: 负面示例
+                    "⏰ **时间查询关键区分（重要）**：\n" +
+                    "- ❌ 错误理解：'查询2026年4月10号的订单' → WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY ...\n" +
+                    "- ✅ 正确理解：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （单表查询，不要GROUP BY）\n" +
+                    "- **判断规则**：用户说'X月X号'或'X年X月X日'是查具体某一天的数据，不是按天统计！\n\n" +
+                    "🚫 **严禁同义词替换（极其重要）**：\n" +
+                    "- 永远不要对用户原句做字面同义词替换改写，不要把词语强行换成近义词\n" +
+                    "- 若问句中已经出现具体日期、具体数字、具体名称、具体对象等明确实体：\n" +
+                    "  所有代词：当天、当日、该月、这家、此项、该商品、其上、对应等\n" +
+                    "  一律就近绑定前面已出现的具体实体\n" +
+                    "- 严禁私自泛化替换成全局默认值：今天、当前本月、全部、本店、系统当前时间\n" +
+                    "- 生成 SQL 禁止同时出现固定指定值 + 系统动态当前值，避免逻辑冲突\n\n" +
+                    "用户问题：%s\n\n" +
+                    "要求：\n" +
+                    "1. 只输出SQL语句，不要包含```sql或其他标记\n" +
+                    "2. **表使用规范**：\n" +
+                    "   - 优先使用'可用表清单'中的表\n" +
+                    "   - ❌ 错误：SELECT u.province ... FROM orders o JOIN user_addresses ua ... （u表不在FROM/JOIN中）\n" +
+                    "   - ✅ 正确：SELECT ua.province ... FROM orders o JOIN user_addresses ua ... （ua在JOIN中）\n" +
+                    "   - **所有SELECT中的字段必须属于FROM或JOIN中的表**\n" +
+                    "3. 添加LIMIT限制返回行数（但如果是GROUP BY统计查询，可以不设LIMIT或设为较大值）\n" +
+                    "4. **别名规范（重要）**：\n" +
+                    "   - **所有SELECT字段都必须使用 AS 指定中文别名**，这样前端表格会直接显示中文表头\n" +
+                    "   - 例如：SELECT category_name AS '分类名称', SUM(amount) AS '订单总金额', COUNT(*) AS '订单数量'\n" +
+                    "   - 聚合函数必须加别名：SUM(xxx) AS '总和', COUNT(*) AS '数量', AVG(xxx) AS '平均值'\n" +
+                    "   - 分组字段也必须加别名：GROUP BY 的字段也要 AS '中文名'\n" +
+                    "5. **重要：识别统计类问题并使用聚合函数**\n" +
+                    "   - ⚠️ **关键判断规则**：只有当用户明确要求'统计'、'汇总'、'合计'、'平均'、'分组'时，才使用 GROUP BY\n" +
+                    "   - ❌ 错误场景：用户问'查最近7天的订单'、'显示订单列表'、'查看所有订单' → 这是查询详情，不要加 GROUP BY\n" +
+                    "   - ✅ 正确场景：用户问'统计每天的订单数'、'按地区汇总销售额'、'各城市的平均金额' → 这是统计汇总，需要 GROUP BY\n" +
+                    "   - **判断依据**：如果用户想看'每条记录'，就不要 GROUP BY；如果想看'汇总数据'，才用 GROUP BY\n" +
+                    "   - 常用聚合函数：SUM()求和、COUNT()计数、AVG()平均、MAX()最大、MIN()最小\n" +
+                    "   - 例如（统计）：'统计每个地区的销售额' -> SELECT region, SUM(amount) FROM orders GROUP BY region\n" +
+                    "   - 例如（详情）：'查最近7天的订单' -> SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY\n" +
+                    "6. **SELECT字段规则**：\n" +
+                    "   - GROUP BY查询：SELECT中只能包含GROUP BY字段和聚合函数，不能直接选择非分组字段\n" +
+                    "   - 错误示例：SELECT user_id, province, SUM(amount) ... GROUP BY province （user_id不在GROUP BY中）\n" +
+                    "   - 正确示例：SELECT province, SUM(amount) ... GROUP BY province\n" +
+                    "7. **时间格式化规范**：\n" +
+                    "   - 如果用户要求按天/月/年统计（如'最近10天每天的订单金额'），必须使用 DATE_FORMAT() 函数格式化时间\n" +
+                    "   - 按天统计：DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期'\n" +
+                    "   - 按月统计：DATE_FORMAT(created_at, '%%Y-%%m') AS '订单月份'\n" +
+                    "   - 按年统计：DATE_FORMAT(created_at, '%%Y') AS '订单年份'\n" +
+                    "   - ❌ 错误：DATE(created_at) 会返回带时分秒的格式\n" +
+                    "   - ✅ 正确：DATE_FORMAT(created_at, '%%Y-%%m-%%d') 只返回日期部分\n" +
+                    "   - ⚠️ **重要区分**：\n" +
+                    "     * **指定具体日期**：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （不要GROUP BY）\n" +
+                    "     * **按天分组统计**：'统计最近7天每天的订单数' → GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d') （需要GROUP BY）\n" +
+                    "     * **关键判断**：用户说'X月X号'是查那一天的数据，不是按天分组！\n" +
+                    "8. **ORDER BY 别名一致性规则（重要）**：\n" +
+                    "   - ⚠️ **强制规则**：ORDER BY 中使用的字段名或别名，必须与 SELECT 中定义的完全一致\n" +
+                    "   - 错误示例：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY order_date\n" +
+                    "     （SELECT 中是 '订单日期'，但 ORDER BY 用了 order_date）\n" +
+                    "   - 正确示例1：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY '订单日期'\n" +
+                    "   - 正确示例2：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS order_date ... ORDER BY order_date\n" +
+                    "   - **关键**：SELECT 和 ORDER BY 必须使用相同的别名，不能混用\n" +
+                    "9. **表关联规则**：\n" +
+                    "   - 如果上面提供了'表之间的关联关系'，直接使用这些关系进行JOIN\n" +
+                    "   - **必须使用直接JOIN，禁止使用子查询或IN子句进行表关联**\n" +
+                    "   - 错误示例：JOIN tableB ON colA IN (SELECT id FROM tableB WHERE ...)\n" +
+                    "   - 正确示例：JOIN tableB ON tableA.ref_id = tableB.id\n" +
+                    "   - **重要：关联字段必须是外键或ID字段，不能是文本字段**\n" +
+                    "   - 错误示例：JOIN user_addresses ua ON orders.shipping_address = ua.id （shipping_address是文本，不是ID）\n" +
+                    "   - 正确示例：JOIN users u ON orders.user_id = u.id （通过用户ID关联）\n" +
+                    "   - **一对多关联时必须添加过滤条件避免笛卡尔积**\n" +
+                    "   - 错误示例：JOIN user_addresses ua ON orders.user_id = ua.user_id （一个用户可能有多个地址，导致订单金额重复计算）\n" +
+                    "   - 正确示例：JOIN user_addresses ua ON orders.user_id = ua.user_id AND ua.is_default = 1 （只取默认地址）\n" +
+                    "   - 或者优先使用主表的字段：直接使用users表的地区字段，而非user_addresses\n" +
+                    "10. **⚠️ 语义一致性强制规则（重要）**：\n" +
+                    "    - **对于相同语义的查询（如'查询用户X的订单'），必须保持SQL结构完全一致**\n" +
+                    "    - 例如：'查询用户张三的订单'和'查询用户李四的订单'应该生成相同的SQL结构，只是WHERE条件不同\n" +
+                    "    - **表选择一致性**：如果第一次选择了orders JOIN users，第二次也必须使用相同的表组合\n" +
+                    "    - **字段映射一致性**：同一概念必须映射到相同字段（如用户名始终用u.username，不用o.receiver_name）\n" +
+                    "    - **JOIN顺序一致性**：FROM orders o JOIN users u ON ... 的顺序必须保持一致\n" +
+                    "    - ❌ 错误：第一次用 JOIN users，第二次用 JOIN order_items\n" +
+                    "    - ✅ 正确：两次都用 JOIN users u ON o.user_id = u.id\n" +
+                    "    - **关键原则**：优先使用业务主键关联（user_id），而非文本字段匹配（receiver_name）\n" +
+                    "\nSQL：",
+                    expandedTables.size(), updatedAvailableTablesList,
+                    updatedSchemaInfo, updatedRelationshipInfo.isEmpty() ? "" : updatedRelationshipInfo + "\n\n", ragEnhancement, negativeExamples, expandedQuery
+                );
+                
+                sql = modelRouter.smartGenerateSQL(updatedSqlPrompt, expandedQuery);
+                sql = MarkdownUtils.cleanSQL(sql);
+                
+                log.info("[NL2SQLService] ✅ 重新生成后的SQL: {}", sql);
+                sessionContextManager.publishProgress(this, "sql_regenerated", "✅ 已重新生成SQL");
+            }
+            
             // ✅ Layer 2: 检查是否与历史低分SQL高度相似，是则重新生成
             if (lowRatingExampleService != null) {
                 try {
@@ -450,7 +565,30 @@ public class NL2SQLService {
             
             // ⚠️ P0优化：SQL 验证与 Self-Correction
             sessionContextManager.publishProgress(this, "validating_sql", "🔍 验证SQL正确性...");
-            sql = sqlCorrectionService.validateAndCorrectSQL(sql, expandedQuery, datasourceId, finalSchemaInfo, fullRelationshipInfo, 3);
+            
+            // ✅ 关键修复：从 SQL 中提取实际使用的表，补充缺失表的 schema（用于纠错）
+            Set<String> tablesInSQLForCorrection = extractTablesFromSQL(sql);
+            Set<String> missingTablesForCorrection = new HashSet<>(tablesInSQLForCorrection);
+            missingTablesForCorrection.removeAll(expandedTables);
+            
+            String correctionSchemaInfo = finalSchemaInfo;
+            String correctionRelationshipInfo = fullRelationshipInfo;
+            
+            if (!missingTablesForCorrection.isEmpty()) {
+                log.warn("[NL2SQLService] ⚠️ SQL验证阶段检测到缺失表: {}", missingTablesForCorrection);
+                
+                // 补充缺失表的 schema
+                Set<String> allTablesForCorrection = new HashSet<>(expandedTables);
+                allTablesForCorrection.addAll(missingTablesForCorrection);
+                correctionSchemaInfo = buildTableSchemaInfo(new ArrayList<>(allTablesForCorrection), datasourceId);
+                correctionRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                    datasourceId, new ArrayList<>(allTablesForCorrection));
+                
+                log.info("[NL2SQLService] 已补充纠错用 schema，包含 {} 张表", allTablesForCorrection.size());
+            }
+            
+            sql = sqlCorrectionService.validateAndCorrectSQL(sql, expandedQuery, datasourceId, 
+                correctionSchemaInfo, correctionRelationshipInfo, 3);
             sessionContextManager.publishProgress(this, "validation_completed", "✅ SQL验证通过");
             
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
@@ -460,26 +598,12 @@ public class NL2SQLService {
             // ✅ 关键修复：保存当前 SQL 和查询问题到 ThreadLocal（用于 AI 总结/图表生成）
             sessionContextManager.saveCurrentContext(sql, expandedQuery);
             
-            // ✅ 关键优化：缓存生成的 SQL（避免下次重新调用 LLM）
-            if (queryCacheService != null) {
-                try {
-                    Map<String, Object> cacheData = new HashMap<>();
-                    cacheData.put("sql", sql);
-                    cacheData.put("question", expandedQuery);
-                    cacheData.put("datasourceId", datasourceId);
-                    
-                    com.nl2sql.core.cache.QueryCacheService.CachedResult cacheResult = 
-                        new com.nl2sql.core.cache.QueryCacheService.CachedResult();
-                    cacheResult.setData(java.util.Collections.singletonList(cacheData));
-                    cacheResult.setRowCount(1);
-                    cacheResult.setExecutionTime(0);
-                    
-                    // ✅ 关键修复：使用原始 query 作为 key（而非 expandedQuery）
-                    queryCacheService.putToCache(originalQuery, cacheResult, 60); // 缓存 60 分钟
-                    log.info("[NL2SQLService] SQL 已缓存: question={}", originalQuery);
-                } catch (Exception e) {
-                    log.warn("[NL2SQLService] SQL 缓存失败", e);
-                }
+            // ✅ 新增：保存 selected_tables 到 SessionContext（用于5星反馈缓存）
+            if (allTables != null && !allTables.isEmpty()) {
+                java.util.List<String> tablesList = new java.util.ArrayList<>(allTables);
+                sessionContextManager.saveSelectedTables(tablesList);
+                log.info("[NL2SQLService] 已保存表列表: sessionId={}, tables={}", 
+                    sessionContextManager.getCurrentSessionId(), tablesList);
             }
             
             return sql;
@@ -547,14 +671,14 @@ public class NL2SQLService {
             "   - ⚠️ 重要：仔细区分不同维度的概念，根据实际表结构判断\n" +
             "4. **表角色理解**：%s\n" +
             "5. **表选择验证规则（重要）**：\n" +
-            "   - 在返回selected_tables之前，必须验证：基于已选表能否生成满足用户问题的SQL？\n" +
-            "   - 检查清单：\n" +
+            "   - 在返回selected_tables之前，必须模拟生成SQL并验证：\n" +
             "     a) SELECT中的每个字段是否都能在已选表中找到？\n" +
-            "     b) WHERE/GROUP BY中的字段是否都在已选表中？\n" +
+            "     b) WHERE/GROUP BY/ORDER BY中的字段是否都在已选表中？\n" +
             "     c) 如果需要JOIN，关联字段是否在已选表中？\n" +
+            "     d) **严禁臆造字段**：如果不确定某个表是否有某字段，必须返回missing_tables请求补充该表的schema\n" +
             "   - 如果任何一个检查失败，必须返回missing_tables，而不是selected_tables\n" +
-            "   - 示例：如果查询需要某个表的字段但该表未选中，则必须补充该表\n" +
-            "6. 如果某些表完全用不到，不要包含在结果中\n" +
+            "   - 示例：查询'张三的订单'需要users.name和orders.user_id，如果只选了orders表，必须返回missing_tables: [\"users\"]\n" +
+            "6. **宁可多选，不可漏选**：如果不确定是否需要某表，优先包含进来\n" +
             "7. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
             "8. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
             "9. 只返回JSON，不要其他内容",
@@ -595,12 +719,22 @@ public class NL2SQLService {
     /**
      * 自动修正SQL（供Skill使用）
      */
-    public String autoFixSQL(String failedSql, String errorMessage) {
+    public String autoFixSQL(String failedSql, String errorMessage, Long datasourceId) {
         try {
             log.info("[NL2SQLService] 开始修正SQL: error={}", errorMessage);
             
+            // ✅ 关键修复：从 SQL 中提取表名，获取 schema
+            Set<String> tablesInSQL = extractTablesFromSQL(failedSql);
+            String schemaInfo = "";
+            
+            if (!tablesInSQL.isEmpty() && datasourceId != null) {
+                schemaInfo = buildTableSchemaInfo(new ArrayList<>(tablesInSQL), datasourceId);
+                log.info("[NL2SQLService] 已加载 {} 张表的 schema: {}", tablesInSQL.size(), tablesInSQL);
+            }
+            
             String fixPrompt = String.format(
-                "SQL执行失败，请修正。\n\n" +
+                "你是一个MySQL SQL专家。以下SQL执行失败，请根据表结构修正。\n\n" +
+                "%s" +
                 "失败的SQL:\n%s\n\n" +
                 "错误信息:\n%s\n\n" +
                 "要求：\n" +
@@ -610,6 +744,7 @@ public class NL2SQLService {
                 "4. **重要：如果ON条件中使用了IN子查询，必须改为直接JOIN**\n" +
                 "   - 错误：JOIN tableB ON colA IN (SELECT id FROM tableB WHERE ...)\n" +
                 "   - 正确：JOIN tableB ON tableA.ref_id = tableB.id",
+                schemaInfo.isEmpty() ? "" : "数据库表结构：\n" + schemaInfo + "\n\n",
                 failedSql, errorMessage
             );
             
@@ -619,5 +754,86 @@ public class NL2SQLService {
             log.error("[NL2SQLService] SQL修正失败", e);
             return failedSql; // 返回原SQL
         }
+    }
+    
+    /**
+     * ✅ 新增：基于外部传入的 schema 生成 SQL（用于 Tool 调用）
+     * 
+     * @param query 用户问题
+     * @param schema 表结构信息（JSON格式）
+     * @param datasourceId 数据源ID
+     * @return 生成的 SQL 语句
+     */
+    public String generateSQLWithSchema(String query, String schema, Long datasourceId) {
+        try {
+            log.info("[NL2SQLService] 使用外部 schema 生成SQL: query={}, schema长度={}", 
+                query, schema != null ? schema.length() : 0);
+            
+            if (schema == null || schema.trim().isEmpty()) {
+                return "错误：表结构信息不能为空";
+            }
+            
+            // 构建 Prompt
+            String prompt = String.format(
+                "请根据以下表结构和用户问题生成 SQL 语句。\n\n" +
+                "表结构信息：\n%s\n\n" +
+                "用户问题：%s\n\n" +
+                "要求：\n" +
+                "1. 只输出 SQL 语句，不要包含```sql或其他标记\n" +
+                "2. 使用正确的 JOIN 语法\n" +
+                "3. 字段名和表名必须与 schema 中定义的一致\n" +
+                "4. 如果无法生成 SQL，请说明原因",
+                schema, query
+            );
+            
+            String sql = modelRouter.smartGenerateSQL(prompt, "");
+            String cleanedSql = MarkdownUtils.cleanSQL(sql);
+            
+            log.info("[NL2SQLService] 生成成功: {}", cleanedSql);
+            return cleanedSql;
+            
+        } catch (Exception e) {
+            log.error("[NL2SQLService] 使用外部 schema 生成SQL失败", e);
+            return "错误：" + e.getMessage();
+        }
+    }
+    
+    /**
+     * ✅ 新增：从 SQL 中提取使用的表名
+     * 
+     * @param sql SQL语句
+     * @return 表名集合
+     */
+    private Set<String> extractTablesFromSQL(String sql) {
+        Set<String> tables = new HashSet<>();
+        if (sql == null || sql.trim().isEmpty()) {
+            return tables;
+        }
+        
+        try {
+            // 匹配 FROM 和 JOIN 后面的表名
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "(?:FROM|JOIN)\\s+([a-zA-Z_][a-zA-Z0-9_]*)", 
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            java.util.regex.Matcher matcher = pattern.matcher(sql);
+            
+            while (matcher.find()) {
+                String tableName = matcher.group(1).toLowerCase();
+                // 过滤SQL关键字
+                if (!Arrays.asList(
+                    "select", "where", "group", "order", "by", "having", "limit",
+                    "on", "and", "or", "not", "in", "is", "null", "as", "desc", "asc"
+                ).contains(tableName)) {
+                    tables.add(tableName);
+                }
+            }
+            
+            log.debug("[NL2SQLService] 从 SQL 中提取到表: {}", tables);
+        } catch (Exception e) {
+            log.warn("[NL2SQLService] 提取表名失败", e);
+        }
+        
+        return tables;
     }
 }

@@ -5,6 +5,7 @@ import com.nl2sql.core.rag.provider.MilvusVectorProvider;
 import com.nl2sql.core.rag.provider.MySqlVectorProvider;
 import com.nl2sql.core.rag.provider.QdrantVectorProvider;
 import com.nl2sql.core.rag.provider.VectorStoreManager;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -65,6 +66,9 @@ public class VectorStoreAutoConfig {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     
+    @Autowired(required = false)
+    private EmbeddingModel embeddingModel;
+    
     /**
      * 初始化所有向量数据库提供者
      */
@@ -76,7 +80,8 @@ public class VectorStoreAutoConfig {
                 ChromaVectorProvider chromaProvider = new ChromaVectorProvider(
                     chromaUrl, 
                     chromaCollectionName, 
-                    chromaTimeout
+                    chromaTimeout,
+                    embeddingModel
                 );
                 vectorStoreManager.registerProvider(chromaProvider);
                 log.info("Chroma向量提供者已注册");

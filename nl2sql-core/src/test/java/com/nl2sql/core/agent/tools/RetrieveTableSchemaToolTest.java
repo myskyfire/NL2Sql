@@ -38,7 +38,7 @@ class RetrieveTableSchemaToolTest {
             .thenReturn(expectedSchema);
         
         // 执行测试
-        String result = tool.retrieveTableSchema(question, datasourceId);
+        String result = tool.execute(question, datasourceId);
         
         // 验证结果
         assertNotNull(result);
@@ -54,7 +54,7 @@ class RetrieveTableSchemaToolTest {
         when(schemaRetrievalService.retrieveSchema(isNull(), anyLong()))
             .thenReturn("");
         
-        String result = tool.retrieveTableSchema(null, 1L);
+        String result = tool.execute(null, 1L);
         
         assertNotNull(result);
         assertTrue(result.contains("\"success\":true"));
@@ -66,7 +66,7 @@ class RetrieveTableSchemaToolTest {
         when(schemaRetrievalService.retrieveSchema(anyString(), anyLong()))
             .thenThrow(new RuntimeException("数据库连接失败"));
         
-        String result = tool.retrieveTableSchema("查询", 1L);
+        String result = tool.execute("查询", 1L);
         
         assertNotNull(result);
         assertTrue(result.contains("\"success\":false"));

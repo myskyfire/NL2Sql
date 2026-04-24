@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 /**
  * 向量索引初始化器
@@ -55,25 +56,49 @@ public class VectorIndexInitializer implements ApplicationRunner {
             int skipCount = 0;
             int failCount = 0;
             
-            // 为每个数据源单独构建向量索引
-            for (DataSourceConfig ds : datasources) {
-                try {
-                    // 获取该数据源的元数据
-                    Map<String, TableMetadata> metadata = 
-                        metadataService.getAllMetadataByDatasource(ds.getId());
-                    
-                    if (metadata != null && !metadata.isEmpty()) {
-                        vectorRetriever.buildIndex(ds.getId(), metadata);
-                        log.info("✅ 数据源 [{}] ({}) 向量索引构建完成，表数量: {}", 
-                            ds.getName(), ds.getId(), metadata.size());
-                        successCount++;
-                    } else {
-                        log.warn("⚠️ 数据源 [{}] ({}) 没有元数据，跳过", ds.getName(), ds.getId());
-                        skipCount++;
+            // ✅ 关键优化：使用虚拟线程并行构建向量索引
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                List<java.util.concurrent.Future<Boolean>> futures = datasources.stream()
+                    .map(ds -> executor.submit(() -> {
+                        try {
+                            // 获取该数据源的元数据
+                            Map<String, TableMetadata> metadata = 
+                                metadataService.getAllMetadataByDatasource(ds.getId());
+                            
+                            if (metadata != null && !metadata.isEmpty()) {
+                                vectorRetriever.buildIndex(ds.getId(), metadata);
+                                log.info("✅ 数据源 [{}] ({}) 向量索引构建完成，表数量: {}", 
+                                    ds.getName(), ds.getId(), metadata.size());
+                                return true; // success
+                            } else {
+                                log.warn("⚠️ 数据源 [{}] ({}) 没有元数据，跳过", ds.getName(), ds.getId());
+                                return false; // skip
+                            }
+                        } catch (Exception e) {
+                            log.error("❌ 数据源 [{}] ({}) 向量索引构建失败", ds.getName(), ds.getId(), e);
+                            return false; // fail
+                        }
+                    }))
+                    .toList();
+                
+                // 等待所有任务完成并统计结果
+                for (int i = 0; i < futures.size(); i++) {
+                    try {
+                        Boolean result = futures.get(i).get();
+                        DataSourceConfig ds = datasources.get(i);
+                        
+                        if (result == null) {
+                            skipCount++;
+                        } else if (result) {
+                            successCount++;
+                        } else {
+                            // 检查是skip还是fail（从日志判断）
+                            failCount++;
+                        }
+                    } catch (Exception e) {
+                        log.error("等待任务完成时异常", e);
+                        failCount++;
                     }
-                } catch (Exception e) {
-                    log.error("❌ 数据源 [{}] ({}) 向量索引构建失败", ds.getName(), ds.getId(), e);
-                    failCount++;
                 }
             }
             

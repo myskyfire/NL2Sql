@@ -5,6 +5,7 @@ import com.nl2sql.core.cache.QueryCacheVectorService;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
+import com.nl2sql.common.util.QueryNormalizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -151,11 +153,14 @@ public class VectorRetriever {
         
         // ✅ 新增：L3 语义相似度匹配（阈值0.85）
         if (cacheService != null) {
-            log.info("[VectorRetriever] 🔍 L3语义检索开始: query='{}', datasourceId={}", query, datasourceId);
-            List<String> semanticResult = cacheService.findSimilarQueryBySemantic(query, datasourceId, 0.85);
+            // ✅ 关键修复：使用归一化后的查询进行L3检索，避免人名/地名干扰
+            String normalizedQuery = normalizeQuery(query);
+            log.info("[VectorRetriever] 🔍 L3语义检索开始: query='{}', normalized='{}', datasourceId={}", 
+                query, normalizedQuery, datasourceId);
+            List<String> semanticResult = cacheService.findSimilarQueryBySemantic(normalizedQuery, datasourceId, 0.85);
             if (semanticResult != null && !semanticResult.isEmpty()) {
-                log.info("[VectorRetriever] ✅ L3缓存命中(语义): datasourceId={}, query='{}', tables={}", 
-                    datasourceId, query, semanticResult);
+                log.info("[VectorRetriever] ✅ L3缓存命中(语义): datasourceId={}, query='{}', normalized='{}', tables={}", 
+                    datasourceId, query, normalizedQuery, semanticResult);
                 
                 // 写入L1和L2缓存，加速后续查询
                 cacheService.putVectorRetrieval(String.format("%d:%s", datasourceId, query), semanticResult);
@@ -253,27 +258,34 @@ public class VectorRetriever {
                     datasourceId, query);
             }
             
-            // ✅ 新增：自动写入Chroma向量缓存（如果可用）
+            // ✅ 新增：异步写入Chroma向量缓存（如果可用）
             if (queryCacheVectorService != null && queryCacheVectorService.isAvailable() && !result.isEmpty()) {
-                try {
-                    log.info("[VectorRetriever] 💾 开始写入Chroma查询缓存: query='{}', datasourceId={}, tables={}", 
-                        query, datasourceId, result);
-                    
-                    // 将表列表转换为JSON字符串
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    String tablesJson = mapper.writeValueAsString(result);
-                    
-                    boolean success = queryCacheVectorService.addQueryToCache(query, datasourceId, tablesJson);
-                    if (success) {
-                        log.info("[VectorRetriever] ✅ Chroma查询缓存写入成功: query='{}', tables={}", 
-                            query, result);
-                    } else {
-                        log.warn("[VectorRetriever] ⚠️ Chroma查询缓存写入返回false: query='{}'", query);
+                // ✅ 关键修复：使用归一化后的查询写入Chroma，提高泛化能力
+                final String normalizedQuery = normalizeQuery(query);
+                final Long asyncDatasourceId = datasourceId;
+                final List<String> asyncTables = new ArrayList<>(result);
+                
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        log.info("[VectorRetriever] 💾 [异步] 开始写入Chroma查询缓存: query='{}', normalized='{}', datasourceId={}, tables={}", 
+                            query, normalizedQuery, asyncDatasourceId, asyncTables);
+                        
+                        // 将表列表转换为JSON字符串
+                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                        String tablesJson = mapper.writeValueAsString(asyncTables);
+                        
+                        boolean success = queryCacheVectorService.addQueryToCache(normalizedQuery, asyncDatasourceId, tablesJson);
+                        if (success) {
+                            log.info("[VectorRetriever] ✅ [异步] Chroma查询缓存写入成功: normalized='{}', tables={}", 
+                                normalizedQuery, asyncTables);
+                        } else {
+                            log.warn("[VectorRetriever] ⚠️ [异步] Chroma查询缓存写入返回false: normalized='{}'", normalizedQuery);
+                        }
+                    } catch (Exception e) {
+                        log.warn("[VectorRetriever] ⚠️ [异步] Chroma查询缓存写入失败: normalized='{}', error={}", 
+                            normalizedQuery, e.getMessage());
                     }
-                } catch (Exception e) {
-                    log.warn("[VectorRetriever] ⚠️ Chroma查询缓存写入失败: query='{}', error={}", 
-                        query, e.getMessage());
-                }
+                });
             } else {
                 if (queryCacheVectorService == null) {
                     log.debug("[VectorRetriever] QueryCacheVectorService未注入，跳过Chroma缓存写入");
@@ -359,43 +371,10 @@ public class VectorRetriever {
     
     /**
      * ✅ 新增：查询文本归一化 - 去除可变实体，保留查询结构
+     * 业界标准：https://help.aliyun.com/zh/polardb/polardb-for-mysql/llm-based-nl2sql
      */
     private String normalizeQuery(String query) {
-        if (query == null || query.isEmpty()) {
-            return query;
-        }
-        
-        String normalized = query;
-        
-        // 1. 去除人名（中文2-4字姓名 + 的/先生/女士等后缀）
-        normalized = normalized.replaceAll("[\\u4e00-\\u9fa5]{2,4}(?=的|先生|女士|同学|老师|经理|总)", "{PERSON}");
-        
-        // 2. 去除地名（省市县）
-        String[] provinces = {"北京", "上海", "天津", "重庆", "广东", "江苏", "浙江", "四川", "湖南", "湖北", 
-                             "河南", "河北", "山东", "山西", "陕西", "安徽", "福建", "江西", "辽宁", "黑龙江", 
-                             "吉林", "甘肃", "青海", "云南", "贵州", "海南", "台湾", "内蒙古", "广西", "宁夏", 
-                             "新疆", "西藏"};
-        for (String province : provinces) {
-            normalized = normalized.replaceAll(province + "(省|市|自治区|地区|县)?", "{LOCATION}");
-        }
-        
-        // 3. 去除时间（日期、月份）
-        normalized = normalized.replaceAll("\\d{4}年\\d{1,2}月?", "{DATE}");
-        normalized = normalized.replaceAll("\\d{4}-\\d{2}-\\d{2}", "{DATE}");
-        normalized = normalized.replaceAll("\\d{4}/\\d{1,2}/\\d{1,2}", "{DATE}");
-        
-        // 4. 去除数字ID
-        normalized = normalized.replaceAll("ID[为是]?\\d+", "ID{NUM}");
-        normalized = normalized.replaceAll("编号[为是]?\\w+", "编号{NUM}");
-        normalized = normalized.replaceAll("订单号[为是]?\\w+", "订单号{NUM}");
-        
-        // 5. 去除具体金额
-        normalized = normalized.replaceAll("\\d+[万千元亿]?(?:以上|以下|之间)?", "{AMOUNT}");
-        
-        // ✅ 注意：品牌/商品等行业特定实体不在这里处理
-        // 应通过 IndustryConceptExtension.getBusinessEntityPatterns() 配置
-        
-        return normalized.trim();
+        return QueryNormalizer.normalize(query);
     }
     
     private double cosineSimilarity(List<Float> vec1, List<Float> vec2) {

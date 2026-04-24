@@ -11,6 +11,7 @@ import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -37,7 +38,9 @@ public class ChromaVectorService {
     private String collectionName;
     
     private EmbeddingStore<TextSegment> embeddingStore;
-    private EmbeddingModel embeddingModel;
+    
+    @Autowired(required = false)
+    private EmbeddingModel embeddingModel; // 注入OllamaEmbeddingProvider
     
     @PostConstruct
     public void init() {
@@ -49,8 +52,13 @@ public class ChromaVectorService {
         try {
             log.info("初始化Chroma向量数据库 (V2 API): url={}, collection={}", chromaUrl, collectionName);
             
-            // 初始化Embedding模型
-            this.embeddingModel = new AllMiniLmL6V2EmbeddingModel();
+            // ✅ 使用注入的OllamaEmbeddingProvider (支持配置切换模型)
+            if (embeddingModel == null) {
+                log.warn("[ChromaVectorService] EmbeddingModel未注入，Chroma不可用");
+                return;
+            }
+            
+            log.info("[ChromaVectorService] 使用Ollama嵌入模型: {}", embeddingModel.getClass().getSimpleName());
             
             // ✅ 使用 LangChain4j 原生 V2 API
             this.embeddingStore = ChromaEmbeddingStore.builder()

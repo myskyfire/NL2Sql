@@ -32,49 +32,79 @@ public class GenerateSQLFromSchemaTool {
     @Tool("基于表结构和用户问题生成SQL语句。输入问题、表结构信息和数据源ID，返回生成的SQL")
     public String generateSQLFromSchema(String question, String schema, Long datasourceId) {
         try {
-            log.info("[GenerateSQLFromSchemaTool] 生成SQL: question={}, datasourceId={}", question, datasourceId);
+            log.info("[GenerateSQLFromSchemaTool] 生成SQL: question={}, datasourceId={}, schema长度={}", 
+                question, datasourceId, schema != null ? schema.length() : 0);
             
-            // 调用 NL2SQLService 的 generateSQL 方法
-            String sql = nl2sqlService.generateSQL(question, datasourceId);
+            if (question == null || question.trim().isEmpty()) {
+                return buildErrorResponse("用户问题不能为空");
+            }
+            
+            if (schema == null || schema.trim().isEmpty()) {
+                return buildErrorResponse("表结构信息不能为空");
+            }
+            
+            if (datasourceId == null) {
+                return buildErrorResponse("数据源ID不能为空");
+            }
+            
+            // ✅ 直接使用传入的 schema 调用 NL2SQLService
+            String sql = nl2sqlService.generateSQLWithSchema(question, schema, datasourceId);
             
             // 检查是否需要澄清
             if (sql != null && (sql.startsWith("CLARIFY_") || sql.startsWith("CLARIFICATION"))) {
-                Map<String, Object> clarification = new HashMap<>();
-                clarification.put("success", false);
-                clarification.put("needsClarification", true);
-                clarification.put("message", sql);
-                return objectMapper.writeValueAsString(clarification);
+                return buildClarificationResponse(sql);
             }
             
             // 检查是否生成失败
             if (sql == null || sql.trim().isEmpty() || sql.startsWith("错误：") || sql.startsWith("ERROR:")) {
-                Map<String, Object> error = new HashMap<>();
-                error.put("success", false);
-                error.put("error", sql != null ? sql : "SQL生成失败");
-                return objectMapper.writeValueAsString(error);
+                return buildErrorResponse(sql != null ? sql : "SQL生成失败");
             }
-            
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("sql", sql);
-            result.put("datasourceId", datasourceId);
             
             log.info("[GenerateSQLFromSchemaTool] 生成成功: {}", sql);
             
-            return objectMapper.writeValueAsString(result);
+            return buildSuccessResponse(sql, datasourceId);
             
         } catch (Exception e) {
             log.error("[GenerateSQLFromSchemaTool] 生成失败", e);
-            
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return buildErrorResponse(e.getMessage());
+        }
+    }
+    
+    private String buildSuccessResponse(String sql, Long datasourceId) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                "success", true,
+                "sql", sql,
+                "datasourceId", datasourceId
+            ));
+        } catch (Exception e) {
+            log.error("[GenerateSQLFromSchemaTool] JSON序列化失败", e);
+            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
+        }
+    }
+    
+    private String buildErrorResponse(String error) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                "success", false,
+                "error", error
+            ));
+        } catch (Exception e) {
+            log.error("[GenerateSQLFromSchemaTool] JSON序列化失败", e);
+            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
+        }
+    }
+    
+    private String buildClarificationResponse(String message) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                "success", false,
+                "needsClarification", true,
+                "message", message
+            ));
+        } catch (Exception e) {
+            log.error("[GenerateSQLFromSchemaTool] JSON序列化失败", e);
+            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
         }
     }
 }

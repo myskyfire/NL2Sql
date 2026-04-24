@@ -4,7 +4,6 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
@@ -30,10 +29,11 @@ public class ChromaVectorProvider implements VectorStoreProvider {
     private EmbeddingModel embeddingModel;
     private boolean available = false;
     
-    public ChromaVectorProvider(String baseUrl, String collectionName, int timeout) {
+    public ChromaVectorProvider(String baseUrl, String collectionName, int timeout, EmbeddingModel embeddingModel) {
         this.baseUrl = baseUrl;
         this.collectionName = collectionName;
         this.timeout = timeout;
+        this.embeddingModel = embeddingModel;
         initialize();
     }
     
@@ -41,8 +41,13 @@ public class ChromaVectorProvider implements VectorStoreProvider {
         try {
             log.info("初始化Chroma向量数据库: url={}, collection={}", baseUrl, collectionName);
             
-            // 初始化Embedding模型
-            this.embeddingModel = new AllMiniLmL6V2EmbeddingModel();
+            if (embeddingModel == null) {
+                log.warn("[ChromaVectorProvider] EmbeddingModel未注入，Chroma不可用");
+                this.available = false;
+                return;
+            }
+            
+            log.info("[ChromaVectorProvider] 使用Ollama嵌入模型: {}", embeddingModel.getClass().getSimpleName());
             
             // 使用 LangChain4j 原生 V2 API
             this.embeddingStore = ChromaEmbeddingStore.builder()

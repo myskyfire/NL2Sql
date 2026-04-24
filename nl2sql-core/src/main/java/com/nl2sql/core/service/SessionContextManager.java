@@ -27,6 +27,8 @@ public class SessionContextManager {
     // ✅ ConcurrentHashMap 存储每个会话的 SQL（支持跨线程访问）
     private static final java.util.concurrent.ConcurrentHashMap<String, String> SESSION_SQL_MAP = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.ConcurrentHashMap<String, String> SESSION_QUERY_MAP = new java.util.concurrent.ConcurrentHashMap<>();
+    // ✅ 新增：存储每个会话的 selected_tables（用于5星反馈缓存）
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.List<String>> SESSION_TABLES_MAP = new java.util.concurrent.ConcurrentHashMap<>();
     
     /**
      * 设置当前会话ID（由调用方设置）
@@ -68,7 +70,7 @@ public class SessionContextManager {
     }
     
     /**
-     * ✅ 保存当前 SQL 和查询问题（用于 AI 总结/图表生成）
+     * ✅ 保存当前 SQL、查询问题和表列表（用于 AI 总结/图表生成/5星反馈）
      */
     public void saveCurrentContext(String sql, String query) {
         String sessionId = CURRENT_SESSION_ID.get();
@@ -78,6 +80,17 @@ public class SessionContextManager {
             log.debug("[SessionContext] 已保存上下文: sessionId={}, sql={}, query={}", sessionId, sql, query);
         } else {
             log.warn("[SessionContext] sessionId 为空，无法保存上下文");
+        }
+    }
+    
+    /**
+     * ✅ 新增：保存当前会话的表列表（用于5星反馈缓存）
+     */
+    public void saveSelectedTables(java.util.List<String> tables) {
+        String sessionId = CURRENT_SESSION_ID.get();
+        if (sessionId != null && !sessionId.trim().isEmpty() && tables != null) {
+            SESSION_TABLES_MAP.put(sessionId, tables);
+            log.debug("[SessionContext] 已保存表列表: sessionId={}, tables={}", sessionId, tables);
         }
     }
     
@@ -99,6 +112,17 @@ public class SessionContextManager {
         String sessionId = CURRENT_SESSION_ID.get();
         if (sessionId != null) {
             return SESSION_QUERY_MAP.get(sessionId);
+        }
+        return null;
+    }
+    
+    /**
+     * ✅ 新增：获取当前会话的表列表（用于5星反馈）
+     */
+    public java.util.List<String> getSelectedTables() {
+        String sessionId = CURRENT_SESSION_ID.get();
+        if (sessionId != null) {
+            return SESSION_TABLES_MAP.get(sessionId);
         }
         return null;
     }

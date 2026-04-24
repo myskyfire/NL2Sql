@@ -3,6 +3,7 @@ package com.nl2sql.core.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.common.util.MarkdownUtils;
+import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.cache.QueryCacheService;
 import com.nl2sql.core.llm.ModelRouterService;
 import com.nl2sql.core.llm.SynonymService;
@@ -14,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.regex.Matcher;
 
 /**
  * 表选择编排器
@@ -44,6 +46,52 @@ public class TableSelectionOrchestrator {
     @Autowired(required = false)
     private QueryCacheService queryCacheService;
     
+    @Autowired(required = false)
+    private MetadataCacheService metadataCacheService;
+    
+    @Autowired(required = false)
+    private com.nl2sql.metadata.service.TableRelationshipService tableRelationshipService;
+    
+    // ✅ 新增：ThreadLocal用于传递已检索的表列表（避免重复L3检索）
+    private static final ThreadLocal<List<String>> preRetrievedTables = new ThreadLocal<>();
+    // ✅ 新增：ThreadLocal用于存储LLM最终选择的表列表（用于5星反馈缓存）
+    private static final ThreadLocal<List<String>> finalSelectedTables = new ThreadLocal<>();
+    
+    // ✅ 新增：表组合缓存（question -> selected_tables）
+    private static final Map<String, List<String>> tableCombinationCache = Collections.synchronizedMap(new LinkedHashMap<String, List<String>>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
+            return size() > 1000; // 最多缓存1000个查询
+        }
+    });
+    
+    /**
+     * ✅ 新增：设置预检索的表列表（供StandardQuerySkill使用）
+     * @param tables 已检索的表列表
+     */
+    public static void setPreRetrievedTables(List<String> tables) {
+        if (tables != null && !tables.isEmpty()) {
+            preRetrievedTables.set(tables);
+            log.debug("[TableSelection] 设置预检索表列表: {}", tables);
+        }
+    }
+    
+    /**
+     * ✅ 新增：获取LLM最终选择的表列表（供AgentChatService使用）
+     * @return 最终选择的表列表
+     */
+    public static List<String> getFinalSelectedTables() {
+        return finalSelectedTables.get();
+    }
+    
+    /**
+     * ✅ 新增：清除预检索的表列表（防止内存泄漏）
+     */
+    public static void clearPreRetrievedTables() {
+        preRetrievedTables.remove();
+        finalSelectedTables.remove();
+    }
+    
     /**
      * 执行表选择流程
      * 
@@ -59,15 +107,18 @@ public class TableSelectionOrchestrator {
             if (queryCacheService != null) {
                 String normalizedQuery = schemaRetrievalService.normalizeQueryForCache(query);
                 com.nl2sql.core.cache.QueryCacheService.CachedResult cached = 
-                    queryCacheService.getFromCache(normalizedQuery);
+                    queryCacheService.getFromNormalizedQuery(normalizedQuery);  // ✅ 修复：使用规范化查询文本检索
                 
                 if (cached != null && cached.getUserRating() != null && cached.getUserRating() == 5) {
+                    // ✅ 关键修复：提取用户查询中的数字，替换SQL模板中的占位符
+                    String finalSQL = replaceTemplateParameters(cached.getSql(), query);
+                    
                     log.info("[TableSelection] ⚡⚡⚡ 5分SQL模板命中: question='{}', sql={}", 
-                        query, cached.getSql());
-                    sessionContextManager.saveCurrentContext(cached.getSql(), query);
+                        query, finalSQL);
+                    sessionContextManager.saveCurrentContext(finalSQL, query);
                     
                     TableSelectionResult result = new TableSelectionResult();
-                    result.setCachedSQL(cached.getSql());
+                    result.setCachedSQL(finalSQL);
                     return result;
                 }
             }
@@ -96,6 +147,19 @@ public class TableSelectionOrchestrator {
             
             log.info("[TableSelection] 开始表选择流程: query={}, datasourceId={}", query, datasourceId);
             
+            // ✅ 新增：检查表组合缓存
+            String cacheKey = datasourceId + ":" + query.trim().toLowerCase();
+            List<String> cachedTables = tableCombinationCache.get(cacheKey);
+            if (cachedTables != null && !cachedTables.isEmpty()) {
+                log.info("[TableSelection] ⚡⚡⚡ 表组合缓存命中: query='{}', tables={}", query, cachedTables);
+                
+                TableSelectionResult result = new TableSelectionResult();
+                result.setExpandedQuery(query);
+                result.setSelectedTables(new HashSet<>(cachedTables));
+                result.setFromCache(true); // 标记来自缓存
+                return result;
+            }
+            
             progressPublisher.accept("generating_sql");
             
             // 0. 同义词扩展（增强语义理解）
@@ -105,9 +169,33 @@ public class TableSelectionOrchestrator {
                 progressPublisher.accept("synonym_expansion");
             }
             
-            // 1. 初始向量检索（高召回）
+            // 1. ✅ P0优化：优先从L3语义缓存获取表列表（避免重复检索）
             progressPublisher.accept("retrieving_tables");
-            List<String> initialTables = vectorRetriever.retrieveTopTables(expandedQuery, datasourceId, 15);
+            List<String> initialTables = null;
+            
+            // ✅ 关键优化：检查是否有预检索的表列表（来自StandardQuerySkill）
+            List<String> preRetrieved = preRetrievedTables.get();
+            if (preRetrieved != null && !preRetrieved.isEmpty()) {
+                initialTables = preRetrieved;
+                log.info("[TableSelection] ⚡ 复用预检索的表列表: {}", initialTables);
+                preRetrievedTables.remove(); // 清除ThreadLocal，避免内存泄漏
+            }
+            
+            if (initialTables == null || initialTables.isEmpty()) {
+                if (metadataCacheService != null) {
+                    // ✅ 关键修复：使用expandedQuery检查L3缓存，与后续向量检索保持一致
+                    initialTables = metadataCacheService.findSimilarQueryBySemantic(expandedQuery, datasourceId, 0.85);
+                    if (initialTables != null && !initialTables.isEmpty()) {
+                        log.info("[TableSelection] ⚡ L3语义缓存命中: query='{}', tables={}", expandedQuery, initialTables);
+                    }
+                }
+                
+                // L3未命中，执行向量检索
+                if (initialTables == null || initialTables.isEmpty()) {
+                    initialTables = vectorRetriever.retrieveTopTables(expandedQuery, datasourceId, 15);
+                }
+            }
+            
             if (initialTables.isEmpty()) {
                 TableSelectionResult result = new TableSelectionResult();
                 result.setError("ERROR: 未找到任何相关表，请检查元数据是否已加载");
@@ -142,7 +230,17 @@ public class TableSelectionOrchestrator {
                 
                 // 构建Prompt并调用LLM
                 String schemaInfo = schemaRetrievalService.buildTableSchemaInfo(new ArrayList<>(allTables), datasourceId);
-                String relationshipInfo = ""; // TODO: 需要注入TableRelationshipService
+                
+                // ✅ 修复：获取表关联关系
+                String relationshipInfo = "";
+                if (tableRelationshipService != null) {
+                    try {
+                        relationshipInfo = tableRelationshipService.getRelationshipsForPrompt(
+                            datasourceId, new ArrayList<>(allTables));
+                    } catch (Exception e) {
+                        log.warn("[TableSelection] 获取关联关系失败: {}", e.getMessage());
+                    }
+                }
                 
                 String checkPrompt = promptBuilder.apply(expandedQuery, schemaInfo);
                 String llmResponse = modelRouter.smartGenerateSQL(checkPrompt, expandedQuery);
@@ -212,18 +310,26 @@ public class TableSelectionOrchestrator {
                                 if (count != null && count > 0) {
                                     allTables.add(tableName);
                                     foundNew = true;
-                                    log.info("[TableSelection] 补充缺失表: {}", tableName);
+                                    log.info("[TableSelection] ✅ 补充缺失表: {}", tableName);
+                                } else {
+                                    log.warn("[TableSelection] ⚠️ 缺失表不存在: {}", tableName);
                                 }
                             }
                             
-                            if (!foundNew) {
+                            // ✅ 关键修复：如果找到了新表，不直接continue，而是重新验证
+                            if (foundNew) {
+                                log.info("[TableSelection] 已补充{}个新表，重新验证表完整性", 
+                                    missingTables.size());
+                                continue; // 继续下一轮验证
+                            } else {
+                                // 没找到任何新表，需要澄清
                                 String reason = jsonNode.has("reason") ? jsonNode.get("reason").asText() : "缺少必要的表";
                                 needsClarification = true;
                                 clarificationMessage = reason;
                                 progressPublisher.accept("clarification_needed");
+                                log.warn("[TableSelection] ❌ 无法补充缺失表，需要澄清: {}", reason);
                                 break;
                             }
-                            continue;
                         }
                     }
                     
@@ -294,6 +400,18 @@ public class TableSelectionOrchestrator {
             result.setExpandedQuery(expandedQuery);
             result.setSelectedTables(allTables);
             result.setLastLlmResponse(lastLlmResponse);
+            
+            // ✅ 新增：保存最终选择的表列表到ThreadLocal（用于5星反馈缓存）
+            if (allTables != null && !allTables.isEmpty()) {
+                List<String> tablesList = new ArrayList<>(allTables);
+                finalSelectedTables.set(tablesList);
+                log.info("[TableSelection] 已保存最终表列表: {}", tablesList);
+                
+                // ✅ 新增：缓存表组合（question -> selected_tables）
+                tableCombinationCache.put(cacheKey, tablesList);
+                log.debug("[TableSelection] 已缓存表组合: key={}, tables={}", cacheKey, tablesList);
+            }
+            
             return result;
             
         } catch (Exception e) {
@@ -345,6 +463,7 @@ public class TableSelectionOrchestrator {
         private Set<String> selectedTables;    // 选定的表
         private String lastLlmResponse;        // 最后一次LLM响应
         private boolean skipLLMSelection;      // 是否跳过LLM选择（单数据源）
+        private boolean fromCache;             // ✅ 新增：是否来自表组合缓存
         private boolean needsClarification;    // 是否需要澄清
         private String clarificationMessage;   // 澄清消息
         private boolean needsTableSelection;   // 是否需要用户选择表
@@ -357,6 +476,73 @@ public class TableSelectionOrchestrator {
         
         public boolean hasError() {
             return error != null && !error.trim().isEmpty();
+        }
+    }
+    
+    /**
+     * ✅ 替换SQL模板中的参数占位符
+     * 从用户查询中提取数字，替换到SQL模板中
+     * 
+     * @param templateSQL SQL模板（可能包含INTERVAL N DAY等）
+     * @param userQuery 用户原始查询
+     * @return 替换后的SQL
+     */
+    private String replaceTemplateParameters(String templateSQL, String userQuery) {
+        if (templateSQL == null || userQuery == null) {
+            return templateSQL;
+        }
+        
+        try {
+            // 1. 提取用户查询中的所有数字
+            java.util.regex.Pattern numPattern = java.util.regex.Pattern.compile("\\d+");
+            java.util.regex.Matcher numMatcher = numPattern.matcher(userQuery);
+            
+            List<Integer> numbers = new ArrayList<>();
+            while (numMatcher.find()) {
+                numbers.add(Integer.parseInt(numMatcher.group()));
+            }
+            
+            if (numbers.isEmpty()) {
+                log.debug("[TableSelection] 用户查询中无数字，直接返回模板");
+                return templateSQL;
+            }
+            
+            // 2. 提取SQL模板中的INTERVAL占位符模式：INTERVAL \d+ DAY/HOUR/MONTH/YEAR
+            java.util.regex.Pattern intervalPattern = java.util.regex.Pattern.compile(
+                "INTERVAL\\s+(\\d+)\\s+(DAY|HOUR|MONTH|YEAR|WEEK)",
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            java.util.regex.Matcher intervalMatcher = intervalPattern.matcher(templateSQL);
+            
+            StringBuffer result = new StringBuffer();
+            int numberIndex = 0;
+            
+            while (intervalMatcher.find()) {
+                String oldNumber = intervalMatcher.group(1);
+                String timeUnit = intervalMatcher.group(2);
+                
+                // 使用用户查询中的第一个数字替换
+                if (numberIndex < numbers.size()) {
+                    int newNumber = numbers.get(numberIndex);
+                    String replacement = String.format("INTERVAL %d %s", newNumber, timeUnit);
+                    intervalMatcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
+                    log.info("[TableSelection] 替换参数: INTERVAL {} {} -> INTERVAL {} {}",
+                        oldNumber, timeUnit, newNumber, timeUnit);
+                    numberIndex++;
+                } else {
+                    // 没有更多数字，保持原样
+                    intervalMatcher.appendReplacement(result, Matcher.quoteReplacement(intervalMatcher.group(0)));
+                }
+            }
+            intervalMatcher.appendTail(result);
+            
+            String finalSQL = result.toString();
+            log.info("[TableSelection] 参数替换完成: {} -> {}", templateSQL, finalSQL);
+            return finalSQL;
+            
+        } catch (Exception e) {
+            log.warn("[TableSelection] 参数替换失败，使用原始模板: {}", e.getMessage());
+            return templateSQL;
         }
     }
 }

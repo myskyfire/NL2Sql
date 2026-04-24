@@ -47,4 +47,10 @@ public class SQLFeedbackRequest {
      * 会话ID
      */
     private String sessionId;
+    
+    /**
+     * ✅ 新增：最终使用的表列表（由NL2SQLService传入）
+     * 优先级高于从SQL提取的表
+     */
+    private java.util.List<String> usedTables;
 }

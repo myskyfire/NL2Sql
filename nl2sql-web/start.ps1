@@ -1,36 +1,63 @@
-# 设置控制台编码为UTF-8
+# NL2SQL Application Startup Script
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-# 创建logs目录（如果不存在）
 if (-not (Test-Path "logs")) {
     New-Item -ItemType Directory -Path "logs" | Out-Null
-    Write-Host "✓ 创建logs目录" -ForegroundColor Green
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  NLP2SQL Enterprise Agent 启动脚本" -ForegroundColor Cyan
+Write-Host "  NL2SQL Application Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "控制台编码: UTF-8" -ForegroundColor Green
-Write-Host "日志目录: logs/" -ForegroundColor Green
-Write-Host "  - app.log (JSON格式)" -ForegroundColor Gray
-Write-Host "  - app-text.log (文本格式)" -ForegroundColor Gray
-Write-Host ""
 
-# 启动应用（配置HTTP代理）
 $PROXY_HOST = "127.0.0.1"
 $PROXY_PORT = "7890"
 $JAVA_HOME = "D:\Program Files\Java\jdk-21.0.6"
 
-# 验证JDK路径
 if (-not (Test-Path "$JAVA_HOME\bin\java.exe")) {
-    Write-Host "❌ 错误: JDK路径不存在: $JAVA_HOME" -ForegroundColor Red
-    Write-Host "请修改 start.ps1 中的 JAVA_HOME 变量" -ForegroundColor Yellow
+    Write-Host "Error: JDK not found: $JAVA_HOME" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "✓ 使用JDK: $JAVA_HOME" -ForegroundColor Green
+Write-Host "[1/3] Stopping running processes..." -ForegroundColor Cyan
+$javaProcesses = Get-Process -Name java -ErrorAction SilentlyContinue | Where-Object {
+    (Get-WmiObject Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine -like '*nl2sql-web*'
+}
+
+if ($javaProcesses) {
+    Write-Host "  Found $($javaProcesses.Count) process(es)" -ForegroundColor Yellow
+    foreach ($proc in $javaProcesses) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+    Write-Host "  Processes stopped" -ForegroundColor Green
+} else {
+    Write-Host "  No running processes" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "[2/3] Checking port 8080..." -ForegroundColor Cyan
+$portInUse = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+if ($portInUse) {
+    Write-Host "  Port 8080 in use, waiting..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 2
+}
+Write-Host "  Port 8080 available" -ForegroundColor Green
 Write-Host ""
 
-& "$JAVA_HOME\bin\java.exe" "-Dhttp.proxyHost=$PROXY_HOST" "-Dhttp.proxyPort=$PROXY_PORT" "-Dhttps.proxyHost=$PROXY_HOST" "-Dhttps.proxyPort=$PROXY_PORT" "-Djava.net.useSystemProxies=true" -jar target\nl2sql-web-1.0.0.jar
+Write-Host "[3/3] Starting application..." -ForegroundColor Cyan
+Write-Host ""
+
+$javaArgs = @(
+    "-Dhttp.proxyHost=$PROXY_HOST",
+    "-Dhttp.proxyPort=$PROXY_PORT",
+    "-Dhttps.proxyHost=$PROXY_HOST",
+    "-Dhttps.proxyPort=$PROXY_PORT",
+    "-Djava.net.useSystemProxies=true",
+    "-jar",
+    "target\nl2sql-web-1.0.0.jar"
+)
+
+& "$JAVA_HOME\bin\java.exe" $javaArgs
