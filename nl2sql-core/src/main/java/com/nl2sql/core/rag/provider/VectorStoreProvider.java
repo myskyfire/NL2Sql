@@ -26,9 +26,10 @@ public interface VectorStoreProvider {
      * @param answer 答案
      * @param sqlExample SQL示例
      * @param category 分类
+     * @param qualityScore 质量评分（0-1）
      * @return 文档ID
      */
-    String addKnowledge(String question, String answer, String sqlExample, String category);
+    String addKnowledge(String question, String answer, String sqlExample, String category, float qualityScore);
     
     /**
      * 搜索相似问题

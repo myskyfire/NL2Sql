@@ -56,7 +56,7 @@ public class MilvusVectorProvider implements VectorStoreProvider {
     }
     
     @Override
-    public String addKnowledge(String question, String answer, String sqlExample, String category) {
+    public String addKnowledge(String question, String answer, String sqlExample, String category, float qualityScore) {
         if (!isAvailable()) {
             log.debug("Milvus不可用，跳过知识添加");
             return null;
@@ -65,10 +65,10 @@ public class MilvusVectorProvider implements VectorStoreProvider {
         try {
             // TODO: 实现Milvus插入逻辑
             // 1. 生成文本向量
-            // 2. 构建Milvus文档
+            // 2. 构建Milvus文档（包含quality_score metadata）
             // 3. 插入到集合
             
-            log.debug("添加知识到Milvus: question={}", question);
+            log.debug("添加知识到Milvus: question={}, qualityScore={}", question, qualityScore);
             return "milvus-" + System.currentTimeMillis();
         } catch (Exception e) {
             log.error("添加知识到Milvus失败: {}", e.getMessage(), e);

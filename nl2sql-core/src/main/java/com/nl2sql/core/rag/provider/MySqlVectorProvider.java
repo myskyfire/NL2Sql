@@ -66,7 +66,7 @@ public class MySqlVectorProvider implements VectorStoreProvider {
     }
     
     @Override
-    public String addKnowledge(String question, String answer, String sqlExample, String category) {
+    public String addKnowledge(String question, String answer, String sqlExample, String category, float qualityScore) {
         if (!isAvailable()) {
             log.debug("MySQL不可用，跳过知识添加");
             return null;
@@ -77,7 +77,7 @@ public class MySqlVectorProvider implements VectorStoreProvider {
             jdbcTemplate.update(sql, question, answer, sqlExample, category);
             
             String id = "mysql-" + System.currentTimeMillis();
-            log.debug("添加知识到MySQL: question={}, id={}", question, id);
+            log.debug("添加知识到MySQL: question={}, qualityScore={}, id={}", question, qualityScore, id);
             return id;
             
         } catch (Exception e) {

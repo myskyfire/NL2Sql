@@ -51,7 +51,7 @@ public class RagKnowledgeBaseService {
         VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
         if (activeProvider != null) {
             try {
-                String docId = activeProvider.addKnowledge(question, answer, sqlExample, category);
+                String docId = activeProvider.addKnowledge(question, answer, sqlExample, category, qualityScore);
                 log.info("RAG知识已同步到{}: id={}, docId={}", activeProvider.getName(), id, docId);
             } catch (Exception e) {
                 log.warn("向量数据库同步失败({}): {}", activeProvider.getName(), e.getMessage());
@@ -185,21 +185,30 @@ public class RagKnowledgeBaseService {
     }
     
     /**
-     * 转换Provider结果为KnowledgeItem
+     * 转换Provider结果为KnowledgeItem（过滤低质量条目）
      */
     private List<KnowledgeItem> convertFromProviderResults(List<VectorSearchResult> providerResults) {
         List<KnowledgeItem> items = new ArrayList<>();
+        
         for (VectorSearchResult result : providerResults) {
+            // ✅ 过滤低质量示例（quality_score < 0.6）
+            if (result.getQualityScore() != null && result.getQualityScore() < 0.6f) {
+                log.warn("[RAG-Chroma] 过滤低质量示例: question={}, qualityScore={}", 
+                    result.getQuestion(), result.getQualityScore());
+                continue;
+            }
+            
             KnowledgeItem item = new KnowledgeItem();
             item.setQuestion(result.getQuestion());
             item.setAnswer(result.getAnswer());
             item.setSqlExample(result.getSqlExample());
             item.setCategory(result.getCategory());
             item.setRelevance(result.getScore());
-            item.setQualityScore(0.9f); // Provider结果默认高质量
+            item.setQualityScore(result.getQualityScore() != null ? result.getQualityScore() : 0.9f);
             item.setUsageCount(0);
             items.add(item);
         }
+        
         return items;
     }
     

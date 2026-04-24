@@ -412,8 +412,16 @@ public class NL2SQLService {
             log.info("[NL2SQLService] 生成的SQL: {}", sql);
             sessionContextManager.publishProgress(this, "sql_generated", "✅ SQL生成完成");
             
-            // ✅ 关键修复：检测SQL中使用的表是否都在expandedTables中，如果有新表则补充schema并重新生成
-            Set<String> tablesInSQL = extractTablesFromSQL(sql);
+            // ✅ 关键修复：从SQL中提取实际使用的表，更新ThreadLocal（用于5星反馈缓存）
+            Set<String> actualTablesInSQL = extractTablesFromSQL(sql);
+            if (!actualTablesInSQL.isEmpty()) {
+                List<String> actualTablesList = new ArrayList<>(actualTablesInSQL);
+                com.nl2sql.core.service.TableSelectionOrchestrator.setFinalSelectedTables(actualTablesList);
+                log.info("[NL2SQLService] ✅ 已更新ThreadLocal为SQL实际使用的表: {}", actualTablesList);
+            }
+            
+            // ✅ 检测SQL中使用的表是否都在expandedTables中，如果有新表则补充schema并重新生成
+            Set<String> tablesInSQL = actualTablesInSQL;
             Set<String> missingTables = new HashSet<>(tablesInSQL);
             missingTables.removeAll(expandedTables);
             

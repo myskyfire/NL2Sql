@@ -85,6 +85,17 @@ public class TableSelectionOrchestrator {
     }
     
     /**
+     * ✅ 新增：设置LLM最终选择的表列表（供NL2SQLService更新为SQL实际使用的表）
+     * @param tables 最终选择的表列表
+     */
+    public static void setFinalSelectedTables(List<String> tables) {
+        if (tables != null && !tables.isEmpty()) {
+            finalSelectedTables.set(tables);
+            log.debug("[TableSelection] 设置最终表列表: {}", tables);
+        }
+    }
+    
+    /**
      * ✅ 新增：清除预检索的表列表（防止内存泄漏）
      */
     public static void clearPreRetrievedTables() {

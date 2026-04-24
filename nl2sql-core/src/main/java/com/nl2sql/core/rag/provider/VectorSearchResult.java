@@ -31,4 +31,9 @@ public class VectorSearchResult {
      * 相似度分数（0-1）
      */
     private double score;
+    
+    /**
+     * 质量评分（0-1）
+     */
+    private Float qualityScore;
 }

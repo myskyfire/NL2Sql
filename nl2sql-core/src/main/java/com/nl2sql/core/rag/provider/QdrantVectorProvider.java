@@ -54,7 +54,7 @@ public class QdrantVectorProvider implements VectorStoreProvider {
     }
     
     @Override
-    public String addKnowledge(String question, String answer, String sqlExample, String category) {
+    public String addKnowledge(String question, String answer, String sqlExample, String category, float qualityScore) {
         if (!isAvailable()) {
             log.debug("Qdrant不可用，跳过知识添加");
             return null;
@@ -63,10 +63,10 @@ public class QdrantVectorProvider implements VectorStoreProvider {
         try {
             // TODO: 实现Qdrant插入逻辑
             // 1. 生成文本向量
-            // 2. 构建Qdrant点（Point）
+            // 2. 构建Qdrant点（Point，包含quality_score payload）
             // 3. 上传到集合
             
-            log.debug("添加知识到Qdrant: question={}", question);
+            log.debug("添加知识到Qdrant: question={}, qualityScore={}", question, qualityScore);
             return "qdrant-" + System.currentTimeMillis();
         } catch (Exception e) {
             log.error("添加知识到Qdrant失败: {}", e.getMessage(), e);

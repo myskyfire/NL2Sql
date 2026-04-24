@@ -75,7 +75,7 @@ public class ChromaVectorProvider implements VectorStoreProvider {
     }
     
     @Override
-    public String addKnowledge(String question, String answer, String sqlExample, String category) {
+    public String addKnowledge(String question, String answer, String sqlExample, String category, float qualityScore) {
         if (!isAvailable()) {
             log.debug("Chroma不可用，跳过知识添加");
             return null;
@@ -86,12 +86,13 @@ public class ChromaVectorProvider implements VectorStoreProvider {
             metadata.put("answer", answer != null ? answer : "");
             metadata.put("sql_example", sqlExample != null ? sqlExample : "");
             metadata.put("category", category != null ? category : "");
+            metadata.put("quality_score", qualityScore); // ✅ 使用传入的质量评分
             TextSegment segment = TextSegment.from(question, metadata);
             
             Embedding embedding = embeddingModel.embed(segment).content();
             String id = embeddingStore.add(embedding, segment);
             
-            log.debug("添加知识到Chroma: question={}, id={}", question, id);
+            log.debug("添加知识到Chroma: question={}, qualityScore={}, id={}", question, qualityScore, id);
             return id;
         } catch (Exception e) {
             log.error("添加知识到Chroma失败: {}", e.getMessage(), e);
@@ -133,6 +134,18 @@ public class ChromaVectorProvider implements VectorStoreProvider {
                 result.setSqlExample(metadata.getString("sql_example"));
                 result.setCategory(metadata.getString("category"));
                 result.setScore(match.score());
+                
+                // ✅ 从 Chroma metadata 读取 quality_score
+                String qualityScoreStr = metadata.getString("quality_score");
+                if (qualityScoreStr != null) {
+                    try {
+                        result.setQualityScore(Float.parseFloat(qualityScoreStr));
+                    } catch (NumberFormatException e) {
+                        result.setQualityScore(0.9f);
+                    }
+                } else {
+                    result.setQualityScore(0.9f); // 历史数据默认高质量
+                }
                 
                 results.add(result);
             }
