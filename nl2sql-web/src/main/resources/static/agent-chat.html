@@ -386,6 +386,7 @@
         let currentContext = null;  // 当前会话上下文
         let pendingDatasourceId = null;  // 待确认的数据源ID（用于智能推荐）
         let pendingQuery = null;  // ✅ 待执行的原始查询（数据源澄清时保存）
+        let pendingDatasourceList = [];  // ✅ 待选择的数据源列表（用于自然语言选择）
         let isRelationshipClarifying = false;  // 是否处于关联关系澄清状态
         
         // 初始化
@@ -421,6 +422,42 @@
             const message = customMessage || input.value.trim();
             
             if (!message) return;
+            
+            // ✅ 关键修复：在发送消息时就保存原始query（用于数据源澄清后重新发送）
+            if (!customMessage && !currentContext?.datasourceId) {
+                // 只有用户手动输入且未选择数据源时才保存
+                pendingQuery = message;
+                console.log('[sendMessage] 保存pendingQuery:', pendingQuery);
+            }
+            
+            // ✅ 新增：检测自然语言选择数据源（如“我选第一个”、“选第二个”）
+            if (pendingDatasourceList.length > 0) {
+                const match = message.match(/(?:选|选择|第)([\d一二三四五六七八九十]+)/);
+                if (match) {
+                    const indexStr = match[1];
+                    let index = parseInt(indexStr) - 1; // “第一个” -> index 0
+                    
+                    // 处理中文数字
+                    const chineseNumbers = {'一':0, '二':1, '三':2, '四':3, '五':4, '六':5, '七':6, '八':7, '九':8, '十':9};
+                    if (chineseNumbers[indexStr] !== undefined) {
+                        index = chineseNumbers[indexStr];
+                    }
+                    
+                    if (index >= 0 && index < pendingDatasourceList.length) {
+                        const selected = pendingDatasourceList[index];
+                        console.log('[sendMessage] 检测到自然语言选择:', index+1, selected.name);
+                        
+                        // 直接调用selectDatasource，不经过正常流程
+                        addMessage(message, 'user');
+                        input.value = '';
+                        showTypingIndicator();
+                        setTimeout(() => {
+                            selectDatasource(selected.id, selected.name);
+                        }, 500);
+                        return; // 终止正常流程
+                    }
+                }
+            }
             
             // ✅ 新查询时清除之前的追问状态
             followUpState.containerId = null;
@@ -794,6 +831,10 @@
             }
             // 数据源选择（列出所有）
             else if (data.clarificationType === 'datasource_selection' && data.availableDatasources) {
+                // ✅ 保存数据源列表，用于自然语言选择
+                pendingDatasourceList = data.availableDatasources;
+                console.log('[handleClarification] 保存数据源列表:', pendingDatasourceList.length, '个');
+                
                 html += '<div class="clarification-options">';
                 data.availableDatasources.forEach(ds => {
                     html += `<button class="clarification-btn" onclick="selectDatasource(${ds.id}, '${escapeHtml(ds.name)}')">
