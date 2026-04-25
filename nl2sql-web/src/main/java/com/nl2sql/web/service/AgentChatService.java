@@ -70,10 +70,7 @@ public class AgentChatService {
         LogContextUtil.setUserContext(userInfo.getUserId(), userInfo.getUsername());
         
         try {
-            // 1. 应用默认评分
-            applyDefaultRating(request, userInfo);
-            
-            // 2. 修复编码问题
+            // 1. 修复编码问题
             String fixedMessage = fixEncoding(request.getMessage());
             
             // 3. 构建完整消息（包含 context）
@@ -111,13 +108,19 @@ public class AgentChatService {
                     buildUserInfoMap(userInfo)
                 );
                 
-                // 8. 添加元数据
+                // ✅ 8. 只有SQL查询成功才应用默认评分
+                String status = (String) response.get("status");
+                if ("success".equals(status) || "sql_generated".equals(status)) {
+                    applyDefaultRating(request, userInfo);
+                }
+                
+                // 9. 添加元数据
                 enrichResponse(response, sessionId, executionTime, request);
                 
-                // 9. ✅ 异步记录监控数据（不阻塞主流程）
+                // 10. ✅ 异步记录监控数据（不阻塞主流程）
                 publishMonitoringEvent(request, response, userInfo);
                 
-                // 10. 保存对话历史
+                // 11. 保存对话历史
                 saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, agentResponse);
                 
                 return Result.success(response);
