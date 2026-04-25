@@ -35,6 +35,10 @@ public class DatasourceClarificationTool {
      * @return JSON格式的澄清响应
      */
     @Tool("根据用户问题智能选择数据源。如果意图明确则推荐对应数据源并请求确认；如果无法判断则列出所有数据源供选择。输入用户问题")
+    /**
+     * ✅ 重构：简化为自然语言返回，不设置任何状态
+     * LLM根据返回信息自行决定下一步操作
+     */
     public String clarifyDatasource(String userQuery) {
         try {
             log.info("[DatasourceClarification] 分析用户问题: {}", userQuery);
@@ -42,51 +46,37 @@ public class DatasourceClarificationTool {
             List<Map<String, Object>> datasources = getActiveDatasources();
                 
             if (datasources.isEmpty()) {
-                return "{\"status\":\"error\",\"message\":\"没有可用的数据源\"}";
+                return "错误：没有可用的数据源，请联系管理员配置";
             }
                 
-            // 情况1：只有一个数据源，直接使用（返回JSON，后端自动执行）
+            // 情况1：只有一个数据源，直接告知LLM
             if (datasources.size() == 1) {
                 Map<String, Object> ds = datasources.get(0);
                 Long dsId = ((Number) ds.get("id")).longValue();
+                String dsName = (String) ds.get("name");
                 
-                Map<String, Object> response = new HashMap<>();
-                response.put("status", "clarification_needed");
-                response.put("clarificationType", "datasource_recommendation");
-                response.put("message", String.format(
-                    "✅ 检测到唯一数据源：%s",
-                    formatDatasourceInfo(ds)
-                ));
-                response.put("recommendedDatasourceId", dsId);
-                response.put("autoExecuted", true); // ✅ 标记已自动执行
-                
-                String result = objectMapper.writeValueAsString(response);
-                log.info("[DatasourceClarification] 唯一数据源，自动执行: {}", result);
-                return result;
+                String message = String.format(
+                    "✅ 系统只有唯一数据源：%s (ID=%d)\n\n请直接使用此数据源执行查询，无需再次确认。",
+                    dsName, dsId
+                );
+                log.info("[DatasourceClarification] 唯一数据源: {}", dsName);
+                return message;
             }
                 
             // 情况2：使用LLM智能匹配
             Map<String, Object> matchedDs = llmIntelligentMatch(userQuery, datasources);
                 
             if (matchedDs != null) {
-                // ✅ 匹配成功，返回推荐并强制 LLM 立即执行查询
-                Map<String, Object> response = new HashMap<>();
-                response.put("status", "clarification_needed");
-                response.put("clarificationType", "datasource_recommendation");
-                            
+                Long dsId = ((Number) matchedDs.get("id")).longValue();
+                String dsName = (String) matchedDs.get("name");
+                
                 String message = String.format(
-                    "🎯 已自动选择数据源：%s\n\n%s\n\n⚠️ 重要：请立即调用 execute_standard_query(question=\"%s\", datasourceId=%s) 执行查询，不要输出任何确认问句！",
-                    matchedDs.get("name"),
-                    formatDatasourceInfo(matchedDs),
-                    userQuery,
-                    matchedDs.get("id")
+                    "🎯 根据您的问句，推荐使用数据源：%s (ID=%d)\n\n%s\n\n请使用此数据源执行查询。",
+                    dsName, dsId,
+                    formatDatasourceInfo(matchedDs)
                 );
-                response.put("message", message);
-                response.put("recommendedDatasourceId", ((Number) matchedDs.get("id")).longValue());
-                            
-                String result = objectMapper.writeValueAsString(response);
-                log.info("[DatasourceClarification] 推荐数据源: {}", result);
-                return result;
+                log.info("[DatasourceClarification] 推荐数据源: {} (ID={})", dsName, dsId);
+                return message;
             }
                 
             // 情况3：LLM无法确定，返回所有候选让用户选择
@@ -94,7 +84,7 @@ public class DatasourceClarificationTool {
                 
         } catch (Exception e) {
             log.error("[DatasourceClarification] 处理失败", e);
-            return "{\"status\":\"error\",\"message\":\"无法获取数据源列表: " + escapeJson(e.getMessage()) + "\"}";
+            return "错误：无法获取数据源列表 - " + e.getMessage();
         }
     }
     
