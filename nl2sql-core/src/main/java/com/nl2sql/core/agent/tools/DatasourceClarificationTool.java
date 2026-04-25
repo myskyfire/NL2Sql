@@ -36,8 +36,8 @@ public class DatasourceClarificationTool {
      */
     @Tool("根据用户问题智能选择数据源。如果意图明确则推荐对应数据源并请求确认；如果无法判断则列出所有数据源供选择。输入用户问题")
     /**
-     * ✅ 重构：简化为自然语言返回，不设置任何状态
-     * LLM根据返回信息自行决定下一步操作
+     * ✅ 重构：返回轻量级结构化信息，便于LLM提取关键字段
+     * 格式：[DATASOURCE_SELECTED:id=X,name=Y] + 自然语言说明
      */
     public String clarifyDatasource(String userQuery) {
         try {
@@ -46,7 +46,7 @@ public class DatasourceClarificationTool {
             List<Map<String, Object>> datasources = getActiveDatasources();
                 
             if (datasources.isEmpty()) {
-                return "错误：没有可用的数据源，请联系管理员配置";
+                return "[ERROR] 没有可用的数据源，请联系管理员配置";
             }
                 
             // 情况1：只有一个数据源，直接告知LLM
@@ -56,10 +56,10 @@ public class DatasourceClarificationTool {
                 String dsName = (String) ds.get("name");
                 
                 String message = String.format(
-                    "✅ 系统只有唯一数据源：%s (ID=%d)\n\n请直接使用此数据源执行查询，无需再次确认。",
-                    dsName, dsId
+                    "[DATASOURCE_SELECTED:id=%d,name=%s]\n\n✅ 系统只有唯一数据源：%s\n\n请直接使用此数据源执行查询，无需再次确认。",
+                    dsId, escapeJson(dsName), dsName
                 );
-                log.info("[DatasourceClarification] 唯一数据源: {}", dsName);
+                log.info("[DatasourceClarification] 唯一数据源: {} (ID={})", dsName, dsId);
                 return message;
             }
                 
@@ -71,8 +71,8 @@ public class DatasourceClarificationTool {
                 String dsName = (String) matchedDs.get("name");
                 
                 String message = String.format(
-                    "🎯 根据您的问句，推荐使用数据源：%s (ID=%d)\n\n%s\n\n请使用此数据源执行查询。",
-                    dsName, dsId,
+                    "[DATASOURCE_SELECTED:id=%d,name=%s]\n\n🎯 根据您的问句，推荐使用数据源：%s\n\n%s\n\n请使用此数据源执行查询。",
+                    dsId, escapeJson(dsName), dsName,
                     formatDatasourceInfo(matchedDs)
                 );
                 log.info("[DatasourceClarification] 推荐数据源: {} (ID={})", dsName, dsId);
@@ -84,7 +84,7 @@ public class DatasourceClarificationTool {
                 
         } catch (Exception e) {
             log.error("[DatasourceClarification] 处理失败", e);
-            return "错误：无法获取数据源列表 - " + e.getMessage();
+            return "[ERROR] 无法获取数据源列表 - " + escapeJson(e.getMessage());
         }
     }
     
@@ -302,30 +302,33 @@ public class DatasourceClarificationTool {
     }
     
     /**
-     * 构建数据源选择响应（JSON格式）
+     * ✅ 重构：构建数据源选择响应 - 轻量级列表格式
      */
     private String buildDatasourceSelectionResponse(List<Map<String, Object>> datasources) {
-        StringBuilder json = new StringBuilder();
-        json.append("{\"status\":\"clarification_needed\",\"clarificationType\":\"datasource_selection\",\"message\":\"📋 请选择数据源：\",\"availableDatasources\": [");
+        StringBuilder sb = new StringBuilder();
+        sb.append("[DATASOURCE_SELECTION_NEEDED]\n\n📋 无法自动确定数据源，请从以下选项中选择一个（回复序号或名称）：\n\n");
         
         for (int i = 0; i < datasources.size(); i++) {
-            if (i > 0) json.append(",");
             Map<String, Object> ds = datasources.get(i);
-            json.append("{");
-            json.append("\"id\":").append(ds.get("id")).append(",");
-            json.append("\"name\":\"").append(escapeJson(String.valueOf(ds.get("name")))).append("\",");
-            json.append("\"db_type\":\"").append(escapeJson(String.valueOf(ds.get("db_type")))).append("\",");
-            json.append("\"database_name\":\"").append(escapeJson(String.valueOf(ds.get("database_name")))).append("\"");
+            Long dsId = ((Number) ds.get("id")).longValue();
+            String dsName = String.valueOf(ds.get("name"));
+            String dbType = String.valueOf(ds.get("db_type"));
+            String dbName = String.valueOf(ds.get("database_name"));
+            
+            sb.append(String.format(
+                "%d. [%d] %s (%s/%s)\n",
+                i + 1, dsId, escapeJson(dsName), dbType, escapeJson(dbName)
+            ));
+            
             if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
-                json.append(",\"description\":\"").append(escapeJson(String.valueOf(ds.get("description")))).append("\"");
+                sb.append(String.format("   说明: %s\n", escapeJson(String.valueOf(ds.get("description")))));
             }
-            json.append("}");
         }
         
-        json.append("]}");
+        sb.append("\n💡 提示：您可以直接说'选择第X个'或'使用XXX数据源'");
         
-        log.info("[DatasourceClarification] 返回{}个数据源选项", datasources.size());
-        return json.toString();
+        log.info("[DatasourceClarification] 返回{}个数据源选项供用户选择", datasources.size());
+        return sb.toString();
     }
     
     /**
