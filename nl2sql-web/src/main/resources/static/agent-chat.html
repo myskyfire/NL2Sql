@@ -457,6 +457,14 @@
                         return; // 终止正常流程
                     }
                 }
+                
+                // ✅ 如果用户输入的不是选择指令，视为放弃当前澄清，开始新查询
+                console.log('[sendMessage] 检测到新查询，清空数据源列表');
+                pendingDatasourceList = [];
+                if (window.datasourceListTimeout) {
+                    clearTimeout(window.datasourceListTimeout);
+                    window.datasourceListTimeout = null;
+                }
             }
             
             // ✅ 新查询时清除之前的追问状态
@@ -835,9 +843,6 @@
                 pendingDatasourceList = data.availableDatasources;
                 console.log('[handleClarification] 保存数据源列表:', pendingDatasourceList.length, '个');
                 
-                // ✅ 冻结输入框，强制用户通过按钮或自然语言选择
-                disableChatInput('请选择一个数据源以继续查询...');
-                
                 // ✅ 启动3分钟超时定时器，自动清空列表（防止用户偏离话题后误匹配）
                 if (window.datasourceListTimeout) {
                     clearTimeout(window.datasourceListTimeout);
@@ -845,7 +850,6 @@
                 window.datasourceListTimeout = setTimeout(() => {
                     console.log('[handleClarification] 数据源列表超时，已清空');
                     pendingDatasourceList = [];
-                    enableChatInput();  // 超时后恢复输入
                 }, 3 * 60 * 1000); // 3分钟
                 
                 html += '<div class="clarification-options">';
@@ -855,6 +859,9 @@
                     </button>`;
                 });
                 html += '</div>';
+                
+                // ✅ 提示用户可以输入新问题（会放弃当前选择）
+                html += '<div style="margin-top:10px;font-size:12px;color:#999;">💡 提示：您也可以直接输入新问题，将放弃当前数据源选择</div>';
             }
             // 表关联关系澄清
             else if (data.clarificationType === 'relationship_clarification') {
@@ -1516,7 +1523,6 @@
                 window.datasourceListTimeout = null;
             }
             pendingDatasourceList = [];  // 清空列表
-            enableChatInput();  // 恢复输入框
             
             // ✅ 关键修复：先更新 currentContext.datasourceId
             if (!currentContext) {
@@ -1779,38 +1785,6 @@
                 typingIndicator.remove();
             }
             document.getElementById('sendBtn').disabled = false;
-        }
-        
-        // ✅ 新增：禁用输入框（澄清阶段）
-        function disableChatInput(hintText) {
-            const input = document.getElementById('chatInput');
-            const sendBtn = document.getElementById('sendBtn');
-            if (input) {
-                input.disabled = true;
-                input.placeholder = hintText || '请先完成选择...';
-                input.style.cursor = 'not-allowed';
-                input.style.backgroundColor = '#f5f5f5';
-            }
-            if (sendBtn) {
-                sendBtn.disabled = true;
-            }
-            console.log('[disableChatInput] 输入框已禁用:', hintText);
-        }
-        
-        // ✅ 新增：启用输入框（恢复正常）
-        function enableChatInput() {
-            const input = document.getElementById('chatInput');
-            const sendBtn = document.getElementById('sendBtn');
-            if (input) {
-                input.disabled = false;
-                input.placeholder = '输入您的问题...';
-                input.style.cursor = 'text';
-                input.style.backgroundColor = '';
-            }
-            if (sendBtn) {
-                sendBtn.disabled = false;
-            }
-            console.log('[enableChatInput] 输入框已恢复');
         }
         
         // HTML 转义
