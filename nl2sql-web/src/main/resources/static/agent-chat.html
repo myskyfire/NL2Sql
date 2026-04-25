@@ -703,8 +703,20 @@
             // ✅ 新增：SQL反馈评分组件
             if (data.generatedSQL || data.sql) {
                 const sqlForFeedback = data.generatedSQL || data.sql;
-                const lastUserMsg = document.querySelector('.message.user:last-child .message-bubble');
-                const questionForFeedback = lastUserMsg ? lastUserMsg.textContent.trim() : '';
+                
+                // ✅ 修正：优先使用 pendingQuery 或 currentContext.lastQuery，避免 DOM 查找失败
+                let questionForFeedback = '';
+                if (pendingQuery) {
+                    questionForFeedback = pendingQuery;
+                } else if (currentContext && currentContext.lastQuery) {
+                    questionForFeedback = currentContext.lastQuery;
+                } else {
+                    // 降级方案：从 DOM 获取
+                    const lastUserMsg = document.querySelector('.message.user:last-child .message-bubble');
+                    questionForFeedback = lastUserMsg ? lastUserMsg.textContent.trim() : '';
+                }
+                
+                console.log('[handleQuerySuccess] 反馈question:', questionForFeedback);
                 html += renderFeedbackButtons(questionForFeedback, sqlForFeedback);
             }
             
