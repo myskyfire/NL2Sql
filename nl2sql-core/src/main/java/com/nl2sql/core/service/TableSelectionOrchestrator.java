@@ -114,6 +114,9 @@ public class TableSelectionOrchestrator {
                                         java.util.function.BiFunction<String, String, String> promptBuilder,
                                         java.util.function.Consumer<String> progressPublisher) {
         try {
+            // ✅ 初始化监控上下文
+            MonitoringContext.init();
+            
             // ✅ P0优化：优先从QueryCache获取5分SQL模板
             if (queryCacheService != null) {
                 String normalizedQuery = schemaRetrievalService.normalizeQueryForCache(query);
@@ -127,6 +130,9 @@ public class TableSelectionOrchestrator {
                     log.info("[TableSelection] ⚡⚡⚡ 5分SQL模板命中: question='{}', sql={}", 
                         query, finalSQL);
                     sessionContextManager.saveCurrentContext(finalSQL, query);
+                    
+                    // ✅ 记录监控数据：L1缓存命中
+                    MonitoringContext.setCacheInfo("L1", true);
                     
                     TableSelectionResult result = new TableSelectionResult();
                     result.setCachedSQL(finalSQL);
@@ -146,6 +152,9 @@ public class TableSelectionOrchestrator {
                             log.info("[TableSelection] SQL 缓存命中: question={}", query);
                             sessionContextManager.saveCurrentContext(cachedSQL, query);
                             
+                            // ✅ 记录监控数据：L2缓存命中
+                            MonitoringContext.setCacheInfo("L2", true);
+                            
                             TableSelectionResult result = new TableSelectionResult();
                             result.setCachedSQL(cachedSQL);
                             return result;
@@ -164,6 +173,9 @@ public class TableSelectionOrchestrator {
             if (cachedTables != null && !cachedTables.isEmpty()) {
                 log.info("[TableSelection] ⚡⚡⚡ 表组合缓存命中: query='{}', tables={}", query, cachedTables);
                 
+                // ✅ 记录监控数据：L3缓存命中
+                MonitoringContext.setCacheInfo("L3", true);
+                
                 TableSelectionResult result = new TableSelectionResult();
                 result.setExpandedQuery(query);
                 result.setSelectedTables(new HashSet<>(cachedTables));
@@ -179,6 +191,19 @@ public class TableSelectionOrchestrator {
                 log.info("[TableSelection] 查询扩展: {} -> {}", query, expandedQuery);
                 progressPublisher.accept("synonym_expansion");
             }
+            
+            // ✅ 记录归一化信息
+            String normalizedQuery = schemaRetrievalService.normalizeQueryForCache(query);
+            java.util.List<String> persons = com.nl2sql.common.util.EntityExtractor.extractPersons(query);
+            java.util.List<String> locations = com.nl2sql.common.util.EntityExtractor.extractLocations(query);
+            
+            boolean hasPerson = !persons.isEmpty();
+            boolean hasLocation = !locations.isEmpty();
+            String normMethod = hasPerson || hasLocation ? "hanlp" : "regex";
+            
+            MonitoringContext.setNormalizationInfo(normalizedQuery, hasPerson, hasLocation, normMethod);
+            log.debug("[MonitoringContext] 归一化信息: normalized={}, person={}, location={}, method={}",
+                normalizedQuery, hasPerson, hasLocation, normMethod);
             
             // 1. ✅ P0优化：优先从L3语义缓存获取表列表（避免重复检索）
             progressPublisher.accept("retrieving_tables");
@@ -198,12 +223,19 @@ public class TableSelectionOrchestrator {
                     initialTables = metadataCacheService.findSimilarQueryBySemantic(expandedQuery, datasourceId, 0.85);
                     if (initialTables != null && !initialTables.isEmpty()) {
                         log.info("[TableSelection] ⚡ L3语义缓存命中: query='{}', tables={}", expandedQuery, initialTables);
+                        // ✅ 记录监控数据：L3缓存命中
+                        MonitoringContext.setCacheInfo("L3", true);
                     }
                 }
                 
                 // L3未命中，执行向量检索
                 if (initialTables == null || initialTables.isEmpty()) {
                     initialTables = vectorRetriever.retrieveTopTables(expandedQuery, datasourceId, 15);
+                    // ✅ 记录监控数据：缓存未命中
+                    MonitoringContext.MonitoringData data = MonitoringContext.get();
+                    if (data.getCacheHit() == null || !data.getCacheHit()) {
+                        MonitoringContext.setCacheInfo("MISS", false);
+                    }
                 }
             }
             

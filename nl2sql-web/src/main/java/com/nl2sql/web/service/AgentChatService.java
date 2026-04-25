@@ -120,6 +120,8 @@ public class AgentChatService {
                 
             } finally {
                 clearSessionId();
+                // ✅ 清理监控上下文（防止内存泄漏）
+                com.nl2sql.core.service.MonitoringContext.clear();
             }
             
         } catch (Exception e) {
@@ -323,6 +325,28 @@ public class AgentChatService {
                 response.put("selectedTables", selectedTables);
                 log.debug("[enrichResponse] 已添加 selectedTables: {}", selectedTables);
             }
+        }
+        
+        // ✅ 新增：从 MonitoringContext 获取监控数据并放入 response
+        try {
+            com.nl2sql.core.service.MonitoringContext.MonitoringData monitoringData = 
+                com.nl2sql.core.service.MonitoringContext.get();
+            
+            if (monitoringData != null) {
+                response.put("normalizedQuery", monitoringData.getNormalizedQuery());
+                response.put("hasPersonEntity", monitoringData.getHasPersonEntity());
+                response.put("hasLocationEntity", monitoringData.getHasLocationEntity());
+                response.put("normalizationMethod", monitoringData.getNormalizationMethod());
+                response.put("cacheLevel", monitoringData.getCacheLevel());
+                response.put("cacheHit", monitoringData.getCacheHit());
+                response.put("ragExamplesCount", monitoringData.getRagExamplesCount());
+                response.put("industryTermsMatched", monitoringData.getIndustryTermsMatched());
+                
+                log.debug("[enrichResponse] 已添加监控数据: cacheLevel={}, ragCount={}",
+                    monitoringData.getCacheLevel(), monitoringData.getRagExamplesCount());
+            }
+        } catch (Exception e) {
+            log.warn("[enrichResponse] 获取监控数据失败", e);
         }
     }
     

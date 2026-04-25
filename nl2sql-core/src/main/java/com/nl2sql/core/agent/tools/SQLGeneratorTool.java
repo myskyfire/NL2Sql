@@ -189,9 +189,16 @@ public class SQLGeneratorTool extends BaseToolAdapter {
             publishProgress("rag_search", "📚 检索历史相似案例...");
             String enhancement = ragService.buildRAGEnhancement(query);
             
-            if (!enhancement.isEmpty()) {
+            // ✅ 记录监控数据：RAG示例数量
+            int ragCount = 0;
+            if (enhancement != null && !enhancement.isEmpty()) {
+                // 统计示例数量（每个示例以"示例"开头）
+                ragCount = enhancement.split("示例").length - 1;
                 publishProgress("rag_completed", "✅ 找到参考案例");
+                log.debug("[MonitoringContext] RAG检索到 {} 个示例", ragCount);
             }
+            
+            com.nl2sql.core.service.MonitoringContext.setRagInfo(ragCount, null);
             
             return enhancement;
             
