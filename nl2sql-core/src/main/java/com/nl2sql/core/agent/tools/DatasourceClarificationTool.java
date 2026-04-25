@@ -36,8 +36,7 @@ public class DatasourceClarificationTool {
      */
     @Tool("根据用户问题智能选择数据源。如果意图明确则推荐对应数据源并请求确认；如果无法判断则列出所有数据源供选择。输入用户问题")
     /**
-     * ✅ 重构：返回轻量级结构化信息，便于LLM提取关键字段
-     * 格式：[DATASOURCE_SELECTED:id=X,name=Y] + 自然语言说明
+     * ✅ 重构：统一返回JSON结构，便于LLM和前端统一处理
      */
     public String clarifyDatasource(String userQuery) {
         try {
@@ -46,21 +45,16 @@ public class DatasourceClarificationTool {
             List<Map<String, Object>> datasources = getActiveDatasources();
                 
             if (datasources.isEmpty()) {
-                return "[ERROR] 没有可用的数据源，请联系管理员配置";
+                return buildErrorResponse("没有可用的数据源，请联系管理员配置");
             }
                 
-            // 情况1：只有一个数据源，直接告知LLM
+            // 情况1：只有一个数据源，自动选择
             if (datasources.size() == 1) {
                 Map<String, Object> ds = datasources.get(0);
                 Long dsId = ((Number) ds.get("id")).longValue();
                 String dsName = (String) ds.get("name");
                 
-                String message = String.format(
-                    "[DATASOURCE_SELECTED:id=%d,name=%s]\n\n✅ 系统只有唯一数据源：%s\n\n请直接使用此数据源执行查询，无需再次确认。",
-                    dsId, escapeJson(dsName), dsName
-                );
-                log.info("[DatasourceClarification] 唯一数据源: {} (ID={})", dsName, dsId);
-                return message;
+                return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(ds), true);
             }
                 
             // 情况2：使用LLM智能匹配
@@ -70,13 +64,7 @@ public class DatasourceClarificationTool {
                 Long dsId = ((Number) matchedDs.get("id")).longValue();
                 String dsName = (String) matchedDs.get("name");
                 
-                String message = String.format(
-                    "[DATASOURCE_SELECTED:id=%d,name=%s]\n\n🎯 根据您的问句，推荐使用数据源：%s\n\n%s\n\n请使用此数据源执行查询。",
-                    dsId, escapeJson(dsName), dsName,
-                    formatDatasourceInfo(matchedDs)
-                );
-                log.info("[DatasourceClarification] 推荐数据源: {} (ID={})", dsName, dsId);
-                return message;
+                return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(matchedDs), false);
             }
                 
             // 情况3：LLM无法确定，返回所有候选让用户选择
@@ -84,7 +72,7 @@ public class DatasourceClarificationTool {
                 
         } catch (Exception e) {
             log.error("[DatasourceClarification] 处理失败", e);
-            return "[ERROR] 无法获取数据源列表 - " + escapeJson(e.getMessage());
+            return buildErrorResponse("无法获取数据源列表 - " + e.getMessage());
         }
     }
     
@@ -326,6 +314,58 @@ public class DatasourceClarificationTool {
         
         log.info("[DatasourceClarification] 返回{}个数据源选项供前端渲染", datasources.size());
         return json.toString();
+    }
+    
+    /**
+     * ✅ 新增：构建自动选择响应（统一JSON格式）
+     */
+    private String buildAutoSelectedResponse(Long dsId, String dsName, String datasourceInfo, boolean isOnlyOne) {
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "clarification_needed");
+            response.put("clarificationType", "datasource_recommendation");
+            
+            String message;
+            if (isOnlyOne) {
+                message = String.format(
+                    "✅ 系统只有唯一数据源：%s\n\n%s\n\n请直接使用此数据源执行查询，无需再次确认。",
+                    escapeJson(dsName), datasourceInfo
+                );
+            } else {
+                message = String.format(
+                    "🎯 根据您的问句，推荐使用数据源：%s\n\n%s\n\n请使用此数据源执行查询。",
+                    escapeJson(dsName), datasourceInfo
+                );
+            }
+            
+            response.put("message", message);
+            response.put("recommendedDatasourceId", dsId);
+            response.put("autoExecuted", isOnlyOne); // 唯一数据源时标记为已自动执行
+            
+            String result = objectMapper.writeValueAsString(response);
+            log.info("[DatasourceClarification] 自动选择数据源: {} (ID={}, autoExecuted={})", dsName, dsId, isOnlyOne);
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[DatasourceClarification] 构建自动选择响应失败", e);
+            return buildErrorResponse("构建响应失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ 新增：构建错误响应（统一JSON格式）
+     */
+    private String buildErrorResponse(String errorMessage) {
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "error");
+            response.put("message", escapeJson(errorMessage));
+            
+            return objectMapper.writeValueAsString(response);
+        } catch (Exception e) {
+            log.error("[DatasourceClarification] 构建错误响应失败", e);
+            return "{\"status\":\"error\",\"message\":\"系统错误\"}";
+        }
     }
     
     /**
