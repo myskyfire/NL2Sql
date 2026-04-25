@@ -302,33 +302,30 @@ public class DatasourceClarificationTool {
     }
     
     /**
-     * ✅ 重构：构建数据源选择响应 - 轻量级列表格式
+     * ✅ 重构：构建数据源选择响应 - 返回JSON供前端渲染按钮
      */
     private String buildDatasourceSelectionResponse(List<Map<String, Object>> datasources) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("[DATASOURCE_SELECTION_NEEDED]\n\n📋 无法自动确定数据源，请从以下选项中选择一个（回复序号或名称）：\n\n");
+        StringBuilder json = new StringBuilder();
+        json.append("{\"status\":\"clarification_needed\",\"clarificationType\":\"datasource_selection\",\"message\":\"📋 请选择数据源：\",\"availableDatasources\": [");
         
         for (int i = 0; i < datasources.size(); i++) {
+            if (i > 0) json.append(",");
             Map<String, Object> ds = datasources.get(i);
-            Long dsId = ((Number) ds.get("id")).longValue();
-            String dsName = String.valueOf(ds.get("name"));
-            String dbType = String.valueOf(ds.get("db_type"));
-            String dbName = String.valueOf(ds.get("database_name"));
-            
-            sb.append(String.format(
-                "%d. [%d] %s (%s/%s)\n",
-                i + 1, dsId, escapeJson(dsName), dbType, escapeJson(dbName)
-            ));
-            
+            json.append("{");
+            json.append("\"id\":").append(ds.get("id")).append(",");
+            json.append("\"name\":\"").append(escapeJson(String.valueOf(ds.get("name")))).append("\",");
+            json.append("\"db_type\":\"").append(escapeJson(String.valueOf(ds.get("db_type")))).append("\",");
+            json.append("\"database_name\":\"").append(escapeJson(String.valueOf(ds.get("database_name")))).append("\"");
             if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
-                sb.append(String.format("   说明: %s\n", escapeJson(String.valueOf(ds.get("description")))));
+                json.append(",\"description\":\"").append(escapeJson(String.valueOf(ds.get("description")))).append("\"");
             }
+            json.append("}");
         }
         
-        sb.append("\n💡 提示：您可以直接说'选择第X个'或'使用XXX数据源'");
+        json.append("]}");
         
-        log.info("[DatasourceClarification] 返回{}个数据源选项供用户选择", datasources.size());
-        return sb.toString();
+        log.info("[DatasourceClarification] 返回{}个数据源选项供前端渲染", datasources.size());
+        return json.toString();
     }
     
     /**
