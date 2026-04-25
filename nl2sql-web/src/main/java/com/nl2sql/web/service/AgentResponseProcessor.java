@@ -144,30 +144,9 @@ public class AgentResponseProcessor {
         
         String status = (String) parsed.get("status");
         
-        // 如果是澄清类型，尝试提取数据源ID
-        if ("clarification_needed".equals(status)) {
-            String clarificationType = (String) parsed.get("clarificationType");
-            if ("datasource_recommendation".equals(clarificationType)) {
-                // 检查是否已有 recommendedDatasourceId
-                if (parsed.get("recommendedDatasourceId") == null) {
-                    // 尝试从 message 中提取
-                    String message = (String) parsed.get("message");
-                    Long extractedDsId = extractDatasourceIdFromText(message);
-                    if (extractedDsId != null) {
-                        parsed.put("recommendedDatasourceId", extractedDsId);
-                        log.info("[handleJsonResponse] 从文本中提取到数据源ID: {}", extractedDsId);
-                    }
-                }
-                
-                // 如果有推荐的数据源ID，自动发起第二轮查询
-                Object recommendedDsIdObj = parsed.get("recommendedDatasourceId");
-                Long recommendedDsId = recommendedDsIdObj != null ? ((Number) recommendedDsIdObj).longValue() : null;
-                if (recommendedDsId != null) {
-                    log.info("[handleJsonResponse] 检测到推荐数据源ID: {}，自动发起第二轮查询", recommendedDsId);
-                    return executeSecondRoundQuery(request, userInfo, recommendedDsId);
-                }
-            }
-        }
+        // ✅ 修正：不再自动执行第二轮查询，让LLM根据Tool返回自主决策
+        // Tool返回的JSON会原样传递给LLM作为Observation
+        // LLM会根据recommendedDatasourceId决定是否调用execute_standard_query
         
         // 其他状态直接返回
         return parsed;
@@ -188,15 +167,8 @@ public class AgentResponseProcessor {
             response.put("clarificationType", "datasource_recommendation");
             response.put("message", text);
             
-            // 尝试从文本中提取数据源ID
-            Long extractedDsId = extractDatasourceIdFromText(text);
-            if (extractedDsId != null) {
-                log.info("[handleTextResponse] 从文本中提取到数据源ID: {}", extractedDsId);
-                response.put("recommendedDatasourceId", extractedDsId);
-                
-                // 自动发起第二轮查询
-                return executeSecondRoundQuery(request, userInfo, extractedDsId);
-            }
+            // ✅ 修正：不再自动提取ID并执行，让LLM自主决策
+            // 如果文本中包含数据源信息，LLM会自行解析并决定下一步
         } else if (text.contains("抱歉") || text.contains("无法")) {
             response.put("status", "error");
             response.put("message", text);
