@@ -725,11 +725,16 @@
         
         // 处理澄清需求
         function handleClarification(data) {
-            // ✅ 关键修复：保存原始查询问题（用于数据源澄清后重新发送）
-            const lastUserMsg = document.querySelector('.message.user:last-child .message-bubble');
-            if (lastUserMsg && data.clarificationType && data.clarificationType.startsWith('datasource_')) {
-                pendingQuery = lastUserMsg.textContent.trim();
-                console.log('[handleClarification] 保存原始问题:', pendingQuery);
+            // ✅ 修正：pendingQuery已在sendMessage时设置，这里只校验
+            if (data.clarificationType && data.clarificationType.startsWith('datasource_')) {
+                if (!pendingQuery) {
+                    console.warn('[handleClarification] pendingQuery为空，尝试从DOM恢复');
+                    const lastUserMsg = document.querySelector('.message.user:last-child .message-bubble');
+                    if (lastUserMsg) {
+                        pendingQuery = lastUserMsg.textContent.trim();
+                    }
+                }
+                console.log('[handleClarification] 当前pendingQuery:', pendingQuery);
             }
             
             let html = `<div>${data.message}</div>`;
