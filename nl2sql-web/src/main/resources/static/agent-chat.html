@@ -835,6 +835,15 @@
                 pendingDatasourceList = data.availableDatasources;
                 console.log('[handleClarification] 保存数据源列表:', pendingDatasourceList.length, '个');
                 
+                // ✅ 启动3分钟超时定时器，自动清空列表（防止用户偏离话题后误匹配）
+                if (window.datasourceListTimeout) {
+                    clearTimeout(window.datasourceListTimeout);
+                }
+                window.datasourceListTimeout = setTimeout(() => {
+                    console.log('[handleClarification] 数据源列表超时，已清空');
+                    pendingDatasourceList = [];
+                }, 3 * 60 * 1000); // 3分钟
+                
                 html += '<div class="clarification-options">';
                 data.availableDatasources.forEach(ds => {
                     html += `<button class="clarification-btn" onclick="selectDatasource(${ds.id}, '${escapeHtml(ds.name)}')">
@@ -1496,6 +1505,13 @@
         function selectDatasource(datasourceId, datasourceName) {
             addMessage(`我选择了: ${datasourceName}`, 'user');
             showTypingIndicator();
+            
+            // ✅ 清除超时定时器（用户已做出选择）
+            if (window.datasourceListTimeout) {
+                clearTimeout(window.datasourceListTimeout);
+                window.datasourceListTimeout = null;
+            }
+            pendingDatasourceList = [];  // 清空列表
             
             // ✅ 关键修复：先更新 currentContext.datasourceId
             if (!currentContext) {
