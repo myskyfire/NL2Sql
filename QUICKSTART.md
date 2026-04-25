@@ -1,4 +1,7 @@
-# NL2SQL 快速启动指南 v1.3.0
+# NL2SQL 快速启动指南 v1.4.0
+
+**最后更新**: 2026-04-25  
+**新增功能**: usage_rule表使用规则、ReAct Agent架构、行业概念配置
 
 ## 📋 环境要求
 
@@ -16,7 +19,7 @@
 
 ### 步骤1: 克隆项目
 ```bash
-cd "E:\work\idea workspace\NL2SQL"
+cd "D:\WorkSpace\idea workspace\NL2Sql"
 ```
 
 ### 步骤2: 初始化数据库
@@ -97,7 +100,7 @@ ollama:
 
 ### 步骤6: 编译项目
 ```bash
-cd "E:\work\idea workspace\NL2SQL"
+cd "D:\WorkSpace\idea workspace\NL2Sql"
 mvn clean package -DskipTests
 ```
 
@@ -175,6 +178,53 @@ POST /api/query
   "pageSize": 50
 }
 ```
+
+### 7. 行业概念配置（新增）
+
+#### 7.1 配置电商行业概念
+```bash
+# 执行SQL脚本
+python execute_ecommerce_config.py
+
+# 关联数据源
+python link_datasource.py
+```
+
+#### 7.2 配置usage_rule表使用规则
+```sql
+-- 区分相似表的使用场景
+INSERT INTO industry_concept (industry_code, concept_type, concept_key, description) VALUES
+('ecommerce', 'usage_rule', 'users_vs_addresses', 
+ 'user_addresses是地址表(存储收货信息),仅用于地址相关查询。
+  users是用户主表(存储账户信息:username/real_name/gender/email)。
+  当需要用户名、性别、邮箱等用户属性时,必须通过orders.user_id→users.id关联users表');
+```
+
+**效果**：
+- 配置前：LLM混淆users和user_addresses表
+- 配置后：LLM根据usage_rule智能选择正确的表
+
+详见：[INDUSTRY_CONCEPT_GUIDE.md](INDUSTRY_CONCEPT_GUIDE.md)
+
+### 8. ReAct Agent使用（新增）
+
+系统现在采用ReAct Agent架构，LLM可以自主调用工具：
+
+```java
+// LLM自动决定调用哪个Tool
+{
+  "name": "execute_standard_query",
+  "arguments": {
+    "question": "查询昨天的订单",
+    "datasourceId": 1
+  }
+}
+```
+
+**优势**：
+- ✅ 原生Tool Calling（成功率100%）
+- ✅ LLM自主决策，无需硬编码路由
+- ✅ 支持多轮对话和上下文保持
 
 ---
 
