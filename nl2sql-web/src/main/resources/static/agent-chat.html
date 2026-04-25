@@ -1514,7 +1514,11 @@
         
         // 选择数据源
         function selectDatasource(datasourceId, datasourceName) {
-            addMessage(`我选择了: ${datasourceName}`, 'user');
+            // ✅ 修正：不显示用户消息，避免污染对话历史
+            // addMessage(`我选择了: ${datasourceName}`, 'user');
+            
+            // 显示系统提示
+            addMessage(`<div style="color:#666;font-style:italic;">🔧 已选择数据源: ${escapeHtml(datasourceName)}，正在执行查询...</div>`, 'agent');
             showTypingIndicator();
             
             // ✅ 清除超时定时器（用户已做出选择）
@@ -1550,7 +1554,11 @@
         // 确认使用推荐的数据源
         async function confirmDatasource(confirmed) {
             if (confirmed && pendingDatasourceId) {
-                addMessage('✅ 是的，使用这个数据源', 'user');
+                // ✅ 修正：不显示用户消息，避免污染对话历史
+                // addMessage('✅ 是的，使用这个数据源', 'user');
+                
+                // 显示系统提示
+                addMessage('<div style="color:#666;font-style:italic;">🔧 正在使用推荐的数据源执行查询...</div>', 'agent');
                 showTypingIndicator();
                 
                 // ✅ 关键修复：先更新 currentContext.datasourceId
