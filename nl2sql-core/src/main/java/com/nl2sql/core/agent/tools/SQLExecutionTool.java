@@ -115,7 +115,8 @@ public class SQLExecutionTool {
                     result.getData(),
                     result.getRowCount(),
                     result.getExecutionTime(),
-                    null
+                    null,
+                    sql  // ✅ 返回实际执行的SQL（可能是修正后的）
                 );
                 
             } catch (Exception e) {
@@ -227,6 +228,7 @@ public class SQLExecutionTool {
         public int rowCount;
         public Double executionTime;  // 改为Double匹配SQLExecutor.QueryResult
         public String error;
+        public String sql;  // ✅ 返回实际执行的SQL（可能是修正后的）
         
         public ExecutionResult(boolean success, List<Map<String, Object>> data, 
                               int rowCount, Double executionTime, String error) {
@@ -235,6 +237,17 @@ public class SQLExecutionTool {
             this.rowCount = rowCount;
             this.executionTime = executionTime;
             this.error = error;
+            this.sql = null;
+        }
+        
+        public ExecutionResult(boolean success, List<Map<String, Object>> data, 
+                              int rowCount, Double executionTime, String error, String sql) {
+            this.success = success;
+            this.data = data;
+            this.rowCount = rowCount;
+            this.executionTime = executionTime;
+            this.error = error;
+            this.sql = sql;
         }
     }
 }

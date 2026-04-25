@@ -135,16 +135,18 @@ public class ChromaVectorProvider implements VectorStoreProvider {
                 result.setCategory(metadata.getString("category"));
                 result.setScore(match.score());
                 
-                // ✅ 从 Chroma metadata 读取 quality_score
-                String qualityScoreStr = metadata.getString("quality_score");
-                if (qualityScoreStr != null) {
-                    try {
+                // ✅ 从 Chroma metadata 读取 quality_score（兼容 Double/String 类型）
+                try {
+                    String qualityScoreStr = metadata.getString("quality_score");
+                    if (qualityScoreStr != null) {
                         result.setQualityScore(Float.parseFloat(qualityScoreStr));
-                    } catch (NumberFormatException e) {
-                        result.setQualityScore(0.9f);
+                    } else {
+                        result.setQualityScore(0.9f); // 历史数据默认高质量
                     }
-                } else {
-                    result.setQualityScore(0.9f); // 历史数据默认高质量
+                } catch (Exception e) {
+                    // getString失败时，尝试其他方法获取
+                    log.debug("[ChromaVectorProvider] quality_score读取异常，使用默认值: {}", e.getMessage());
+                    result.setQualityScore(0.9f);
                 }
                 
                 results.add(result);

@@ -28,37 +28,58 @@ public class QueryNormalizer {
         normalized = normalized.replaceAll("过去\\d+天", "过去{NUM}天");
         normalized = normalized.replaceAll("近\\d+(天|周|月|年)", "近{NUM}{TIME_UNIT}");
         
-        // 2. 人名替换：中文2-4字姓名 + 的/先生/女士等后缀
-        normalized = normalized.replaceAll("[\\u4e00-\\u9fa5]{2,4}(?=的|先生|女士|同学|老师|经理|总)", "{PERSON}");
-        
-        // 3. 地名替换：省市县
-        String[] provinces = {"北京", "上海", "天津", "重庆", "广东", "江苏", "浙江", "四川", "湖南", "湖北", 
-                             "河南", "河北", "山东", "山西", "陕西", "安徽", "福建", "江西", "辽宁", "黑龙江", 
-                             "吉林", "甘肃", "青海", "云南", "贵州", "海南", "台湾", "内蒙古", "广西", "宁夏", 
-                             "新疆", "西藏"};
-        for (String province : provinces) {
-            normalized = normalized.replaceAll(province + "(省|市|自治区|地区|县)?", "{LOCATION}");
+        // 2. ✅ HanLP NER提取人名（高精度）
+        java.util.List<String> persons = EntityExtractor.extractPersons(query);
+        for (String person : persons) {
+            // 避免替换已被正则匹配的占位符
+            if (!normalized.contains("{PERSON}")) {
+                normalized = normalized.replace(person, "{PERSON}");
+            }
         }
         
-        // 4. 时间替换：绝对日期
+        // 3. ✅ HanLP NER提取地名（高精度）
+        java.util.List<String> locations = EntityExtractor.extractLocations(query);
+        for (String location : locations) {
+            if (!normalized.contains("{LOCATION}")) {
+                normalized = normalized.replace(location, "{LOCATION}");
+            }
+        }
+        
+        // 4. 备用：保守正则匹配带后缀的人名（兜底策略）
+        if (!persons.isEmpty() && !normalized.contains("{PERSON}")) {
+            normalized = normalized.replaceAll("[\\u4e00-\\u9fa5]{2,4}(?=的|先生|女士|同学|老师|经理|总)", "{PERSON}");
+        }
+        
+        // 5. 备用：省份地名正则（兜底策略）
+        if (!locations.isEmpty() && !normalized.contains("{LOCATION}")) {
+            String[] provinces = {"北京", "上海", "天津", "重庆", "广东", "江苏", "浙江", "四川", "湖南", "湖北", 
+                                 "河南", "河北", "山东", "山西", "陕西", "安徽", "福建", "江西", "辽宁", "黑龙江", 
+                                 "吉林", "甘肃", "青海", "云南", "贵州", "海南", "台湾", "内蒙古", "广西", "宁夏", 
+                                 "新疆", "西藏"};
+            for (String province : provinces) {
+                normalized = normalized.replaceAll(province + "(省|市|自治区|地区|县)?", "{LOCATION}");
+            }
+        }
+        
+        // 6. 时间替换：绝对日期
         normalized = normalized.replaceAll("\\d{4}年\\d{1,2}月?", "{DATE_ABSOLUTE}");
         normalized = normalized.replaceAll("\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}", "{DATE_ABSOLUTE}");
         normalized = normalized.replaceAll("\\d{1,2}月\\d{1,2}[日号]", "{DATE_ABSOLUTE}");
         
-        // 5. 金额替换
+        // 7. 金额替换
         normalized = normalized.replaceAll("\\d+[万千元亿]?元?", "{AMOUNT}");
         normalized = normalized.replaceAll("[￥$€£]\\d+([万千元亿])?", "{AMOUNT}");
         
-        // 6. 数字ID替换
+        // 8. 数字ID替换
         normalized = normalized.replaceAll("ID[为是]?\\d+", "ID{NUM}");
         normalized = normalized.replaceAll("编号[为是]?\\w+", "编号{NUM}");
         normalized = normalized.replaceAll("订单号[为是]?\\w+", "订单号{NUM}");
         normalized = normalized.replaceAll("账号[为是]?\\w+", "账号{NUM}");
         
-        // 7. 纯数字替换（保底）
+        // 9. 纯数字替换（保底）
         normalized = normalized.replaceAll("\\d+", "{NUM}");
         
-        // 8. 去除多余空格
+        // 10. 去除多余空格
         normalized = normalized.trim().replaceAll("\\s+", " ");
         
         return normalized;

@@ -245,20 +245,6 @@ public class QueryCacheVectorService {
             return true;
             
         } catch (Exception e) {
-            // ✅ 检测到维度不匹配，自动删除集合并重建
-            if (e.getMessage() != null && e.getMessage().contains("dimension")) {
-                log.warn("[QueryCacheVectorService] 检测到维度不匹配，自动重建: {}", e.getMessage());
-                try {
-                    recreateCollection();
-                    return addQueryToCache(query, datasourceId, tables);
-                    
-                } catch (Exception rebuildError) {
-                    log.error("[QueryCacheVectorService] ❌ 集合重建失败", rebuildError);
-                    this.available = false;
-                    return false;
-                }
-            }
-            
             log.error("[QueryCacheVectorService] ❌ 添加查询缓存失败: query={}, error={}", 
                 query, e.getMessage(), e);
             return false;
@@ -345,20 +331,6 @@ public class QueryCacheVectorService {
             return results;
             
         } catch (Exception e) {
-            // ✅ 检测到维度不匹配，自动删除集合并重建
-            if (e.getMessage() != null && e.getMessage().contains("dimension")) {
-                log.warn("[QueryCacheVectorService] 查询时维度不匹配，自动重建: {}", e.getMessage());
-                try {
-                    recreateCollection();
-                    return searchSimilarQueries(query, datasourceId);
-                    
-                } catch (Exception rebuildError) {
-                    log.error("[QueryCacheVectorService] ❌ 集合重建失败", rebuildError);
-                    this.available = false;
-                    return new ArrayList<>();
-                }
-            }
-            
             log.error("[QueryCacheVectorService] ❌ Chroma语义检索失败: query={}, error={}", 
                 query, e.getMessage(), e);
             return new ArrayList<>();
@@ -443,20 +415,6 @@ public class QueryCacheVectorService {
             return results;
             
         } catch (Exception e) {
-            // ✅ 检测到维度不匹配，自动删除集合并重建
-            if (e.getMessage() != null && e.getMessage().contains("dimension")) {
-                log.warn("[QueryCacheVectorService] Top-K查询维度不匹配，自动重建: {}", e.getMessage());
-                try {
-                    recreateCollection();
-                    return findTopKMatches(query, datasourceId, topK);
-                    
-                } catch (Exception rebuildError) {
-                    log.error("[QueryCacheVectorService] ❌ 集合重建失败", rebuildError);
-                    this.available = false;
-                    return new ArrayList<>();
-                }
-            }
-            
             log.error("[QueryCacheVectorService] ❌ Chroma Top-K检索失败: query={}, error={}", 
                 query, e.getMessage(), e);
             return new ArrayList<>();
@@ -477,6 +435,62 @@ public class QueryCacheVectorService {
             log.warn("[QueryCacheVectorService] Chroma清空操作需要通过管理界面进行");
         } catch (Exception e) {
             log.error("[QueryCacheVectorService] 清空缓存失败: {}", e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * ✅ 新增：根据查询文本删除缓存条目
+     * 
+     * @param query 查询文本
+     * @param datasourceId 数据源ID
+     */
+    public void removeByQuery(String query, Long datasourceId) {
+        if (!isAvailable()) {
+            log.debug("[QueryCacheVectorService] Chroma不可用，跳过删除: query={}", query);
+            return;
+        }
+        
+        try {
+            // 1. 搜索匹配的条目
+            Embedding queryEmbedding = embeddingModel.embed(query).content();
+            
+            dev.langchain4j.store.embedding.EmbeddingSearchRequest request = 
+                dev.langchain4j.store.embedding.EmbeddingSearchRequest.builder()
+                    .queryEmbedding(queryEmbedding)
+                    .maxResults(10)
+                    .minScore(0.9) // 高相似度阈值，确保精确匹配
+                    .build();
+            
+            dev.langchain4j.store.embedding.EmbeddingSearchResult<TextSegment> searchResult = 
+                embeddingStore.search(request);
+            
+            int deletedCount = 0;
+            for (EmbeddingMatch<TextSegment> match : searchResult.matches()) {
+                Metadata metadata = match.embedded().metadata();
+                String cachedDatasourceId = metadata.getString("datasource_id");
+                
+                // 过滤datasourceId
+                if (datasourceId != null && cachedDatasourceId != null) {
+                    if (!cachedDatasourceId.equals(datasourceId.toString())) {
+                        continue;
+                    }
+                }
+                
+                // 精确匹配查询文本
+                if (match.embedded().text().equals(query)) {
+                    // Chroma V2 API不支持直接删除，需重建集合或标记为无效
+                    log.warn("[QueryCacheVectorService] ⚠️ Chroma不支持单条删除，建议重建集合: query={}", query);
+                    deletedCount++;
+                }
+            }
+            
+            if (deletedCount > 0) {
+                log.info("[QueryCacheVectorService] 标记删除 {} 条记录（需重建集合生效）", deletedCount);
+            }
+            
+        } catch (Exception e) {
+            log.error("[QueryCacheVectorService] 删除缓存失败: query={}, error={}", 
+                query, e.getMessage(), e);
         }
     }
     

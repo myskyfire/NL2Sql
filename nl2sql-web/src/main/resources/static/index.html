@@ -462,6 +462,10 @@
                 <span class="menu-icon">📊</span>
                 <span>执行日志</span>
             </div>
+            <div class="menu-item admin-only hidden" onclick="showPage('monitoring', this)" title="查看归一化效果、缓存命中率和RAG使用情况">
+                <span class="menu-icon">📈</span>
+                <span>监控Dashboard</span>
+            </div>
             
             <!-- 工具类 -->
             <div class="menu-item" onclick="showPage('manual-sql', this)" title="直接编写和执行SQL语句，支持权限校验和安全检查">
@@ -471,6 +475,10 @@
             <div class="menu-item admin-only hidden" onclick="showPage('template', this)" title="管理和复用常用查询模板，提升查询效率">
                 <span class="menu-icon">📝</span>
                 <span>查询模板</span>
+            </div>
+            <div class="menu-item" onclick="showPage('help-center', this)" title="查看使用指南、查询规范和常见问题">
+                <span class="menu-icon">📚</span>
+                <span>帮助中心</span>
             </div>
             
             <!-- ✅ 拖拽条 -->
@@ -537,6 +545,12 @@
                             <p>查看所有SQL执行记录，包括执行时间、性能分析和慢查询监控</p>
                         </div>
                         
+                        <div class="welcome-card admin-only hidden" onclick="showPage('monitoring')" style="border: 2px solid #ff9800; background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);">
+                            <div class="welcome-icon">📈</div>
+                            <h3>监控Dashboard</h3>
+                            <p>实时监控归一化效果、缓存命中率和RAG使用情况</p>
+                        </div>
+                        
                         <div class="welcome-card admin-only hidden" onclick="showPage('datasource')">
                             <div class="welcome-icon">🗄️</div>
                             <h3>数据源管理</h3>
@@ -553,6 +567,12 @@
                             <div class="welcome-icon">⚡</div>
                             <h3>手动执行SQL</h3>
                             <p>直接编写和执行SQL语句，支持权限校验和安全检查</p>
+                        </div>
+                        
+                        <div class="welcome-card" onclick="showPage('help-center')" style="border: 2px solid #52c41a; background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);">
+                            <div class="welcome-icon">📚</div>
+                            <h3>帮助中心</h3>
+                            <p>查看使用指南、查询规范和常见问题，提升查询准确率</p>
                         </div>
                         
                         <div class="welcome-card admin-only hidden" onclick="showPage('template')">
@@ -665,6 +685,16 @@
             <!-- 行业概念管理页面 -->
             <div id="page-industry-concepts" class="page">
                 <iframe id="iframe-industry-concepts" class="iframe-container" data-src="/admin-industry-concepts.html"></iframe>
+            </div>
+            
+            <!-- 帮助中心页面 -->
+            <div id="page-help-center" class="page">
+                <iframe id="iframe-help-center" class="iframe-container" src="/help-center.html"></iframe>
+            </div>
+            
+            <!-- 监控Dashboard页面 -->
+            <div id="page-monitoring" class="page">
+                <iframe id="iframe-monitoring" class="iframe-container" src="/admin-monitoring.html"></iframe>
             </div>
         </div>
     </div>

@@ -339,10 +339,17 @@ public class SQLFeedbackService {
                 question, normalizedQuery, tableList);
                 
             // 4. ✅ 关键修复：注入到L3语义索引（使用归一化查询）
-            metadataCacheService.recordQueryToSemanticIndex(datasourceId, normalizedQuery, tableList, rating);
-                
-            log.info("[表缓存注入] ✅ 已注入L3语义索引: datasourceId={}, tables={}", 
-                datasourceId, tableList);
+            if (rating <= 2) {
+                // ✅ 1-2星反馈：从L3语义索引中删除
+                metadataCacheService.removeFromSemanticIndex(datasourceId, normalizedQuery);
+                log.info("[表缓存注入] ⚠️ 低分反馈，已从L3语义索引删除: datasourceId={}, query='{}'", 
+                    datasourceId, normalizedQuery);
+            } else {
+                // ✅ 3-5星反馈：记录到L3语义索引
+                metadataCacheService.recordQueryToSemanticIndex(datasourceId, normalizedQuery, tableList, rating);
+                log.info("[表缓存注入] ✅ 已注入L3语义索引: datasourceId={}, tables={}", 
+                    datasourceId, tableList);
+            }
                 
             // ✅ P0优化：5分反馈额外注入SQL模板到QueryCache
             if (rating == 5 && queryCacheService != null) {

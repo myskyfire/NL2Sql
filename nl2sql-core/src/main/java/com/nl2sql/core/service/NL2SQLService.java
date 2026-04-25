@@ -658,6 +658,18 @@ public class NL2SQLService {
             }
         }
         
+        // ✅ 新增：告知LLM查询文本已做归一化处理，帮助理解意图
+        String normalizationHint = "";
+        if (query.contains("{DATE_RELATIVE}") || query.contains("{PERSON}") || 
+            query.contains("{LOCATION}") || query.contains("{AMOUNT}")) {
+            normalizationHint = "\n\n💡 **提示**：以下查询文本已做归一化处理：\n" +
+                "- {DATE_RELATIVE} = 相对时间词（昨天/前天/上周等）\n" +
+                "- {PERSON} = 人名\n" +
+                "- {LOCATION} = 地名\n" +
+                "- {AMOUNT} = 金额\n" +
+                "请根据这些占位符理解用户意图，生成正确的SQL。";
+        }
+        
         // ✅ 注入行业概念（动态增强提示词）
         String metricDescription = industryConceptDictionary.generateMetricDescription(datasourceId);
         String dimensionDescription = industryConceptDictionary.generateDimensionDescription(datasourceId);
@@ -665,7 +677,7 @@ public class NL2SQLService {
         
         return String.format(
             "你是一个数据库专家。根据用户问题和当前可用的表结构，请选出需要用到的表。\n\n" +
-            "用户问题：%s\n" +
+            "用户问题：%s" +
             "%s" +
             "当前可用的表：\n%s" +
             "%s\n\n" +
@@ -690,7 +702,7 @@ public class NL2SQLService {
             "7. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
             "8. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
             "9. 只返回JSON，不要其他内容",
-            query, tablePreferenceHint, schemaInfo, relationshipHint,
+            query, normalizationHint, tablePreferenceHint, schemaInfo, relationshipHint,
             metricDescription, dimensionDescription.split("，")[0], dimensionDescription.split("，")[0],
             tableRoleDescription
         );

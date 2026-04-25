@@ -136,6 +136,12 @@ public class AgentResponseProcessor {
             }
         }
         
+        // ✅ 新增：将 request 中的 datasourceId 传递到响应中，供前端保存
+        Object datasourceIdObj = request.get("datasourceId");
+        if (datasourceIdObj != null && !parsed.containsKey("datasourceId")) {
+            parsed.put("datasourceId", datasourceIdObj);
+        }
+        
         String status = (String) parsed.get("status");
         
         // 如果是澄清类型，尝试提取数据源ID

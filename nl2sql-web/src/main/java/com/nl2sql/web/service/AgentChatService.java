@@ -369,9 +369,10 @@ public class AgentChatService {
                 
             // ✅ 关键修复：无论成功失败都记录，确保 feedback 能获取 datasourceId
             String insertSql = "INSERT INTO nl2sql_query_log " +
-                "(session_id, user_id, question, generated_sql, executed_sql, " +
-                "execution_success, row_count, execution_time_ms, datasource_id, selected_tables) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "(session_id, user_id, question, normalized_query, has_person_entity, has_location_entity, normalization_method, " +
+                "cache_level, cache_hit, rag_examples_count, industry_terms_matched, " +
+                "generated_sql, executed_sql, execution_success, row_count, execution_time_ms, datasource_id, selected_tables) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 
             String sessionId = request.getSessionId() != null ? 
                 request.getSessionId() : "default_" + userInfo.getUserId();
@@ -393,11 +394,33 @@ public class AgentChatService {
             } catch (Exception e) {
                 log.debug("[查询日志] 获取 selected_tables 失败", e);
             }
+            
+            // ✅ 新增：获取归一化信息
+            String normalizedQuery = (String) response.get("normalizedQuery");
+            Boolean hasPersonEntity = (Boolean) response.getOrDefault("hasPersonEntity", false);
+            Boolean hasLocationEntity = (Boolean) response.getOrDefault("hasLocationEntity", false);
+            String normalizationMethod = (String) response.get("normalizationMethod");
+            
+            // ✅ 新增：获取缓存信息
+            String cacheLevel = (String) response.get("cacheLevel"); // L1/L2/L3/MISS
+            Boolean cacheHit = (Boolean) response.getOrDefault("cacheHit", false);
+            
+            // ✅ 新增：获取RAG信息
+            Integer ragExamplesCount = (Integer) response.getOrDefault("ragExamplesCount", 0);
+            String industryTermsMatched = (String) response.get("industryTermsMatched"); // JSON数组
                 
             jdbcTemplate.update(insertSql,
                 sessionId,
                 userInfo.getUserId(),
                 request.getMessage(),
+                normalizedQuery,
+                hasPersonEntity ? 1 : 0,
+                hasLocationEntity ? 1 : 0,
+                normalizationMethod,
+                cacheLevel,
+                cacheHit ? 1 : 0,
+                ragExamplesCount,
+                industryTermsMatched,
                 sql != null ? sql : "",
                 sql != null ? sql : "",
                 success != null ? success : false,
@@ -407,7 +430,7 @@ public class AgentChatService {
                 selectedTablesJson
             );
                 
-            log.debug("[查询日志] 记录成功: sessionId={}, success={}", sessionId, success);
+            log.debug("[查询日志] 记录成功: sessionId={}, success={}, cacheLevel={}", sessionId, success, cacheLevel);
         } catch (Exception e) {
             log.warn("[查询日志] 记录失败", e);
         }

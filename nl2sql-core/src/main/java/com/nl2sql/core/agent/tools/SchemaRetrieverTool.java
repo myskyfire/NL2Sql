@@ -163,15 +163,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
      * 归一化查询文本
      */
     private String normalizeQueryForCache(String query) {
-        if (query == null) return "";
-        
-        String normalized = query.replaceAll("\\d+", "<NUM>");
-        normalized = normalized.replaceAll("\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}", "<DATE>");
-        normalized = normalized.replaceAll("最近\\d+天", "最近<NUM>天");
-        normalized = normalized.replaceAll("过去\\d+天", "过去<NUM>天");
-        normalized = normalized.trim().replaceAll("\\s+", " ");
-        
-        return normalized;
+        return com.nl2sql.common.util.QueryNormalizer.normalize(query);
     }
     
     @Tool("根据用户自然语言问题和数据源ID，检索相关的数据库表结构信息。返回表名、字段、数据类型、注释等信息")
