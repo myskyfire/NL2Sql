@@ -3,9 +3,11 @@ package com.nl2sql.web;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 @SpringBootApplication(scanBasePackages = "com.nl2sql")
 @MapperScan("com.nl2sql.**.mapper")
+@EnableAsync // ✅ 启用异步支持
 public class NL2SQLApplication {
     
     public static void main(String[] args) {

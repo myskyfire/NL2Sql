@@ -9,6 +9,7 @@ import com.nl2sql.core.rag.SQLFeedbackService;
 import com.nl2sql.core.service.SessionContextManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import com.nl2sql.core.service.NL2SQLService;
@@ -53,6 +54,9 @@ public class AgentChatService {
     
     @Autowired(required = false)
     private ConversationHistoryService historyService; // ✅ 对话历史服务
+    
+    @Autowired(required = false)
+    private ApplicationEventPublisher eventPublisher; // ✅ 事件发布器
     
     /**
      * 处理聊天请求
@@ -110,10 +114,10 @@ public class AgentChatService {
                 // 8. 添加元数据
                 enrichResponse(response, sessionId, executionTime, request);
                 
-                // 9. 记录查询日志
-                logQueryToDatabase(request, response, userInfo);
+                // 9. ✅ 异步记录监控数据（不阻塞主流程）
+                publishMonitoringEvent(request, response, userInfo);
                 
-                // ✅ 10. 保存对话历史
+                // 10. 保存对话历史
                 saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, agentResponse);
                 
                 return Result.success(response);
@@ -375,88 +379,84 @@ public class AgentChatService {
     }
     
     /**
-     * 记录查询日志到数据库
+     * 异步发布监控事件（不阻塞主流程）
      */
-    private void logQueryToDatabase(
+    private void publishMonitoringEvent(
         ChatRequest request,
         Map<String, Object> response,
         AuthService.UserInfo userInfo
     ) {
-        if (jdbcTemplate == null) {
-            log.debug("[查询日志] JdbcTemplate 未注入，跳过日志记录");
+        if (eventPublisher == null) {
+            log.debug("[Monitoring] EventPublisher未注入，跳过监控记录");
             return;
         }
-            
+        
         try {
-            Boolean success = (Boolean) response.get("success");
-            String sql = (String) response.get("sql");
-                
-            // ✅ 关键修复：无论成功失败都记录，确保 feedback 能获取 datasourceId
-            String insertSql = "INSERT INTO nl2sql_query_log " +
-                "(session_id, user_id, question, normalized_query, has_person_entity, has_location_entity, normalization_method, " +
-                "cache_level, cache_hit, rag_examples_count, industry_terms_matched, " +
-                "generated_sql, executed_sql, execution_success, row_count, execution_time_ms, datasource_id, selected_tables) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                
+            // ✅ 从 MonitoringContext 获取监控数据
+            com.nl2sql.core.service.MonitoringContext.MonitoringData monitoringData = 
+                com.nl2sql.core.service.MonitoringContext.get();
+            
+            if (monitoringData == null) {
+                log.debug("[Monitoring] MonitoringContext为空，跳过监控记录");
+                return;
+            }
+            
+            // 构建监控数据Map
+            Map<String, Object> eventData = new HashMap<>();
             String sessionId = request.getSessionId() != null ? 
                 request.getSessionId() : "default_" + userInfo.getUserId();
-                
+            
+            eventData.put("sessionId", sessionId);
+            eventData.put("userId", userInfo.getUserId());
+            eventData.put("question", request.getMessage());
+            
+            // 归一化相关
+            eventData.put("normalizedQuery", monitoringData.getNormalizedQuery());
+            eventData.put("hasPersonEntity", monitoringData.getHasPersonEntity());
+            eventData.put("hasLocationEntity", monitoringData.getHasLocationEntity());
+            eventData.put("normalizationMethod", monitoringData.getNormalizationMethod());
+            
+            // 缓存相关
+            eventData.put("cacheLevel", monitoringData.getCacheLevel());
+            eventData.put("cacheHit", monitoringData.getCacheHit());
+            
+            // RAG相关
+            eventData.put("ragExamplesCount", monitoringData.getRagExamplesCount());
+            eventData.put("industryTermsMatched", monitoringData.getIndustryTermsMatched());
+            
+            // SQL执行相关
+            Boolean success = (Boolean) response.get("success");
+            String sql = (String) response.get("sql");
             Integer rowCount = response.get("rowCount") != null ? 
                 (Integer) response.get("rowCount") : 0;
             Long executionTime = response.get("executionTime") != null ? 
                 (Long) response.get("executionTime") : 0L;
             
-            // ✅ 新增：获取 selected_tables（从 TableSelectionOrchestrator 的 ThreadLocal）
-            String selectedTablesJson = null;
-            try {
-                List<String> tablesList = com.nl2sql.core.service.TableSelectionOrchestrator.getFinalSelectedTables();
-                if (tablesList != null && !tablesList.isEmpty()) {
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    selectedTablesJson = mapper.writeValueAsString(tablesList);
-                    log.debug("[查询日志] 从ThreadLocal获取 selected_tables: {}", tablesList);
-                }
-            } catch (Exception e) {
-                log.debug("[查询日志] 获取 selected_tables 失败", e);
+            eventData.put("generatedSql", sql != null ? sql : "");
+            eventData.put("executedSql", sql != null ? sql : "");
+            eventData.put("executionSuccess", success != null ? success : false);
+            eventData.put("rowCount", rowCount);
+            eventData.put("executionTimeMs", executionTime);
+            eventData.put("datasourceId", request.getDatasourceId());
+            
+            // selected_tables
+            java.util.List<String> selectedTables = sessionContextManager != null ? 
+                sessionContextManager.getSelectedTables() : null;
+            if (selectedTables != null && !selectedTables.isEmpty()) {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                eventData.put("selectedTables", mapper.writeValueAsString(selectedTables));
             }
             
-            // ✅ 新增：获取归一化信息
-            String normalizedQuery = (String) response.get("normalizedQuery");
-            Boolean hasPersonEntity = (Boolean) response.getOrDefault("hasPersonEntity", false);
-            Boolean hasLocationEntity = (Boolean) response.getOrDefault("hasLocationEntity", false);
-            String normalizationMethod = (String) response.get("normalizationMethod");
+            // ✅ 发布异步事件
+            com.nl2sql.core.event.QueryMonitoringEvent event = 
+                new com.nl2sql.core.event.QueryMonitoringEvent(this, eventData);
+            eventPublisher.publishEvent(event);
             
-            // ✅ 新增：获取缓存信息
-            String cacheLevel = (String) response.get("cacheLevel"); // L1/L2/L3/MISS
-            Boolean cacheHit = (Boolean) response.getOrDefault("cacheHit", false);
+            log.debug("[Monitoring] 已发布监控事件: sessionId={}, cacheLevel={}", 
+                sessionId, monitoringData.getCacheLevel());
             
-            // ✅ 新增：获取RAG信息
-            Integer ragExamplesCount = (Integer) response.getOrDefault("ragExamplesCount", 0);
-            String industryTermsMatched = (String) response.get("industryTermsMatched"); // JSON数组
-                
-            jdbcTemplate.update(insertSql,
-                sessionId,
-                userInfo.getUserId(),
-                request.getMessage(),
-                normalizedQuery,
-                hasPersonEntity ? 1 : 0,
-                hasLocationEntity ? 1 : 0,
-                normalizationMethod,
-                cacheLevel,
-                cacheHit ? 1 : 0,
-                ragExamplesCount,
-                industryTermsMatched,
-                sql != null ? sql : "",
-                sql != null ? sql : "",
-                success != null ? success : false,
-                rowCount,
-                executionTime,
-                request.getDatasourceId(),
-                selectedTablesJson
-            );
-                
-            log.debug("[查询日志] 记录成功: sessionId={}, success={}, cacheLevel={}", sessionId, success, cacheLevel);
         } catch (Exception e) {
-            log.warn("[查询日志] 记录失败", e);
+            log.warn("[Monitoring] 发布监控事件失败", e);
         }
     }
     
