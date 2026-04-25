@@ -1320,22 +1320,9 @@ public class TableRelationshipService {
                 return "";
             }
             
-            // ✅ 优化：二次过滤，只保留两端都在tables列表中的关联关系
-            Set<String> tableSet = new HashSet<>(tables);
-            List<Map<String, Object>> filteredRelationships = relationships.stream()
-                .filter(rel -> {
-                    String sourceTable = (String) rel.get("source_table");
-                    String targetTable = (String) rel.get("target_table");
-                    return tableSet.contains(sourceTable) && tableSet.contains(targetTable);
-                })
-                .collect(Collectors.toList());
-            
-            if (filteredRelationships.isEmpty()) {
-                log.info("[TableRelationship] 过滤后无有效关联关系");
-                return "";
-            }
-            
-            log.info("[TableRelationship] 过滤后剩余 {} 条关联关系", filteredRelationships.size());
+            // ✅ 关键修复：不再二次过滤，保留所有与已选表相关的关联关系
+            // 这样LLM能看到 orders.user_id -> users.id，即使users不在初始表中
+            List<Map<String, Object>> filteredRelationships = relationships;
             
             StringBuilder sb = new StringBuilder("\n\n表之间的关联关系：\n");
             for (Map<String, Object> rel : filteredRelationships) {

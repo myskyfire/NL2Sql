@@ -167,6 +167,12 @@ public class IndustryConceptDictionary {
                     case "table_role":
                         concepts.getTableRoles().put(key, description != null ? description : displayValue);
                         break;
+                    case "usage_rule":
+                        // 使用场景区分规则，直接存储description
+                        if (description != null && !description.isEmpty()) {
+                            concepts.getUsageRules().put(key, description);
+                        }
+                        break;
                 }
             }
             
@@ -382,6 +388,14 @@ public class IndustryConceptDictionary {
         
         concepts.setLocationSemantics(locationSem);
         
+        // ✅ 表选择规则：指导LLM正确判断何时需要补充users表
+        concepts.getTableSelectionRules().add(
+            "当查询涉及用户维度分析(如用户名、用户邮箱、用户注册信息)时，即使当前已有user_addresses表(含收货人信息)，也应通过orders.user_id → users.id的关联关系补充users表"
+        );
+        concepts.getTableSelectionRules().add(
+            "注意区分：user_addresses是地址表(存储收货人信息)，users是用户主表(存储账户信息)，两者用途不同"
+        );
+        
         return concepts;
     }
     
@@ -541,6 +555,50 @@ public class IndustryConceptDictionary {
     }
     
     /**
+     * ✅ 新增：生成表选择规则提示（动态注入到Prompt）
+     * 
+     * @param datasourceId 数据源ID
+     * @return 表选择规则文本，无规则则返回空字符串
+     */
+    public String generateTableSelectionRules(Long datasourceId) {
+        IndustryConcepts concepts = getConceptsByDatasource(datasourceId);
+        
+        if (concepts.getTableSelectionRules().isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n📋 **表选择特殊规则**：\n");
+        for (int i = 0; i < concepts.getTableSelectionRules().size(); i++) {
+            sb.append(String.format("   %d. %s\n", i + 1, concepts.getTableSelectionRules().get(i)));
+        }
+        
+        return sb.toString();
+    }
+    
+    /**
+     * ✅ 新增：生成使用场景区分规则提示（动态注入到Prompt）
+     * 
+     * @param datasourceId 数据源ID
+     * @return 使用规则文本，无规则则返回空字符串
+     */
+    public String generateUsageRulesDescription(Long datasourceId) {
+        IndustryConcepts concepts = getConceptsByDatasource(datasourceId);
+        
+        if (concepts.getUsageRules().isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n⚠️ **表使用场景区分（重要）**：\n");
+        concepts.getUsageRules().forEach((key, rule) -> {
+            sb.append("   - ").append(rule).append("\n");
+        });
+        
+        return sb.toString();
+    }
+    
+    /**
      * 获取所有已注册的行业列表
      */
     public List<IndustryInfo> getAllIndustries() {
@@ -619,6 +677,12 @@ public class IndustryConceptDictionary {
         
         // ✅ 地域语义规则（新增）
         private LocationSemantics locationSemantics = new LocationSemantics();
+        
+        // ✅ 表选择规则（新增）：指导LLM如何判断是否需要补充关联表
+        private List<String> tableSelectionRules = new ArrayList<>();
+        
+        // ✅ 使用场景区分规则（新增）：说明相似表的不同用途
+        private Map<String, String> usageRules = new HashMap<>();
         
         // 通用字段（用于fallback）
         private List<String> metricTypes = new ArrayList<>();

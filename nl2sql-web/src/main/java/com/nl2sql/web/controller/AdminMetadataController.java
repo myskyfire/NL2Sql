@@ -89,6 +89,38 @@ public class AdminMetadataController {
     }
     
     /**
+     * ✅ 新增：离线导入表结构（支持SQL文本和文件上传）
+     */
+    @PostMapping("/metadata/import-offline/{datasourceId}")
+    public Result<Map<String, Object>> importOfflineMetadata(
+            @PathVariable Long datasourceId,
+            @RequestBody Map<String, String> request) {
+        try {
+            String sqlContent = request.get("sqlContent");
+            if (sqlContent == null || sqlContent.trim().isEmpty()) {
+                return Result.error("SQL内容不能为空");
+            }
+            
+            log.info("[离线导入] 开始为数据源 {} 导入表结构", datasourceId);
+            
+            // 调用Service解析并导入
+            Map<String, Object> result = metadataCollectorService.importOfflineMetadata(datasourceId, sqlContent);
+            
+            // 清除缓存
+            metadataQueryService.clearCache(datasourceId);
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[离线导入] 元数据已导入，清除所有 Caffeine 缓存");
+            }
+            
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("[离线导入] 失败", e);
+            return Result.error("导入失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 同步元数据
      */
     @PostMapping("/metadata/sync/{datasourceId}")

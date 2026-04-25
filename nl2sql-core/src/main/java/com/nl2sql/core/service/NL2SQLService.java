@@ -675,6 +675,12 @@ public class NL2SQLService {
         String dimensionDescription = industryConceptDictionary.generateDimensionDescription(datasourceId);
         String tableRoleDescription = industryConceptDictionary.generateTableRoleDescription(datasourceId);
         
+        // ✅ 新增：注入表选择特殊规则（从行业配置中读取）
+        String tableSelectionRules = industryConceptDictionary.generateTableSelectionRules(datasourceId);
+        
+        // ✅ 新增：注入使用场景区分规则（如users vs user_addresses）
+        String usageRulesDescription = industryConceptDictionary.generateUsageRulesDescription(datasourceId);
+        
         return String.format(
             "你是一个数据库专家。根据用户问题和当前可用的表结构，请选出需要用到的表。\n\n" +
             "用户问题：%s" +
@@ -697,14 +703,16 @@ public class NL2SQLService {
             "     c) 如果需要JOIN，关联字段是否在已选表中？\n" +
             "     d) **严禁臆造字段**：如果不确定某个表是否有某字段，必须返回missing_tables请求补充该表的schema\n" +
             "   - 如果任何一个检查失败，必须返回missing_tables，而不是selected_tables\n" +
-            "   - 示例：查询'张三的订单'需要users.name和orders.user_id，如果只选了orders表，必须返回missing_tables: [\"users\"]\n" +
+            "   - ✅ **关联表推理**：如果已选表的字段不足以满足需求，查看关联关系图，推测可能包含所需字段的表，返回missing_tables请求补充其schema\n" +
+            "   - 例如：已选orders和user_addresses，但需要username字段 → 看到orders.user_id → users.id关联 → 返回missing_tables: [\"users\"]\n" +
+            "%s" +
             "6. **宁可多选，不可漏选**：如果不确定是否需要某表，优先包含进来\n" +
             "7. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
             "8. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
             "9. 只返回JSON，不要其他内容",
             query, normalizationHint, tablePreferenceHint, schemaInfo, relationshipHint,
             metricDescription, dimensionDescription.split("，")[0], dimensionDescription.split("，")[0],
-            tableRoleDescription
+            tableRoleDescription, tableSelectionRules, usageRulesDescription
         );
     }
     

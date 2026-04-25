@@ -230,7 +230,7 @@ public class TableSelectionOrchestrator {
                 
                 // L3未命中，执行向量检索
                 if (initialTables == null || initialTables.isEmpty()) {
-                    initialTables = vectorRetriever.retrieveTopTables(expandedQuery, datasourceId, 15);
+                    initialTables = vectorRetriever.retrieveTopTables(expandedQuery, datasourceId, 20);
                     // ✅ 记录监控数据：缓存未命中
                     MonitoringContext.MonitoringData data = MonitoringContext.get();
                     if (data.getCacheHit() == null || !data.getCacheHit()) {

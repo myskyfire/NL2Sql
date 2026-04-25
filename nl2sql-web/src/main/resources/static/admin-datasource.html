@@ -218,6 +218,37 @@
         </div>
     </div>
     
+    <!-- ✅ 离线导入弹窗 -->
+    <div id="importModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999;">
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:white; border-radius:8px; padding:30px; width:800px; max-height:80vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+            <h3 style="margin-bottom:20px; color:#333;">📥 离线导入表结构</h3>
+            <p style="color:#666; margin-bottom:15px; font-size:14px;">数据源：<span id="importDatasourceName" style="font-weight:bold;"></span></p>
+            
+            <!-- 文本输入区 -->
+            <div class="form-group">
+                <label>建表 SQL 语句（多个语句用分号分隔）：</label>
+                <textarea id="sqlInput" rows="12" style="width:100%; padding:12px; border:1px solid #ddd; border-radius:4px; font-family:'Courier New', monospace; font-size:13px; resize:vertical;" placeholder="CREATE TABLE `users` (\n  `id` INT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',\n  `username` VARCHAR(100) NOT NULL COMMENT '用户名',\n  `email` VARCHAR(200) COMMENT '邮箱'\n) COMMENT='用户表';\n\nCREATE TABLE `orders` (\n  ...\n);"></textarea>
+            </div>
+            
+            <!-- 文件上传区 -->
+            <div class="form-group">
+                <label>或上传 SQL 文件：</label>
+                <input type="file" id="sqlFile" accept=".sql,.txt" onchange="handleFileUpload(event)" style="padding:8px; border:1px solid #ddd; border-radius:4px; width:100%;" />
+                <p style="color:#999; font-size:12px; margin-top:5px;">支持 .sql 或 .txt 文件，文件内容应为建表语句</p>
+            </div>
+            
+            <!-- 错误提示区 -->
+            <div id="importMessage" style="margin:15px 0;"></div>
+            
+            <!-- 按钮区 -->
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+                <button class="btn" onclick="closeImportModal()" style="background:#909399; color:white;">取消</button>
+                <button class="btn btn-primary" onclick="validateSQL()" style="background:#e6a23c;">🔍 校验 SQL</button>
+                <button class="btn btn-success" onclick="submitImport()">✅ 确认导入</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         const API_BASE = '/api/admin';
         
@@ -341,6 +372,9 @@
                         <button class="btn btn-primary" onclick="syncMetadata(${ds.id})" style="padding: 6px 12px; font-size: 12px;">
                             🔄 同步元数据
                         </button>
+                        <button class="btn btn-success" onclick="showImportModal(${ds.id}, '${ds.name}')" style="padding: 6px 12px; font-size: 12px; margin-left: 8px;">
+                            📥 离线导入
+                        </button>
                     </td>
                 </tr>
             `).join('');
@@ -372,6 +406,123 @@
             const msgDiv = document.getElementById('message');
             msgDiv.innerHTML = `<div class="alert alert-${type === 'info' ? 'success' : type}">${text}</div>`;
             setTimeout(() => msgDiv.innerHTML = '', 5000);
+        }
+        
+        // ✅ 离线导入相关函数
+        let currentImportDatasourceId = null;
+        
+        // 显示导入弹窗
+        function showImportModal(datasourceId, datasourceName) {
+            currentImportDatasourceId = datasourceId;
+            document.getElementById('importDatasourceName').textContent = datasourceName;
+            document.getElementById('sqlInput').value = '';
+            document.getElementById('sqlFile').value = '';
+            document.getElementById('importMessage').innerHTML = '';
+            document.getElementById('importModal').style.display = 'block';
+        }
+        
+        // 关闭弹窗
+        function closeImportModal() {
+            document.getElementById('importModal').style.display = 'none';
+            currentImportDatasourceId = null;
+        }
+        
+        // 处理文件上传
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                document.getElementById('sqlInput').value = content;
+                showImportMessage(`✅ 已加载文件: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`, 'success');
+            };
+            reader.onerror = function() {
+                showImportMessage('❌ 文件读取失败', 'error');
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+        
+        // 校验 SQL（前端简单校验）
+        function validateSQL() {
+            const sqlContent = document.getElementById('sqlInput').value.trim();
+            if (!sqlContent) {
+                showImportMessage('❌ 请输入 SQL 语句或上传文件', 'error');
+                return;
+            }
+            
+            // 简单校验：检查是否有 CREATE TABLE
+            const createTableCount = (sqlContent.match(/CREATE\s+TABLE/gi) || []).length;
+            if (createTableCount === 0) {
+                showImportMessage('❌ 未检测到 CREATE TABLE 语句', 'error');
+                return;
+            }
+            
+            showImportMessage(`✅ 检测到 ${createTableCount} 个建表语句，可以提交导入`, 'success');
+        }
+        
+        // 提交导入
+        async function submitImport() {
+            const sqlContent = document.getElementById('sqlInput').value.trim();
+            if (!sqlContent) {
+                showImportMessage('❌ 请输入 SQL 语句或上传文件', 'error');
+                return;
+            }
+            
+            if (!currentImportDatasourceId) {
+                showImportMessage('❌ 数据源 ID 无效', 'error');
+                return;
+            }
+            
+            showImportMessage('⏳ 正在导入...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/metadata/import-offline/${currentImportDatasourceId}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ sqlContent: sqlContent })
+                });
+                
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    let msg = `✅ 导入成功！<br>表数量: ${data.tableCount}<br>字段数量: ${data.columnCount}`;
+                    
+                    if (data.errorCount > 0) {
+                        msg += `<br><span style="color:#e6a23c;">错误数: ${data.errorCount}</span>`;
+                        if (data.errors && data.errors.length > 0) {
+                            msg += '<br><div style="margin-top:10px; padding:10px; background:#fef0f0; border-radius:4px; font-size:12px;">';
+                            msg += data.errors.map(e => `<div>${e}</div>`).join('');
+                            msg += '</div>';
+                        }
+                    }
+                    
+                    showImportMessage(msg, 'success');
+                    
+                    // 3秒后关闭弹窗并刷新列表
+                    setTimeout(() => {
+                        closeImportModal();
+                        loadDatasourceList();
+                    }, 3000);
+                } else {
+                    showImportMessage('❌ 导入失败：' + result.message, 'error');
+                }
+            } catch (error) {
+                showImportMessage('❌ 请求失败：' + error.message, 'error');
+            }
+        }
+        
+        // 显示导入消息
+        function showImportMessage(text, type) {
+            const msgDiv = document.getElementById('importMessage');
+            const colorMap = {
+                'success': '#67c23a',
+                'error': '#f56c6c',
+                'info': '#409eff'
+            };
+            msgDiv.innerHTML = `<div style="padding:12px; border-radius:4px; background:${type === 'success' ? '#f0f9ff' : type === 'error' ? '#fef0f0' : '#ecf5ff'}; border:1px solid ${colorMap[type]}; color:${colorMap[type]};">${text}</div>`;
         }
     </script>
 </body>

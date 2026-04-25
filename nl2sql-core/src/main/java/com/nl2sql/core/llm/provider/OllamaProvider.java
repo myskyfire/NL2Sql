@@ -78,6 +78,9 @@ public class OllamaProvider implements LLMProvider {
             requestBody.put("temperature", temperature);
             requestBody.put("stream", false);
             
+            // ✅ 禁用 thinking/reasoning 模式，强制直接返回结果（不输出思考过程）
+            requestBody.put("think", false);
+            
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             
             HttpRequest request = HttpRequest.newBuilder()
@@ -115,6 +118,9 @@ public class OllamaProvider implements LLMProvider {
             requestBody.put("temperature", temperature);
             requestBody.put("stream", false);
             requestBody.put("format", "json");  // 强制JSON格式
+            
+            // ✅ 禁用 thinking/reasoning 模式，强制直接返回JSON（不输出思考过程）
+            requestBody.put("think", false);
             
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             

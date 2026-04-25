@@ -206,8 +206,8 @@ public class VectorRetriever {
             similarities.isEmpty() ? 0 : String.format("%.3f", similarities.get(0).getValue()),
             String.format("%.3f", similarityThreshold));
         
-        // ✅ 优化策略：保底返回Top-5表 + 高置信度标记（不再硬性截断）
-        int guaranteedCount = Math.min(similarities.size(), 5); // 保底至少返回5个表
+        // ✅ 优化策略：保底返回Top-10表 + 高置信度标记（不再硬性截断）
+        int guaranteedCount = Math.min(similarities.size(), 10); // 保底至少返回10个表
         
         for (int i = 0; i < guaranteedCount; i++) {
             Map.Entry<String, Double> entry = similarities.get(i);

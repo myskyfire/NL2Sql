@@ -718,6 +718,12 @@
                 
                 console.log('[handleQuerySuccess] 反馈question:', questionForFeedback);
                 html += renderFeedbackButtons(questionForFeedback, sqlForFeedback);
+                
+                // ✅ 关键修复：反馈按钮渲染后，清空 pendingQuery（避免影响后续对话）
+                if (pendingQuery) {
+                    console.log('[handleQuerySuccess] 清空 pendingQuery');
+                    pendingQuery = null;
+                }
             }
             
             // 显示 AI 总结
@@ -1554,7 +1560,8 @@
                 
                 if (queryToSend) {
                     sendMessagewithDatasource(queryToSend, datasourceId);
-                    pendingQuery = null;  // 清空待发送的问题
+                    // ✅ 修正：不在这里清空，等待SQL查询成功后再清空（用于反馈按钮）
+                    // pendingQuery = null;
                 } else {
                     console.error('[selectDatasource] 未找到原始问题');
                     addMessage('❌ 错误：无法获取原始查询', 'agent');
@@ -1587,7 +1594,8 @@
                     
                     if (queryToSend) {
                         sendMessagewithDatasource(queryToSend, pendingDatasourceId);
-                        pendingQuery = null;  // 清空待发送的问题
+                        // ✅ 修正：不在这里清空，等待SQL查询成功后再清空（用于反馈按钮）
+                        // pendingQuery = null;
                         pendingDatasourceId = null;  // 清空待确认的ID
                     } else {
                         console.error('[confirmDatasource] 未找到原始问题');

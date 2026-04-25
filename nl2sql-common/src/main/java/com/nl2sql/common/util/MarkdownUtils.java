@@ -28,15 +28,24 @@ public class MarkdownUtils {
         
         String trimmed = markdownContent.trim();
         
-        // 尝试匹配Markdown代码块
-        Matcher matcher = MARKDOWN_CODE_BLOCK_PATTERN.matcher(trimmed);
-        if (matcher.find()) {
-            String extracted = matcher.group(1).trim();
-            log.debug("[Markdown清洗] 从代码块中提取内容，长度: {}", extracted.length());
+        // ✅ 关键修复：优先提取 JSON 代码块（避免误提取 SQL 代码块）
+        Pattern jsonPattern = Pattern.compile("```json\\s*([\\s\\S]*?)\\s*```");
+        Matcher jsonMatcher = jsonPattern.matcher(trimmed);
+        if (jsonMatcher.find()) {
+            String extracted = jsonMatcher.group(1).trim();
+            log.debug("[Markdown清洗] 从 JSON 代码块中提取内容，长度: {}", extracted.length());
             return extracted;
         }
         
-        // 不是Markdown格式，返回原内容
+        // 降级：匹配任意代码块
+        Matcher matcher = MARKDOWN_CODE_BLOCK_PATTERN.matcher(trimmed);
+        if (matcher.find()) {
+            String extracted = matcher.group(1).trim();
+            log.debug("[Markdown清洗] 从通用代码块中提取内容，长度: {}", extracted.length());
+            return extracted;
+        }
+        
+        // 不是 Markdown 格式，返回原内容
         return trimmed;
     }
     

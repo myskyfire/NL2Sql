@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -696,6 +697,286 @@ public class MetadataCollectorService {
     private void updateColumnComment(Long datasourceId, String tableName, String columnName, String comment) {
         String sql = "UPDATE column_metadata SET column_comment = ? WHERE datasource_id = ? AND table_name = ? AND column_name = ?";
         localJdbcTemplate.update(sql, comment, datasourceId, tableName, columnName);
+    }
+    
+    /**
+     * ✅ 新增：离线导入表结构（解析SQL建表语句）
+     * 
+     * @param datasourceId 数据源ID
+     * @param sqlContent SQL建表语句（支持多个，分号分隔）
+     * @return 导入结果统计
+     */
+    @Transactional
+    public Map<String, Object> importOfflineMetadata(Long datasourceId, String sqlContent) {
+        Map<String, Object> result = new HashMap<>();
+        int tableCount = 0;
+        int columnCount = 0;
+        List<String> errors = new ArrayList<>();
+        
+        try {
+            log.info("[离线导入] 开始解析 SQL 内容，长度: {}", sqlContent.length());
+            
+            // 1. 按分号分割SQL语句
+            String[] statements = sqlContent.split(";");
+            log.info("[离线导入] 检测到 {} 条 SQL 语句", statements.length);
+            
+            // 2. 逐条解析
+            for (int i = 0; i < statements.length; i++) {
+                String statement = statements[i].trim();
+                if (statement.isEmpty()) {
+                    continue;
+                }
+                
+                try {
+                    // 只处理 CREATE TABLE 语句
+                    if (!statement.toUpperCase().startsWith("CREATE TABLE")) {
+                        log.debug("[离线导入] 跳过非建表语句: {}", statement.substring(0, Math.min(50, statement.length())));
+                        continue;
+                    }
+                    
+                    // 解析建表语句
+                    ParsedTable parsedTable = parseCreateTable(statement);
+                    if (parsedTable == null) {
+                        errors.add("第" + (i + 1) + "条语句解析失败");
+                        continue;
+                    }
+                    
+                    // 3. 保存表元数据
+                    TableMetadata tableMeta = new TableMetadata();
+                    tableMeta.setDatasourceId(datasourceId);
+                    tableMeta.setTableName(parsedTable.tableName);
+                    tableMeta.setTableComment(parsedTable.tableComment != null ? parsedTable.tableComment : "");
+                    tableMeta.setTableType("TABLE");
+                    saveTableMetadata(List.of(tableMeta));
+                    tableCount++;
+                    
+                    // 4. 保存字段元数据
+                    List<ColumnMetadata> columns = new ArrayList<>();
+                    for (ParsedColumn parsedCol : parsedTable.columns) {
+                        ColumnMetadata colMeta = new ColumnMetadata();
+                        colMeta.setDatasourceId(datasourceId);
+                        colMeta.setTableName(parsedTable.tableName);
+                        colMeta.setColumnName(parsedCol.columnName);
+                        colMeta.setDataType(parsedCol.dataType);
+                        colMeta.setColumnSize(parsedCol.columnSize);
+                        colMeta.setIsNullable(parsedCol.isNullable ? 1 : 0);
+                        colMeta.setColumnComment(parsedCol.comment != null ? parsedCol.comment : "");
+                        colMeta.setIsPrimaryKey(parsedCol.isPrimaryKey ? 1 : 0);
+                        colMeta.setOrdinalPosition(parsedCol.ordinalPosition);
+                        columns.add(colMeta);
+                    }
+                    saveColumnMetadata(columns);
+                    columnCount += columns.size();
+                    
+                    log.info("[离线导入] 成功导入表: {}, 字段数: {}", parsedTable.tableName, columns.size());
+                    
+                } catch (Exception e) {
+                    log.error("[离线导入] 解析第{}条语句失败", i + 1, e);
+                    errors.add("第" + (i + 1) + "条语句: " + e.getMessage());
+                }
+            }
+            
+            // 5. 构建返回结果
+            result.put("status", "SUCCESS");
+            result.put("tableCount", tableCount);
+            result.put("columnCount", columnCount);
+            result.put("errorCount", errors.size());
+            if (!errors.isEmpty()) {
+                result.put("errors", errors);
+            }
+            
+            log.info("[离线导入] 完成: 表={}, 字段={}, 错误={}", tableCount, columnCount, errors.size());
+            
+        } catch (Exception e) {
+            log.error("[离线导入] 整体失败", e);
+            result.put("status", "FAILED");
+            result.put("errorMessage", e.getMessage());
+            throw new RuntimeException("离线导入失败: " + e.getMessage(), e);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 解析 CREATE TABLE 语句
+     */
+    private ParsedTable parseCreateTable(String sql) {
+        try {
+            ParsedTable parsed = new ParsedTable();
+            
+            // 1. 提取表名
+            // 匹配: CREATE TABLE `table_name` 或 CREATE TABLE table_name
+            java.util.regex.Pattern tablePattern = java.util.regex.Pattern.compile(
+                "CREATE\\s+TABLE\\s+[`\"]?(\\w+)[`\"]?", 
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            java.util.regex.Matcher tableMatcher = tablePattern.matcher(sql);
+            if (!tableMatcher.find()) {
+                throw new IllegalArgumentException("无法提取表名");
+            }
+            parsed.tableName = tableMatcher.group(1);
+            
+            // 2. 提取表注释（MySQL: COMMENT='xxx'）
+            java.util.regex.Pattern commentPattern = java.util.regex.Pattern.compile(
+                "COMMENT\\s*=\\s*['\"]([^'\"]+)['\"]", 
+                java.util.regex.Pattern.CASE_INSENSITIVE
+            );
+            java.util.regex.Matcher commentMatcher = commentPattern.matcher(sql);
+            if (commentMatcher.find()) {
+                parsed.tableComment = commentMatcher.group(1);
+            }
+            
+            // 3. 提取字段定义
+            // 找到第一个 ( 和最后一个 ) 之间的内容
+            int startIdx = sql.indexOf('(');
+            int endIdx = sql.lastIndexOf(')');
+            if (startIdx == -1 || endIdx == -1 || startIdx >= endIdx) {
+                throw new IllegalArgumentException("无法解析字段定义");
+            }
+            
+            String fieldsSection = sql.substring(startIdx + 1, endIdx).trim();
+            
+            // 按逗号分割字段（注意：要跳过括号内的逗号）
+            List<String> fieldDefinitions = splitFieldDefinitions(fieldsSection);
+            
+            int ordinalPosition = 1;
+            for (String fieldDef : fieldDefinitions) {
+                fieldDef = fieldDef.trim();
+                if (fieldDef.isEmpty()) continue;
+                
+                // 跳过 PRIMARY KEY、INDEX、KEY 等非字段定义
+                if (fieldDef.toUpperCase().matches("^(PRIMARY\\s+KEY|KEY|INDEX|UNIQUE|CONSTRAINT|FOREIGN\\s+KEY).*")) {
+                    continue;
+                }
+                
+                try {
+                    ParsedColumn col = parseColumnDefinition(fieldDef, ordinalPosition);
+                    if (col != null) {
+                        parsed.columns.add(col);
+                        ordinalPosition++;
+                    }
+                } catch (Exception e) {
+                    log.warn("[离线导入] 解析字段失败: {}", fieldDef, e);
+                }
+            }
+            
+            if (parsed.columns.isEmpty()) {
+                throw new IllegalArgumentException("未解析到任何字段");
+            }
+            
+            return parsed;
+            
+        } catch (Exception e) {
+            log.error("[离线导入] 解析 CREATE TABLE 失败", e);
+            throw new IllegalArgumentException("SQL解析失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 智能分割字段定义（跳过括号内的逗号）
+     */
+    private List<String> splitFieldDefinitions(String fieldsSection) {
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int parenDepth = 0;
+        
+        for (char c : fieldsSection.toCharArray()) {
+            if (c == '(') {
+                parenDepth++;
+                current.append(c);
+            } else if (c == ')') {
+                parenDepth--;
+                current.append(c);
+            } else if (c == ',' && parenDepth == 0) {
+                result.add(current.toString().trim());
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+        
+        if (current.length() > 0) {
+            result.add(current.toString().trim());
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 解析单个字段定义
+     */
+    private ParsedColumn parseColumnDefinition(String fieldDef, int ordinalPosition) {
+        ParsedColumn col = new ParsedColumn();
+        col.ordinalPosition = ordinalPosition;
+        
+        // 提取字段名（第一个单词，去除引号）
+        java.util.regex.Pattern namePattern = java.util.regex.Pattern.compile("^[`\"]?(\\w+)[`\"]?\\s+(.*)", java.util.regex.Pattern.DOTALL);
+        java.util.regex.Matcher nameMatcher = namePattern.matcher(fieldDef);
+        if (!nameMatcher.find()) {
+            return null;
+        }
+        
+        col.columnName = nameMatcher.group(1);
+        String rest = nameMatcher.group(2).trim();
+        
+        // 提取数据类型（包括长度）
+        java.util.regex.Pattern typePattern = java.util.regex.Pattern.compile("^(\\w+(?:\\([^)]+\\))?)(.*)", java.util.regex.Pattern.DOTALL | java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher typeMatcher = typePattern.matcher(rest);
+        if (!typeMatcher.find()) {
+            return null;
+        }
+        
+        col.dataType = typeMatcher.group(1).toUpperCase();
+        String remaining = typeMatcher.group(2).trim();
+        
+        // 提取字段大小（如 VARCHAR(100) 中的 100）
+        java.util.regex.Pattern sizePattern = java.util.regex.Pattern.compile("\\((\\d+)") ;
+        java.util.regex.Matcher sizeMatcher = sizePattern.matcher(col.dataType);
+        if (sizeMatcher.find()) {
+            col.columnSize = Integer.parseInt(sizeMatcher.group(1));
+        }
+        
+        // 检查是否为主键
+        if (remaining.toUpperCase().contains("PRIMARY KEY") || remaining.toUpperCase().contains("NOT NULL AUTO_INCREMENT")) {
+            col.isPrimaryKey = true;
+        }
+        
+        // 检查是否为NULL
+        col.isNullable = !remaining.toUpperCase().contains("NOT NULL");
+        
+        // 提取注释
+        java.util.regex.Pattern colCommentPattern = java.util.regex.Pattern.compile(
+            "COMMENT\\s+['\"]([^'\"]+)['\"]", 
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        java.util.regex.Matcher colCommentMatcher = colCommentPattern.matcher(remaining);
+        if (colCommentMatcher.find()) {
+            col.comment = colCommentMatcher.group(1);
+        }
+        
+        return col;
+    }
+    
+    /**
+     * 内部类：解析后的表结构
+     */
+    private static class ParsedTable {
+        String tableName;
+        String tableComment;
+        List<ParsedColumn> columns = new ArrayList<>();
+    }
+    
+    /**
+     * 内部类：解析后的字段
+     */
+    private static class ParsedColumn {
+        String columnName;
+        String dataType;
+        Integer columnSize;
+        boolean isNullable = true;
+        String comment;
+        boolean isPrimaryKey = false;
+        int ordinalPosition;
     }
     
     @Data
