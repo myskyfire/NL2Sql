@@ -1,6 +1,7 @@
 package com.nl2sql.web.service;
 
 import com.nl2sql.auth.service.AuthService;
+import com.nl2sql.common.context.UserContext;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.common.util.LogContextUtil;
 import com.nl2sql.conversation.ConversationHistoryService;
@@ -67,7 +68,16 @@ public class AgentChatService {
     ) {
         long startTime = System.currentTimeMillis();
         
+        // ✅ 关键优化：设置用户上下文到ThreadLocal，避免层层传参
+        String sessionId = resolveSessionId(request, userInfo);
+        UserContext.set(new UserContext.UserInfo(
+            userInfo.getUserId(), 
+            userInfo.getUsername(), 
+            sessionId
+        ));
+        
         LogContextUtil.setUserContext(userInfo.getUserId(), userInfo.getUsername());
+        LogContextUtil.setSessionId(sessionId);
         
         try {
             // 1. 修复编码问题
@@ -79,8 +89,7 @@ public class AgentChatService {
             // 4. 意图识别
             String intent = classifyIntent(fullMessage);
             
-            // 5. 设置会话ID
-            String sessionId = resolveSessionId(request, userInfo);
+            // 5. 设置会话ID到 SessionContextManager
             setSessionId(sessionId);
             
             // ✅ 6. 检测清除命令
@@ -129,6 +138,8 @@ public class AgentChatService {
                 clearSessionId();
                 // ✅ 清理监控上下文（防止内存泄漏）
                 com.nl2sql.core.service.MonitoringContext.clear();
+                // ✅ 清理用户上下文
+                UserContext.clear();
             }
             
         } catch (Exception e) {
@@ -137,6 +148,7 @@ public class AgentChatService {
             return Result.error(500, "Agent 处理失败: " + e.getMessage());
         } finally {
             LogContextUtil.clear();
+            UserContext.clear(); // 双重保障
         }
     }
     
@@ -146,7 +158,13 @@ public class AgentChatService {
     private void applyDefaultRating(ChatRequest request, AuthService.UserInfo userInfo) {
         if (feedbackService == null) return;
         
-        String sessionId = resolveSessionId(request, userInfo);
+        // ✅ 关键优化：从 UserContext 直接获取 sessionId
+        String sessionId = UserContext.getSessionId();
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            // 降级方案：从 request 解析
+            sessionId = resolveSessionId(request, userInfo);
+        }
+        
         try {
             boolean applied = feedbackService.applyDefaultRating(sessionId);
             if (applied) {
@@ -282,11 +300,10 @@ public class AgentChatService {
             : Collections.emptyList();
         
         try {
+            // ✅ 优化：不再传递 userId/username，ReActAgent从UserContext获取
             String result = reActAgent.execute(
                 fullMessage,
                 resolvedDatasourceId,
-                userInfo.getUserId().longValue(),
-                userInfo.getUsername(),
                 history  // ✅ 传入历史消息
             );
             

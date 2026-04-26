@@ -7,10 +7,17 @@
     <!-- 查找相似的低分示例 -->
     <select id="findSimilarLowRatingExamples" resultType="com.nl2sql.core.rag.LowRatingExampleService$LowRatingExample">
         SELECT question, generated_sql, feedback_text, rating,
-               MATCH(question) AGAINST(#{question} IN NATURAL LANGUAGE MODE) as relevance
+               CASE 
+                   WHEN question LIKE CONCAT('%', #{question}, '%') THEN 1.0
+                   WHEN #{question} LIKE CONCAT('%', question, '%') THEN 0.9
+                   ELSE 0.5
+               END as relevance
         FROM rag_feedback
         WHERE rating &lt;= 2
-          AND MATCH(question) AGAINST(#{question} IN NATURAL LANGUAGE MODE)
+          AND (
+              question LIKE CONCAT('%', #{question}, '%')
+              OR #{question} LIKE CONCAT('%', question, '%')
+          )
         ORDER BY relevance DESC
         LIMIT #{limit}
     </select>

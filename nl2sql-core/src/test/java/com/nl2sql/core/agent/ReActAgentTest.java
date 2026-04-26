@@ -1,7 +1,9 @@
 package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.common.context.UserContext;
 import com.nl2sql.core.llm.LLMService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +37,14 @@ class ReActAgentTest {
     void setUp() {
         agent = new ReActAgent(llmService);
         objectMapper = new ObjectMapper();
+        // 设置测试用户上下文
+        UserContext.set(new UserContext.UserInfo(123L, "user", "test-session"));
+    }
+    
+    @AfterEach
+    void tearDown() {
+        // 清理用户上下文
+        UserContext.clear();
     }
     
     @Test
@@ -61,7 +71,7 @@ class ReActAgentTest {
         when(llmService.generateWithTools(anyList(), anyDouble(), anyList()))
             .thenReturn(llmResponse);
         
-        String result = agent.execute("测试问题", 1L, 123L, "user", null);
+        String result = agent.execute("测试问题", 1L, null);
         
         assertEquals("这是最终答案", result);
         verify(llmService, times(1)).generateWithTools(anyList(), anyDouble(), anyList());
@@ -84,7 +94,7 @@ class ReActAgentTest {
             return "工具执行结果";  // 非JSON格式，不会直接返回
         }, "测试工具");
         
-        String result = agent.execute("测试问题", 1L, 123L, "user", null);
+        String result = agent.execute("测试问题", 1L, null);
         
         assertEquals("工具执行完成", result);
         verify(llmService, times(2)).generateWithTools(anyList(), anyDouble(), anyList());
@@ -103,7 +113,7 @@ class ReActAgentTest {
             return "{\"status\":\"success\",\"data\":[{\"id\":1,\"name\":\"test\"}],\"rowCount\":1}";
         }, "查询工具");
         
-        String result = agent.execute("查询数据", 1L, 123L, "user", List.of());
+        String result = agent.execute("查询数据", 1L, List.of());
         
         // 应该直接返回结构化数据，不再调用LLM
         assertTrue(result.contains("\"status\":\"success\""));
@@ -123,7 +133,7 @@ class ReActAgentTest {
             return "继续循环";
         }, "循环工具");
         
-        String result = agent.execute("测试问题", 1L, 123L, "user", null);
+        String result = agent.execute("测试问题", 1L, null);
         
         assertTrue(result.contains("超过最大迭代次数"));
         verify(llmService, times(10)).generateWithTools(anyList(), anyDouble(), anyList());
@@ -136,7 +146,7 @@ class ReActAgentTest {
         when(llmService.generateWithTools(anyList(), anyDouble(), anyList()))
             .thenReturn(response);
         
-        String result = agent.execute("测试问题", null, 123L, "user", null);
+        String result = agent.execute("测试问题", null, null);
         
         assertEquals("请先选择数据源", result);
     }
@@ -153,7 +163,7 @@ class ReActAgentTest {
             .thenReturn(firstResponse)
             .thenReturn(secondResponse);
         
-        String result = agent.execute("测试问题", 1L, 123L, "user", null);
+        String result = agent.execute("测试问题", 1L, null);
         
         assertEquals("未知工具", result);
         verify(llmService, times(2)).generateWithTools(anyList(), anyDouble(), anyList());

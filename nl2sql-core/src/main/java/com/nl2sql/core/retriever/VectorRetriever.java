@@ -370,11 +370,14 @@ public class VectorRetriever {
     }
     
     /**
-     * ✅ 新增：查询文本归一化 - 去除可变实体，保留查询结构
-     * 业界标准：https://help.aliyun.com/zh/polardb/polardb-for-mysql/llm-based-nl2sql
+     * ✅ 新增：查询文本归一化 - 使用规则引擎
      */
     private String normalizeQuery(String query) {
-        return QueryNormalizer.normalize(query);
+        com.nl2sql.core.cache.QueryStructureExtractor extractor = 
+            new com.nl2sql.core.cache.QueryStructureExtractor();
+        com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+            extractor.extract(query);
+        return extractor.toNormalizedJson(structure);
     }
     
     private double cosineSimilarity(List<Float> vec1, List<Float> vec2) {

@@ -1,6 +1,7 @@
 package com.nl2sql.core.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.config.TableSelectionConfig;
 import com.nl2sql.core.llm.LLMService;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.model.chat.ChatModel;
@@ -20,6 +21,9 @@ public class DatasourceClarificationTool {
     
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private TableSelectionConfig tableSelectionConfig;
     
     private final LLMService llmService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -59,11 +63,10 @@ public class DatasourceClarificationTool {
                 
             // 情况2：使用LLM智能匹配
             Map<String, Object> matchedDs = llmIntelligentMatch(userQuery, datasources);
-                
+                        
             if (matchedDs != null) {
                 Long dsId = ((Number) matchedDs.get("id")).longValue();
                 String dsName = (String) matchedDs.get("name");
-                
                 return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(matchedDs), false);
             }
                 
@@ -144,11 +147,12 @@ public class DatasourceClarificationTool {
             
             Integer matchedId = (Integer) firstResult.get("matched_datasource_id");
             Boolean needTableInfo = (Boolean) firstResult.getOrDefault("need_table_info", false);
-            
+            String confidence = (String) firstResult.get("confidence");
+
             // 情况1：LLM明确匹配到唯一数据源且不需要表信息
             if (matchedId != null && !needTableInfo) {
                 for (Map<String, Object> ds : datasources) {
-                    if (((Number) ds.get("id")).intValue() == matchedId) {
+                    if (((Number) ds.get("id")).intValue() == matchedId && "high".equalsIgnoreCase(confidence)) {
                         log.info("[DatasourceClarification] 第一层匹配成功: {}", ds.get("name"));
                         return ds;
                     }
@@ -251,7 +255,7 @@ public class DatasourceClarificationTool {
                 Integer matchedId = (Integer) secondResult.get("matched_datasource_id");
                 if (matchedId != null) {
                     for (Map<String, Object> ds : datasources) {
-                        if (((Number) ds.get("id")).intValue() == matchedId) {
+                        if (((Number) ds.get("id")).intValue() == matchedId && "high".equalsIgnoreCase((String) secondResult.get("confidence"))) {
                             log.info("[DatasourceClarification] 第二层匹配成功: {}", ds.get("name"));
                             return ds;
                         }
@@ -325,25 +329,44 @@ public class DatasourceClarificationTool {
             response.put("status", "clarification_needed");
             response.put("clarificationType", "datasource_recommendation");
             
+            // ✅ 关键逻辑：检查是否满足自动选择条件
+            boolean shouldAutoSelect = tableSelectionConfig.isAutoSelectDatasource() 
+                && !isOnlyOne;
+            
             String message;
+            boolean autoExecuted;
+            
             if (isOnlyOne) {
+                // 唯一数据源：始终自动执行
                 message = String.format(
                     "✅ 系统只有唯一数据源：%s\n\n%s\n\n请直接使用此数据源执行查询，无需再次确认。",
                     escapeJson(dsName), datasourceInfo
                 );
+                autoExecuted = true;
+            } else if (shouldAutoSelect) {
+                // ✅ 配置开启 + confidence=high：自动选择，不返回前端确认
+                message = String.format(
+                    "🎯 自动选择数据源：%s（置信度: high）\n\n%s\n\n已自动使用该数据源执行查询。",
+                    escapeJson(dsName), datasourceInfo
+                );
+                autoExecuted = true;
+                log.info("[DatasourceClarification] ✅ 自动选择数据源: {} )", dsName);
             } else {
+                // 需要前端确认
                 message = String.format(
                     "🎯 根据您的问句，推荐使用数据源：%s\n\n%s\n\n请使用此数据源执行查询。",
                     escapeJson(dsName), datasourceInfo
                 );
+                autoExecuted = false;
             }
             
             response.put("message", message);
             response.put("recommendedDatasourceId", dsId);
-            response.put("autoExecuted", isOnlyOne); // 唯一数据源时标记为已自动执行
-            
+            response.put("autoExecuted", autoExecuted);
+
             String result = objectMapper.writeValueAsString(response);
-            log.info("[DatasourceClarification] 自动选择数据源: {} (ID={}, autoExecuted={})", dsName, dsId, isOnlyOne);
+            log.info("[DatasourceClarification] 数据源推荐: {} (ID={}, autoExecuted={})",
+                dsName, dsId, autoExecuted);
             return result;
             
         } catch (Exception e) {

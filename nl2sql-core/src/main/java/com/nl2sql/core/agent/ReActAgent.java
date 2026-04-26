@@ -57,12 +57,17 @@ public class ReActAgent {
     
     /**
      * 执行 ReAct 循环（使用原生 Tool Calling）
+     * ✅ 优化：userId/username从UserContext获取，避免层层传参
      * @return JSON字符串（工具结果）或自然语言（LLM回答）
      */
-    public String execute(String userMessage, Long datasourceId, Long userId, String username, 
+    public String execute(String userMessage, Long datasourceId, 
                          List<Map<String, Object>> historyMessages) {
-        log.info("[ReActAgent] 开始执行，用户消息: {}, datasourceId={}, 历史消息数={}", 
-            userMessage, datasourceId, historyMessages != null ? historyMessages.size() : 0);
+        // ✅ 从 UserContext 获取用户信息
+        Long userId = com.nl2sql.common.context.UserContext.getUserId();
+        String username = com.nl2sql.common.context.UserContext.getUsername();
+        
+        log.info("[ReActAgent] 开始执行，用户消息: {}, datasourceId={}, userId={}, 历史消息数={}", 
+            userMessage, datasourceId, userId, historyMessages != null ? historyMessages.size() : 0);
         
         // 1. 构建消息列表
         List<Map<String, Object>> messages = new ArrayList<>();

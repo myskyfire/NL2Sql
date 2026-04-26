@@ -161,10 +161,20 @@ public class SchemaRetrievalService {
     }
     
     /**
-     * ✅ 归一化查询文本（与SQLFeedbackService保持一致）
-     * 业界标准：https://help.aliyun.com/zh/polardb/polardb-for-mysql/llm-based-nl2sql
+     * ✅ 归一化查询文本（使用规则引擎）
      */
     public String normalizeQueryForCache(String query) {
-        return QueryNormalizer.normalize(query);
+        com.nl2sql.core.cache.QueryStructureExtractor extractor = 
+            new com.nl2sql.core.cache.QueryStructureExtractor();
+        com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+            extractor.extract(query);
+        return extractor.toNormalizedJson(structure);
+    }
+    
+    /**
+     * ✅ 获取 JdbcTemplate（供外部调用）
+     */
+    public JdbcTemplate getJdbcTemplate() {
+        return jdbcTemplate;
     }
 }

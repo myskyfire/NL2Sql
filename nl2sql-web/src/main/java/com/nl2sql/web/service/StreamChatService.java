@@ -108,12 +108,10 @@ public class StreamChatService {
                 // 4. 发布SQL生成中事件
                 eventPublisher.publishEvent(StreamProgressEvent.creating(sessionId));
                 
-                // 5. 调用Agent执行查询
+                // 5. 调用Agent执行查询（✅ 优化：userId/username从UserContext获取）
                 String agentResponse = reActAgent.execute(
                     question,
                     datasourceId,
-                    1L, // TODO: 从SecurityContext获取
-                    "user",
                     null  // ✅ TODO: 传入历史消息
                 );
                 

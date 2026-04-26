@@ -313,22 +313,60 @@ public class SQLExecutor {
             
         } catch (Exception e) {
             long endTime = System.currentTimeMillis();
-            result.setError(e.getMessage());
-            result.setExecutionTime((endTime - startTime) / 1000.0);
-            log.error("SQL执行失败: {}", e.getMessage());
+            String errorMsg = e.getMessage();
             
-            // 记录失败日志
-            SQLExecutionLogService.ExecutionLog execLog = new SQLExecutionLogService.ExecutionLog();
-            execLog.setUserId(userId);
-            execLog.setUsername(username);
-            execLog.setSqlText(sql);
-            execLog.setExecutionTimeMs((long)(result.getExecutionTime() * 1000));
-            execLog.setRowCount(0);
-            execLog.setSlowQuery(false);
-            execLog.setStatus("FAILED");
-            execLog.setErrorMessage(e.getMessage());
-            execLog.setIpAddress(ipAddress);
-            executionLogService.logExecution(execLog);
+            // ✅ 关键修复：检测是否为数据库连接异常（离线场景）
+            boolean isConnectionError = errorMsg != null && (
+                errorMsg.contains("Communications link failure") ||
+                errorMsg.contains("Connection refused") ||
+                errorMsg.contains("Connect timed out") ||
+                errorMsg.contains("Unknown host") ||
+                errorMsg.contains("No route to host") ||
+                errorMsg.contains("Network is unreachable") ||
+                errorMsg.contains("Cannot create PoolableConnectionFactory")
+            );
+            
+            if (isConnectionError) {
+                // ✅ 离线场景：不报错，返回空数据但包含SQL
+                log.warn("[离线模式] 无法连接远程数据库: {}", errorMsg);
+                result.setError(null);  // 清空错误
+                result.setData(new ArrayList<>());  // 空数据
+                result.setRowCount(0);
+                result.setExecutionTime((endTime - startTime) / 1000.0);
+                
+                // 记录日志但不标记为失败
+                SQLExecutionLogService.ExecutionLog execLog = new SQLExecutionLogService.ExecutionLog();
+                execLog.setUserId(userId);
+                execLog.setUsername(username);
+                execLog.setSqlText(sql);
+                execLog.setExecutionTimeMs((long)(result.getExecutionTime() * 1000));
+                execLog.setRowCount(0);
+                execLog.setSlowQuery(false);
+                execLog.setStatus("OFFLINE");  // 特殊状态：离线模式
+                execLog.setErrorMessage("离线模式：无法连接远程数据库，已返回生成的SQL");
+                execLog.setIpAddress(ipAddress);
+                executionLogService.logExecution(execLog);
+                
+                log.info("[离线模式] 已返回空数据和SQL，前端可展示SQL供用户自行执行");
+            } else {
+                // ✅ 其他错误：正常报错
+                result.setError(errorMsg);
+                result.setExecutionTime((endTime - startTime) / 1000.0);
+                log.error("SQL执行失败: {}", errorMsg);
+                
+                // 记录失败日志
+                SQLExecutionLogService.ExecutionLog execLog = new SQLExecutionLogService.ExecutionLog();
+                execLog.setUserId(userId);
+                execLog.setUsername(username);
+                execLog.setSqlText(sql);
+                execLog.setExecutionTimeMs((long)(result.getExecutionTime() * 1000));
+                execLog.setRowCount(0);
+                execLog.setSlowQuery(false);
+                execLog.setStatus("FAILED");
+                execLog.setErrorMessage(errorMsg);
+                execLog.setIpAddress(ipAddress);
+                executionLogService.logExecution(execLog);
+            }
         }
         
         return result;

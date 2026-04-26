@@ -160,10 +160,14 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
     }
     
     /**
-     * 归一化查询文本
+     * 归一化查询文本（使用规则引擎）
      */
     private String normalizeQueryForCache(String query) {
-        return com.nl2sql.common.util.QueryNormalizer.normalize(query);
+        com.nl2sql.core.cache.QueryStructureExtractor extractor = 
+            new com.nl2sql.core.cache.QueryStructureExtractor();
+        com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+            extractor.extract(query);
+        return extractor.toNormalizedJson(structure);
     }
     
     @Tool("根据用户自然语言问题和数据源ID，检索相关的数据库表结构信息。返回表名、字段、数据类型、注释等信息")

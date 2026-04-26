@@ -806,6 +806,32 @@ ${sql}
                     log.error("执行异常，尝试自动修正 (第{}次): {}", attempt + 1, e.message)
                     publishEvent(context, sessionId, "correcting_error", "🔧 修正执行错误...")
                     
+                    // ✅ 关键修复：检测是否为离线连接异常
+                    boolean isOfflineError = e.message != null && (
+                        e.message.contains("Communications link failure") ||
+                        e.message.contains("Connection refused") ||
+                        e.message.contains("Connect timed out") ||
+                        e.message.contains("Unknown host") ||
+                        e.message.contains("Cannot create PoolableConnectionFactory")
+                    )
+                    
+                    if (isOfflineError) {
+                        // ✅ 离线场景：不重试，直接返回SQL
+                        log.warn("[离线模式] 无法连接远程数据库，返回生成的SQL")
+                        publishEvent(context, sessionId, "offline_mode", "⚠️ 离线模式：无法连接数据库，已生成SQL供手动执行")
+                        
+                        return [
+                            success: true,
+                            data: [],
+                            rowCount: 0,
+                            executionTime: 0.0,
+                            sql: currentSql,
+                            datasourceId: datasourceId,
+                            offlineMode: true,
+                            message: "离线模式：无法连接远程数据库，请手动执行以下SQL"
+                        ]
+                    }
+                    
                     if (correctionService != null) {
                         // ✅ 使用统一的 SQLCorrectionService（兼容旧版API）
                         com.nl2sql.core.service.SQLCorrectionService.CorrectionResult correctionResult = 

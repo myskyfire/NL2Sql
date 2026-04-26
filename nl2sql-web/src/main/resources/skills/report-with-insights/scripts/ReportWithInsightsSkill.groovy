@@ -33,14 +33,15 @@ class ReportWithInsightsSkill {
             // ✅ 新架构：通过 callSkill() 调用 StandardQuerySkill
             log.info("Step 1: 调用 StandardQuerySkill")
             
-            def queryResult = context.callSkill("standard_query", [
+            def queryResult = context.callSkill("execute_standard_query", [
                 question: question,
                 datasourceId: datasourceId
             ])
             
-            if (!queryResult.success) {
-                log.error("标准查询失败: {}", queryResult.error)
-                return createFailureResult(queryResult.error)
+            // ✅ 关键修复：检查返回结果的 status 字段
+            if (queryResult.status != "success") {
+                log.error("标准查询失败: {}", queryResult.error ?: queryResult.message)
+                return createFailureResult(queryResult.error ?: queryResult.message)
             }
             
             List<Map<String, Object>> data = queryResult.data

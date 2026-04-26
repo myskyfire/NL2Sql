@@ -187,6 +187,11 @@ sql:
     max-rows: 100
     table-stats-cache-hours: 12
 
+# 表选择配置
+table-selection:
+  # 自动选择数据源：当LLM唯一确定且confidence=high时，跳过前端确认
+  auto-select-datasource: true
+
 # Skills 配置
 skills:
   groovy:

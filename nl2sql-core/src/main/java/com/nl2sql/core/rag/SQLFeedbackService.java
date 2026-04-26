@@ -344,11 +344,14 @@ public class SQLFeedbackService {
                 metadataCacheService.removeFromSemanticIndex(datasourceId, normalizedQuery);
                 log.info("[表缓存注入] ⚠️ 低分反馈，已从L3语义索引删除: datasourceId={}, query='{}'", 
                     datasourceId, normalizedQuery);
-            } else {
-                // ✅ 3-5星反馈：记录到L3语义索引
+            } else if (rating >= 4) {
+                // ✅ 4-5星反馈：记录到L3语义索引
                 metadataCacheService.recordQueryToSemanticIndex(datasourceId, normalizedQuery, tableList, rating);
                 log.info("[表缓存注入] ✅ 已注入L3语义索引: datasourceId={}, tables={}", 
                     datasourceId, tableList);
+            } else {
+                // ✅ 3星反馈：不注入也不删除，保持中立
+                log.debug("[表缓存注入] 3星反馈（中等），跳过L3语义索引注入");
             }
                 
             // ✅ P0优化：5分反馈额外注入SQL模板到QueryCache
@@ -433,28 +436,101 @@ public class SQLFeedbackService {
     }
     
     /**
-     * ✅ P0优化：5分反馈注入SQL模板到QueryCache
+     * ✅ P0优化：5分反馈注入SQL模板到QueryCache（使用规则引擎提取模板）
      */
     private void injectSQLTemplateToCache(String question, String sql, 
                                           java.util.Set<String> usedTables,
                                           String normalizedQuery, int rating) {
         try {
+            // 1. 提取查询结构
+            com.nl2sql.core.cache.QueryStructureExtractor extractor = 
+                new com.nl2sql.core.cache.QueryStructureExtractor();
+            com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+                extractor.extract(question);
+            
+            // 2. 将SQL转换为模板（替换实体值为占位符）
+            String sqlTemplate = convertToTemplate(sql, structure);
+            
+            // 3. 缓存SQL模板
             com.nl2sql.core.cache.QueryCacheService.CachedResult cachedResult = 
                 new com.nl2sql.core.cache.QueryCacheService.CachedResult();
-            cachedResult.setSql(sql);
+            cachedResult.setSql(sqlTemplate);  // ✅ 存储带占位符的模板
             cachedResult.setUsedTables(usedTables);
             cachedResult.setUserRating(rating);
             cachedResult.setNormalizedQuery(normalizedQuery);
             
-            // ✅ 关键修复：使用规范化查询文本作为key，存入模板缓存
-            queryCacheService.putTemplateToCache(normalizedQuery, cachedResult, 1440); // 缓存24小时
+            queryCacheService.putTemplateToCache(normalizedQuery, cachedResult, 1440);
             
-            log.info("[SQL模板缓存] ✅ 5分反馈已注入: question='{}', normalized='{}'", 
-                question, normalizedQuery);
+            log.info("[SQL模板缓存] ✅ 5分反馈已注入: question='{}', normalized='{}', template={}", 
+                question, normalizedQuery, sqlTemplate);
             
         } catch (Exception e) {
             log.error("[SQL模板缓存] ❌ 注入失败", e);
         }
+    }
+    
+    /**
+     * ✅ 将SQL转换为模板（替换实体值为占位符）
+     */
+    private String convertToTemplate(String sql, com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure) {
+        if (sql == null || structure == null) {
+            return sql;
+        }
+        
+        String template = sql;
+        
+        // 1. 替换人名
+        if (structure.getPerson() != null) {
+            template = template.replace(structure.getPerson(), "{PERSON_NAME}");
+        }
+        
+        // 2. 替换时间偏移量
+        if (structure.getTime() != null && "RELATIVE".equals(structure.getTime().getType())) {
+            Integer offset = convertTimeToOffset(structure.getTime());
+            if (offset != null) {
+                template = template.replace("INTERVAL " + offset + " DAY", "INTERVAL {OFFSET} DAY");
+            }
+        }
+        
+        // 3. 替换动态范围（最近N天）
+        if (structure.getTime() != null && "RELATIVE_RANGE".equals(structure.getTime().getType())) {
+            String timeValue = structure.getTime().getValue();
+            java.util.regex.Pattern numPattern = java.util.regex.Pattern.compile("\\{(\\d+)\\}");
+            java.util.regex.Matcher numMatcher = numPattern.matcher(timeValue);
+            if (numMatcher.find()) {
+                String number = numMatcher.group(1);
+                template = template.replace("INTERVAL " + number + " DAY", "INTERVAL {NUM} DAY");
+            }
+        }
+        
+        // 4. 替换地点
+        if (structure.getLocation() != null) {
+            template = template.replace(structure.getLocation(), "{LOCATION}");
+        }
+        
+        // 5. 替换金额
+        if (structure.getAmount() != null) {
+            template = template.replace(structure.getAmount().getValue(), "{AMOUNT_VALUE}");
+        }
+        
+        return template;
+    }
+    
+    /**
+     * ✅ 将时间表达式转换为SQL偏移量
+     */
+    private Integer convertTimeToOffset(com.nl2sql.core.cache.QueryStructureExtractor.TimeExpression time) {
+        if ("RELATIVE".equals(time.getType())) {
+            switch (time.getValue()) {
+                case "今天": return 0;
+                case "昨天": return 1;
+                case "前天": return 2;
+                case "明天": return -1;
+                case "后天": return -2;
+                default: return null;
+            }
+        }
+        return null;
     }
     
     /**
@@ -588,11 +664,14 @@ public class SQLFeedbackService {
     }
     
     /**
-     * ✅ 归一化查询文本（用于缓存key）- 与SchemaRetrievalService保持一致
-     * 业界标准：https://help.aliyun.com/zh/polardb/polardb-for-mysql/llm-based-nl2sql
+     * ✅ 归一化查询文本（用于缓存key）- 使用规则引擎
      */
     private String normalizeQuery(String query) {
-        return QueryNormalizer.normalize(query);
+        com.nl2sql.core.cache.QueryStructureExtractor extractor = 
+            new com.nl2sql.core.cache.QueryStructureExtractor();
+        com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+            extractor.extract(query);
+        return extractor.toNormalizedJson(structure);
     }
     
     /**
@@ -712,28 +791,64 @@ public class SQLFeedbackService {
             String executedSql = (String) lastQuery.get("executed_sql");
             Boolean executionSuccess = (Boolean) lastQuery.get("execution_success");
             
-            // 插入默认3星评分
-            String insertSql = "INSERT INTO rag_feedback (" +
-                              "knowledge_id, user_id, session_id, rating, feedback_text, " +
-                              "question, generated_sql, executed_sql, execution_success, " +
-                              "ip_address, user_agent, created_at" +
-                              ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
-            
-            jdbcTemplate.update(insertSql,
-                0L,    // ✅ knowledgeId: 0 表示无关联知识库
-                null,  // userId
-                sessionId,
-                3,     // 默认3星
-                "用户未评分，默认为中等评价",  // 自动填充的反馈文本
-                question,
-                generatedSql,
-                executedSql,
-                executionSuccess != null ? executionSuccess : false,
-                "system",  // 系统自动评分
-                "auto-rating"
+            // ✅ 关键修复：先检查是否已存在相同问题的评分记录
+            String checkExistingSql = "SELECT id FROM rag_feedback WHERE session_id = ? AND question = ? LIMIT 1";
+            List<Map<String, Object>> existingRecords = jdbcTemplate.queryForList(
+                checkExistingSql, sessionId, question
             );
             
-            log.info("[默认评分] 会话 {} 自动赋予3星评分: question={}", sessionId, question);
+            if (!existingRecords.isEmpty()) {
+                // ✅ 存在则更新
+                Long feedbackId = ((Number) existingRecords.get(0).get("id")).longValue();
+                String updateSql = "UPDATE rag_feedback SET " +
+                                  "rating = ?, " +
+                                  "feedback_text = ?, " +
+                                  "generated_sql = ?, " +
+                                  "executed_sql = ?, " +
+                                  "execution_success = ?, " +
+                                  "ip_address = ?, " +
+                                  "user_agent = ?, " +
+                                  "created_at = NOW() " +
+                                  "WHERE id = ?";
+                
+                jdbcTemplate.update(updateSql,
+                    3,     // 默认3星
+                    "用户未评分，默认为中等评价",
+                    generatedSql,
+                    executedSql,
+                    executionSuccess != null ? executionSuccess : false,
+                    "system",
+                    "auto-rating",
+                    feedbackId
+                );
+                
+                log.info("[默认评分] 会话 {} 更新已有评分记录: feedbackId={}, question={}", 
+                    sessionId, feedbackId, question);
+            } else {
+                // ✅ 不存在则插入
+                String insertSql = "INSERT INTO rag_feedback (" +
+                                  "knowledge_id, user_id, session_id, rating, feedback_text, " +
+                                  "question, generated_sql, executed_sql, execution_success, " +
+                                  "ip_address, user_agent, created_at" +
+                                  ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                
+                jdbcTemplate.update(insertSql,
+                    0L,    // ✅ knowledgeId: 0 表示无关联知识库
+                    null,  // userId
+                    sessionId,
+                    3,     // 默认3星
+                    "用户未评分，默认为中等评价",  // 自动填充的反馈文本
+                    question,
+                    generatedSql,
+                    executedSql,
+                    executionSuccess != null ? executionSuccess : false,
+                    "system",  // 系统自动评分
+                    "auto-rating"
+                );
+                
+                log.info("[默认评分] 会话 {} 新增评分记录: question={}", sessionId, question);
+            }
+            
             return true;
             
         } catch (Exception e) {

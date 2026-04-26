@@ -161,18 +161,18 @@ public class RagKnowledgeBaseService {
                     "LEFT JOIN (" +
                     "    SELECT knowledge_id, AVG(rating) as rating " +
                     "    FROM rag_feedback " +
-                    "    WHERE rating >= 3 " +  // 只统计正面反馈
+                    "    WHERE rating >= 4 " +  // ✅ 只统计4-5星正面反馈
                     "    GROUP BY knowledge_id" +
                     ") avg_feedback ON k.id = avg_feedback.knowledge_id " +
                     "WHERE MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) " +
-                    "AND k.quality_score >= ? " +
+                    "AND k.quality_score >= ? " +  // ✅ 过滤低质量示例（>=0.8）
                     "ORDER BY (relevance * 0.6 + (avg_rating / 5.0) * 0.4) DESC, k.quality_score DESC " +  // 综合评分
                     "LIMIT ?";
         
         List<KnowledgeItem> results = jdbcTemplate.query(
             sql, 
             new KnowledgeRowMapper(),
-            question, question, SIMILARITY_THRESHOLD, maxResults
+            question, question, 0.8f, maxResults  // ✅ 阈值从SIMILARITY_THRESHOLD改为0.8
         );
         
         if (!results.isEmpty()) {
@@ -191,8 +191,9 @@ public class RagKnowledgeBaseService {
         List<KnowledgeItem> items = new ArrayList<>();
         
         for (VectorSearchResult result : providerResults) {
-            // ✅ 过滤低质量示例（quality_score < 0.6）
-            if (result.getQualityScore() != null && result.getQualityScore() < 0.6f) {
+            // ✅ 关键修复：过滤低质量示例（quality_score < 0.8）
+            // 原因：1星反馈会导致quality_score降至0.7以下，但仍可能被检索到
+            if (result.getQualityScore() != null && result.getQualityScore() < 0.8f) {
                 log.warn("[RAG-Chroma] 过滤低质量示例: question={}, qualityScore={}", 
                     result.getQuestion(), result.getQualityScore());
                 continue;
@@ -522,35 +523,6 @@ public class RagKnowledgeBaseService {
                 item.setRelevance(rs.getDouble("relevance"));
             } catch (SQLException e) {
                 item.setRelevance(null);
-            }
-            
-            return item;
-        }
-    }
-    
-    /**
-     * 知识库列表RowMapper（包含created_at）
-     */
-    private static class KnowledgeListRowMapper implements RowMapper<KnowledgeItem> {
-        @Override
-        public KnowledgeItem mapRow(ResultSet rs, int rowNum) throws SQLException {
-            KnowledgeItem item = new KnowledgeItem();
-            item.setId(rs.getLong("id"));
-            item.setQuestion(rs.getString("question"));
-            item.setAnswer(rs.getString("answer"));
-            item.setSqlExample(rs.getString("sql_example"));
-            item.setCategory(rs.getString("category"));
-            item.setQualityScore(rs.getFloat("quality_score"));
-            item.setUsageCount(rs.getInt("usage_count"));
-            
-            // created_at字段
-            try {
-                java.sql.Timestamp timestamp = rs.getTimestamp("created_at");
-                if (timestamp != null) {
-                    item.setCreatedAt(timestamp.toLocalDateTime());
-                }
-            } catch (SQLException e) {
-                // 忽略
             }
             
             return item;

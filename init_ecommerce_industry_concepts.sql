@@ -10,16 +10,18 @@ INSERT IGNORE INTO industry_template (industry_code, industry_name, description,
 
 -- 2. 插入业务实体 (entity)
 INSERT INTO industry_concept (industry_code, concept_type, concept_key, concept_aliases, description, source, status) VALUES
-('ecommerce', 'entity', 'user', '["用户","客户","买家","会员"]', '系统注册用户，存储在users表', 'manual', 'approved'),
+('ecommerce', 'entity', 'user', '["用户","客户","买家","会员","顾客"]', '系统注册用户，存储在users表', 'manual', 'approved'),
 ('ecommerce', 'entity', 'order', '["订单","交易","购买记录"]', '用户下单生成的交易记录，主表orders', 'manual', 'approved'),
-('ecommerce', 'entity', 'product', '["商品","SKU","产品","货品"]', '可销售的商品，存储在products表', 'manual', 'approved'),
+('ecommerce', 'entity', 'product', '["商品","产品","SKU","货品","库存"]', '可销售的商品，存储在products表', 'manual', 'approved'),
 ('ecommerce', 'entity', 'category', '["分类","类目","品类"]', '商品分类，如电子产品/服装/食品', 'manual', 'approved'),
-('ecommerce', 'entity', 'address', '["地址","收货地址","配送地址"]', '用户收货地址，存储在user_addresses表', 'manual', 'approved');
+('ecommerce', 'entity', 'address', '["地址","收货地址","配送地址"]', '用户收货地址，存储在user_addresses表', 'manual', 'approved'),
+('ecommerce', 'entity', 'logistics', '["物流","快递","发货","配送","运输"]', '物流配送信息', 'manual', 'approved'),
+('ecommerce', 'entity', 'after_sale', '["退款","退货","售后","投诉","评价"]', '售后服务相关', 'manual', 'approved');
 
 -- 3. 插入关键指标 (metric)
 INSERT INTO industry_concept (industry_code, concept_type, concept_key, concept_aliases, description, source, status) VALUES
-('ecommerce', 'metric', 'revenue', '["销售额","收入","GMV","成交金额","实付金额"]', '订单实际支付金额(orders.actual_amount)，不含退款', 'manual', 'approved'),
-('ecommerce', 'metric', 'order_count', '["订单数","交易量","下单次数"]', '订单数量统计', 'manual', 'approved'),
+('ecommerce', 'metric', 'revenue', '["销售额","收入","GMV","成交金额","实付金额","支付","付款","金额"]', '订单实际支付金额(orders.actual_amount)，不含退款', 'manual', 'approved'),
+('ecommerce', 'metric', 'order_count', '["订单数","交易量","下单次数","订单","下单","购买","成交"]', '订单数量统计', 'manual', 'approved'),
 ('ecommerce', 'metric', 'quantity', '["销量","数量","件数","购买数量"]', '商品销售数量(order_items.quantity)', 'manual', 'approved'),
 ('ecommerce', 'metric', 'profit', '["利润","毛利","盈利"]', '销售额-成本价*销量', 'manual', 'approved'),
 ('ecommerce', 'metric', 'conversion_rate', '["转化率","下单率"]', '下单用户数/访问用户数', 'manual', 'approved'),
