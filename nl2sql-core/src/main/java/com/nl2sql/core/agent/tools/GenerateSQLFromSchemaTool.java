@@ -72,39 +72,34 @@ public class GenerateSQLFromSchemaTool {
     
     private String buildSuccessResponse(String sql, Long datasourceId) {
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                "success", true,
-                "sql", sql,
-                "datasourceId", datasourceId
-            ));
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("sql", sql);
+            
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "generate_sql_from_schema")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         } catch (Exception e) {
             log.error("[GenerateSQLFromSchemaTool] JSON序列化失败", e);
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
+            return ToolResponseBuilder.error("SERIALIZATION_ERROR", "JSON序列化失败")
+                .addMetadata("toolName", "generate_sql_from_schema")
+                .build();
         }
     }
     
     private String buildErrorResponse(String error) {
-        try {
-            return objectMapper.writeValueAsString(Map.of(
-                "success", false,
-                "error", error
-            ));
-        } catch (Exception e) {
-            log.error("[GenerateSQLFromSchemaTool] JSON序列化失败", e);
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
-        }
+        return ToolResponseBuilder.error("SQL_GENERATION_ERROR", error)
+            .addMetadata("toolName", "generate_sql_from_schema")
+            .build();
     }
     
     private String buildClarificationResponse(String message) {
-        try {
-            return objectMapper.writeValueAsString(Map.of(
-                "success", false,
-                "needsClarification", true,
-                "message", message
-            ));
-        } catch (Exception e) {
-            log.error("[GenerateSQLFromSchemaTool] JSON序列化失败", e);
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
-        }
+        // ✅ 澄清响应使用clarification类型
+        return ToolResponseBuilder.clarification("schema_clarification")
+            .withMessage(message)
+            .addMetadata("toolName", "generate_sql_from_schema")
+            .build();
     }
 }

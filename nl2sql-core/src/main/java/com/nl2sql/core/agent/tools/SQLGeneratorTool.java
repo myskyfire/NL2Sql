@@ -109,8 +109,10 @@ public class SQLGeneratorTool extends BaseToolAdapter {
         String sql = generateSQLInternal(query, allTables, schemaInfo, relationshipInfo, datasourceId, llmResponse);
         
         Map<String, Object> result = new HashMap<>();
-        result.put("success", !sql.startsWith("错误："));
-        result.put("sql", sql);
+        boolean success = !sql.startsWith("错误：");
+        result.put("success", success);
+        result.put("type", success ? "data" : "error");
+        result.put("data", Map.of("sql", sql));
         
         return result;
     }
@@ -448,23 +450,22 @@ public class SQLGeneratorTool extends BaseToolAdapter {
             com.nl2sql.core.agent.tool.ToolResult result = execute(context);
             
             if (result.isSuccess()) {
-                return objectMapper.writeValueAsString(result.getData());
+                Map<String, Object> data = (Map<String, Object>) result.getData();
+                // ✅ 构建统一响应
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "sql_generator")
+                    .build();
             } else {
-                Map<String, Object> error = new HashMap<>();
-                error.put("success", false);
-                error.put("error", result.getErrorMessage());
-                return objectMapper.writeValueAsString(error);
+                return ToolResponseBuilder.error("SQL_GENERATION_ERROR", result.getErrorMessage())
+                    .addMetadata("toolName", "sql_generator")
+                    .build();
             }
         } catch (Exception e) {
             log.error("[SQLGenerator] 执行失败", e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("EXECUTION_ERROR", e.getMessage())
+                .addMetadata("toolName", "sql_generator")
+                .build();
         }
     }
 }

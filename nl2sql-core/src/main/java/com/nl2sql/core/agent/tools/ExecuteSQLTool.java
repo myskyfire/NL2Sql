@@ -171,43 +171,49 @@ public class ExecuteSQLTool implements BaseTool {
      */
     @Tool("执行SQL查询并返回结果。输入SQL语句和数据源ID，返回查询结果的JSON格式数据")
     public String executeSQL(String sql, Long datasourceId) {
+        long startTime = System.currentTimeMillis();
+        
         try {
             log.info("[ExecuteSQLTool] 执行SQL: {}", sql);
             
             // 安全检查：只允许SELECT语句
             String upperSQL = sql.trim().toUpperCase();
             if (!upperSQL.startsWith("SELECT")) {
-                return "{\"success\":false,\"error\":\"只允许执行SELECT查询\"}";
+                return ToolResponseBuilder.error("SQL_SECURITY_ERROR", "只允许执行SELECT查询")
+                    .addMetadata("toolName", "execute_sql")
+                    .build();
             }
             
             // 执行查询
             List<Map<String, Object>> results = jdbcTemplate.queryForList(sql);
+            long executionTime = System.currentTimeMillis() - startTime;
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("rowCount", results.size());
-            response.put("data", results);
-            
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("rows", results);
+            data.put("rowCount", results.size());
             if (!results.isEmpty()) {
-                response.put("columns", new ArrayList<>(results.get(0).keySet()));
+                data.put("columns", new ArrayList<>(results.get(0).keySet()));
             }
             
             log.info("[ExecuteSQLTool] 查询成功，返回 {} 行数据", results.size());
             
-            return objectMapper.writeValueAsString(response);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "execute_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .addMetadata("executionTimeMs", executionTime)
+                .build();
             
         } catch (Exception e) {
+            long executionTime = System.currentTimeMillis() - startTime;
             log.error("[ExecuteSQLTool] 执行失败", e);
             
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("SQL_EXECUTION_ERROR", e.getMessage())
+                .addMetadata("toolName", "execute_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .addMetadata("executionTimeMs", executionTime)
+                .build();
         }
     }
 }

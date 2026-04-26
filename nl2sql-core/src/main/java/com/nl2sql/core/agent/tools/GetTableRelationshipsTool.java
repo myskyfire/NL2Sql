@@ -51,16 +51,23 @@ public class GetTableRelationshipsTool {
                 result.add(map);
             }
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("relationshipCount", result.size());
-            response.put("relationships", result);
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("relationshipCount", result.size());
+            data.put("relationships", result);
             
-            return objectMapper.writeValueAsString(response);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "get_table_relationships")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[GetTableRelationshipsTool] 查询失败", e);
-            return "{\"success\":false,\"error\":\"" + e.getMessage() + "\"}";
+            return ToolResponseBuilder.error("RELATIONSHIP_QUERY_ERROR", e.getMessage())
+                .addMetadata("toolName", "get_table_relationships")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

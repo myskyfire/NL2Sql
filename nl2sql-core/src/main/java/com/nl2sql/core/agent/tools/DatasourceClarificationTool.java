@@ -297,27 +297,27 @@ public class DatasourceClarificationTool {
      * ✅ 重构：构建数据源选择响应 - 返回JSON供前端渲染按钮
      */
     private String buildDatasourceSelectionResponse(List<Map<String, Object>> datasources) {
-        StringBuilder json = new StringBuilder();
-        json.append("{\"status\":\"clarification_needed\",\"clarificationType\":\"datasource_selection\",\"message\":\"📋 请选择数据源：\",\"availableDatasources\": [");
-        
-        for (int i = 0; i < datasources.size(); i++) {
-            if (i > 0) json.append(",");
-            Map<String, Object> ds = datasources.get(i);
-            json.append("{");
-            json.append("\"id\":").append(ds.get("id")).append(",");
-            json.append("\"name\":\"").append(escapeJson(String.valueOf(ds.get("name")))).append("\",");
-            json.append("\"db_type\":\"").append(escapeJson(String.valueOf(ds.get("db_type")))).append("\",");
-            json.append("\"database_name\":\"").append(escapeJson(String.valueOf(ds.get("database_name")))).append("\"");
+        // ✅ 构建数据源列表
+        List<Map<String, Object>> datasourceList = new ArrayList<>();
+        for (Map<String, Object> ds : datasources) {
+            Map<String, Object> dsInfo = new HashMap<>();
+            dsInfo.put("id", ds.get("id"));
+            dsInfo.put("name", ds.get("name"));
+            dsInfo.put("db_type", ds.get("db_type"));
+            dsInfo.put("database_name", ds.get("database_name"));
             if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
-                json.append(",\"description\":\"").append(escapeJson(String.valueOf(ds.get("description")))).append("\"");
+                dsInfo.put("description", ds.get("description"));
             }
-            json.append("}");
+            datasourceList.add(dsInfo);
         }
         
-        json.append("]}");
-        
-        log.info("[DatasourceClarification] 返回{}个数据源选项供前端渲染", datasources.size());
-        return json.toString();
+        // ✅ 构建统一响应
+        return ToolResponseBuilder.clarification("datasource_selection")
+            .withMessage("📋 请选择数据源：")
+            .withContext(Map.of("availableDatasources", datasourceList))
+            .addMetadata("toolName", "clarify_datasource")
+            .addMetadata("datasourceCount", datasources.size())
+            .build();
     }
     
     /**
@@ -325,10 +325,6 @@ public class DatasourceClarificationTool {
      */
     private String buildAutoSelectedResponse(Long dsId, String dsName, String datasourceInfo, boolean isOnlyOne) {
         try {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "clarification_needed");
-            response.put("clarificationType", "datasource_recommendation");
-            
             // ✅ 关键逻辑：检查是否满足自动选择条件
             boolean shouldAutoSelect = tableSelectionConfig.isAutoSelectDatasource() 
                 && !isOnlyOne;
@@ -344,13 +340,13 @@ public class DatasourceClarificationTool {
                 );
                 autoExecuted = true;
             } else if (shouldAutoSelect) {
-                // ✅ 配置开启 + confidence=high：自动选择，不返回前端确认
+                // ✅ 配置开启 + LLM匹配成功：自动选择，不返回前端确认
                 message = String.format(
-                    "🎯 自动选择数据源：%s（置信度: high）\n\n%s\n\n已自动使用该数据源执行查询。",
+                    "🎯 自动选择数据源：%s\n\n%s\n\n已自动使用该数据源执行查询。",
                     escapeJson(dsName), datasourceInfo
                 );
                 autoExecuted = true;
-                log.info("[DatasourceClarification] ✅ 自动选择数据源: {} )", dsName);
+                log.info("[DatasourceClarification] ✅ 自动选择数据源: {}", dsName);
             } else {
                 // 需要前端确认
                 message = String.format(
@@ -360,18 +356,21 @@ public class DatasourceClarificationTool {
                 autoExecuted = false;
             }
             
-            response.put("message", message);
-            response.put("recommendedDatasourceId", dsId);
-            response.put("autoExecuted", autoExecuted);
-
-            String result = objectMapper.writeValueAsString(response);
-            log.info("[DatasourceClarification] 数据源推荐: {} (ID={}, autoExecuted={})",
-                dsName, dsId, autoExecuted);
-            return result;
+            // ✅ 构建统一响应
+            return ToolResponseBuilder.clarification("datasource_recommendation")
+                .withMessage(message)
+                .withAutoExecuted(autoExecuted)
+                .withRecommendedDatasourceId(dsId)
+                .withContext(Map.of("datasourceInfo", datasourceInfo))
+                .addMetadata("toolName", "clarify_datasource")
+                .addMetadata("isOnlyOne", isOnlyOne)
+                .build();
             
         } catch (Exception e) {
             log.error("[DatasourceClarification] 构建自动选择响应失败", e);
-            return buildErrorResponse("构建响应失败: " + e.getMessage());
+            return ToolResponseBuilder.error("BUILD_ERROR", "构建响应失败: " + e.getMessage())
+                .addMetadata("toolName", "clarify_datasource")
+                .build();
         }
     }
     
@@ -379,16 +378,9 @@ public class DatasourceClarificationTool {
      * ✅ 新增：构建错误响应（统一JSON格式）
      */
     private String buildErrorResponse(String errorMessage) {
-        try {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "error");
-            response.put("message", escapeJson(errorMessage));
-            
-            return objectMapper.writeValueAsString(response);
-        } catch (Exception e) {
-            log.error("[DatasourceClarification] 构建错误响应失败", e);
-            return "{\"status\":\"error\",\"message\":\"系统错误\"}";
-        }
+        return ToolResponseBuilder.error("DATASOURCE_ERROR", escapeJson(errorMessage))
+            .addMetadata("toolName", "clarify_datasource")
+            .build();
     }
     
     /**

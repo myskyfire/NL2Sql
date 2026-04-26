@@ -42,41 +42,38 @@ public class TableRelationshipDetectionTool {
                     log.warn("[TableRelationshipDetectionTool] 检测到 {} 个冲突", 
                         ((Map<?, ?>) firstItem.get("data")).get("conflictCount"));
                     
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("success", true);
-                    result.put("hasConflicts", true);
-                    result.put("data", firstItem.get("data"));
-                    result.put("message", "发现关联关系冲突，需要用户手动确认");
-                    
-                    return objectMapper.writeValueAsString(result);
+                    // ✅ 构建统一响应
+                    return ToolResponseBuilder.clarification("relationship_conflict")
+                        .withMessage("发现关联关系冲突，需要用户手动确认")
+                        .withData(firstItem.get("data"))
+                        .addMetadata("toolName", "table_relationship_detection")
+                        .addMetadata("datasourceId", datasourceId)
+                        .build();
                 }
             }
             
             // 无冲突的正常结果
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("hasConflicts", false);
-            result.put("relationships", relationships);
-            result.put("count", relationships.size());
-            result.put("message", String.format("成功推断 %d 条关联关系", relationships.size()));
+            Map<String, Object> data = new HashMap<>();
+            data.put("relationships", relationships);
+            data.put("count", relationships.size());
             
             log.info("[TableRelationshipDetectionTool] 推断完成，共 {} 条关联", relationships.size());
             
-            return objectMapper.writeValueAsString(result);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .withMessage(String.format("成功推断 %d 条关联关系", relationships.size()))
+                .addMetadata("toolName", "table_relationship_detection")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[TableRelationshipDetectionTool] 推断失败", e);
             
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            error.put("message", "关联关系推断失败");
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("DETECTION_ERROR", e.getMessage())
+                .withMessage("关联关系推断失败")
+                .addMetadata("toolName", "table_relationship_detection")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
     
@@ -93,29 +90,28 @@ public class TableRelationshipDetectionTool {
             
             List<Map<String, Object>> relationships = relationshipService.autoDetectRelationships(datasourceId);
             
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("method", "rule_based");
-            result.put("relationships", relationships);
-            result.put("count", relationships.size());
-            result.put("message", String.format("快速推断完成，发现 %d 条关联关系", relationships.size()));
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("method", "rule_based");
+            data.put("relationships", relationships);
+            data.put("count", relationships.size());
             
             log.info("[TableRelationshipDetectionTool] 快速推断完成，共 {} 条关联", relationships.size());
             
-            return objectMapper.writeValueAsString(result);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .withMessage(String.format("快速推断完成，发现 %d 条关联关系", relationships.size()))
+                .addMetadata("toolName", "quick_detect_table_relationships")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[TableRelationshipDetectionTool] 快速推断失败", e);
             
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("QUICK_DETECTION_ERROR", e.getMessage())
+                .addMetadata("toolName", "quick_detect_table_relationships")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

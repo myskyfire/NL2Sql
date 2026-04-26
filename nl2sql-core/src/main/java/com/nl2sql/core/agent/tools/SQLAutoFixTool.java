@@ -105,23 +105,21 @@ public class SQLAutoFixTool extends BaseToolAdapter {
             
             if (result.isSuccess()) {
                 Map<String, Object> data = (Map<String, Object>) result.getData();
-                return objectMapper.writeValueAsString(data);
+                // ✅ 构建统一响应
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "sql_auto_fix")
+                    .build();
             } else {
-                Map<String, Object> error = new HashMap<>();
-                error.put("success", false);
-                error.put("error", result.getErrorMessage());
-                return objectMapper.writeValueAsString(error);
+                return ToolResponseBuilder.error("SQL_FIX_ERROR", result.getErrorMessage())
+                    .addMetadata("toolName", "sql_auto_fix")
+                    .build();
             }
         } catch (Exception e) {
             log.error("[SQLAutoFix] 执行失败", e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("EXECUTION_ERROR", e.getMessage())
+                .addMetadata("toolName", "sql_auto_fix")
+                .build();
         }
     }
 }

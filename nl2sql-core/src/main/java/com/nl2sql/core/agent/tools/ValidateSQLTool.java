@@ -33,33 +33,34 @@ public class ValidateSQLTool {
         try {
             log.info("[ValidateSQLTool] 验证SQL: {}", sql);
             
-            Map<String, Object> result = new HashMap<>();
-            
             // 1. 基本检查
             if (sql == null || sql.trim().isEmpty()) {
-                result.put("valid", false);
-                result.put("error", "SQL语句不能为空");
-                return objectMapper.writeValueAsString(result);
+                return ToolResponseBuilder.error("EMPTY_SQL", "SQL语句不能为空")
+                    .addMetadata("toolName", "validate_sql")
+                    .addMetadata("datasourceId", datasourceId)
+                    .build();
             }
             
             String upperSQL = sql.trim().toUpperCase();
             
             // 2. 只允许SELECT语句（安全限制）
             if (!upperSQL.startsWith("SELECT")) {
-                result.put("valid", false);
-                result.put("error", "只允许执行SELECT查询");
-                result.put("riskLevel", "HIGH");
-                return objectMapper.writeValueAsString(result);
+                return ToolResponseBuilder.error("NON_SELECT_SQL", "只允许执行SELECT查询")
+                    .addMetadata("toolName", "validate_sql")
+                    .addMetadata("datasourceId", datasourceId)
+                    .addMetadata("riskLevel", "HIGH")
+                    .build();
             }
             
             // 3. 检查危险关键字
             List<String> dangerousKeywords = Arrays.asList("DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE");
             for (String keyword : dangerousKeywords) {
                 if (upperSQL.contains(keyword)) {
-                    result.put("valid", false);
-                    result.put("error", "包含危险操作: " + keyword);
-                    result.put("riskLevel", "HIGH");
-                    return objectMapper.writeValueAsString(result);
+                    return ToolResponseBuilder.error("DANGEROUS_KEYWORD", "包含危险操作: " + keyword)
+                        .addMetadata("toolName", "validate_sql")
+                        .addMetadata("datasourceId", datasourceId)
+                        .addMetadata("riskLevel", "HIGH")
+                        .build();
                 }
             }
             
@@ -67,33 +68,43 @@ public class ValidateSQLTool {
             try {
                 String explainSQL = "EXPLAIN " + sql;
                 jdbcTemplate.queryForList(explainSQL);
-                result.put("valid", true);
-                result.put("error", null);
-                result.put("riskLevel", "LOW");
-                result.put("message", "SQL语法正确");
+                
+                // ✅ 构建统一响应
+                Map<String, Object> data = new HashMap<>();
+                data.put("valid", true);
+                data.put("error", null);
+                data.put("riskLevel", "LOW");
+                data.put("message", "SQL语法正确");
+                
+                log.info("[ValidateSQLTool] 验证完成: valid=true");
+                
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "validate_sql")
+                    .addMetadata("datasourceId", datasourceId)
+                    .build();
                 
             } catch (Exception e) {
-                result.put("valid", false);
-                result.put("error", "SQL语法错误: " + e.getMessage());
-                result.put("riskLevel", "MEDIUM");
+                // ✅ 构建统一响应
+                Map<String, Object> data = new HashMap<>();
+                data.put("valid", false);
+                data.put("error", "SQL语法错误: " + e.getMessage());
+                data.put("riskLevel", "MEDIUM");
+                
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "validate_sql")
+                    .addMetadata("datasourceId", datasourceId)
+                    .build();
             }
-            
-            log.info("[ValidateSQLTool] 验证完成: valid={}", result.get("valid"));
-            
-            return objectMapper.writeValueAsString(result);
             
         } catch (Exception e) {
             log.error("[ValidateSQLTool] 验证失败", e);
             
-            Map<String, Object> error = new HashMap<>();
-            error.put("valid", false);
-            error.put("error", e.getMessage());
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"valid\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("VALIDATION_ERROR", e.getMessage())
+                .addMetadata("toolName", "validate_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

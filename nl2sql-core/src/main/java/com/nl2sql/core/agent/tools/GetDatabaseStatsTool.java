@@ -59,16 +59,23 @@ public class GetDatabaseStatsTool {
                 stats.add(stat);
             }
             
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("tableCount", stats.size());
-            result.put("stats", stats);
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("tableCount", stats.size());
+            data.put("stats", stats);
             
-            return objectMapper.writeValueAsString(result);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "get_database_stats")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[GetDatabaseStatsTool] 获取失败", e);
-            return "{\"success\":false,\"error\":\"" + e.getMessage() + "\"}";
+            return ToolResponseBuilder.error("STATS_ERROR", e.getMessage())
+                .addMetadata("toolName", "get_database_stats")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

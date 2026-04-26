@@ -142,19 +142,27 @@ public class GetTableMetadataTool extends BaseToolAdapter {
             // 调用新框架执行
             com.nl2sql.core.agent.tool.ToolResult result = execute(context);
             
-            // 序列化返回
+            // ✅ 序列化返回统一格式
             if (result.isSuccess()) {
-                return objectMapper.writeValueAsString(result.getData());
+                Map<String, Object> data = (Map<String, Object>) result.getData();
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "get_table_metadata")
+                    .addMetadata("datasourceId", datasourceId)
+                    .build();
             } else {
-                Map<String, Object> error = new HashMap<>();
-                error.put("success", false);
-                error.put("error", result.getErrorMessage());
-                return objectMapper.writeValueAsString(error);
+                return ToolResponseBuilder.error("METADATA_ERROR", result.getErrorMessage())
+                    .addMetadata("toolName", "get_table_metadata")
+                    .addMetadata("datasourceId", datasourceId)
+                    .build();
             }
             
         } catch (Exception e) {
             log.error("[GetTableMetadataTool] 序列化失败", e);
-            return "{\"success\":false,\"error\":\"序列化失败\"}";
+            return ToolResponseBuilder.error("SERIALIZATION_ERROR", "序列化失败")
+                .addMetadata("toolName", "get_table_metadata")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

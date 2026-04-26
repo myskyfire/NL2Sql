@@ -872,6 +872,7 @@ ${sql}
         
         def result = [
             success: true,
+            type: "data",  // ✅ 统一响应格式
             data: data,
             rowCount: rowCount,
             executionTime: executionTime,
@@ -902,6 +903,7 @@ ${sql}
         
         def result = [
             success: true,
+            type: "data",  // ✅ 统一响应格式
             data: data,
             rowCount: rowCount,
             executionTime: executionTime,
@@ -1100,7 +1102,8 @@ ${sql}
     
     private Map<String, Object> createClarificationResult(String message) {
         return [
-            success: false,
+            success: true,
+            type: "clarification",  // ✅ 统一响应格式
             needsClarification: true,
             clarificationMessage: message
         ]
@@ -1109,6 +1112,7 @@ ${sql}
     private Map<String, Object> createExecutionFailedResult(String error) {
         return [
             success: false,
+            type: "error",  // ✅ 统一响应格式
             error: error
         ]
     }
@@ -1116,6 +1120,7 @@ ${sql}
     private Map<String, Object> createErrorResult(String error) {
         return [
             success: false,
+            type: "error",  // ✅ 统一响应格式
             error: error
         ]
     }
@@ -1123,6 +1128,7 @@ ${sql}
     private Map<String, Object> createRiskBlockedResult(String reason, String sql, String optimizationSuggestion) {
         def result = [
             success: false,
+            type: "error",  // ✅ 统一响应格式
             error: "⚠️ SQL风险评估为高风险，已阻断执行\n原因: ${reason}",
             sql: sql
         ]

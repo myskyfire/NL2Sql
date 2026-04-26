@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * 检索表结构 Tool
  * 
@@ -68,29 +71,22 @@ public class RetrieveTableSchemaTool {
      * 构建成功响应
      */
     private String buildSuccessResponse(String schema) {
-        try {
-            return objectMapper.writeValueAsString(java.util.Map.of(
-                "success", true,
-                "schema", schema
-            ));
-        } catch (Exception e) {
-            log.error("[RetrieveTableSchemaTool] JSON序列化失败", e);
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
-        }
+        // ✅ 构建统一响应
+        Map<String, Object> data = new HashMap<>();
+        data.put("schema", schema);
+        
+        return ToolResponseBuilder.success("data")
+            .withData(data)
+            .addMetadata("toolName", "retrieve_table_schema")
+            .build();
     }
     
     /**
      * 构建错误响应
      */
     private String buildErrorResponse(String error) {
-        try {
-            return objectMapper.writeValueAsString(java.util.Map.of(
-                "success", false,
-                "error", error
-            ));
-        } catch (Exception e) {
-            log.error("[RetrieveTableSchemaTool] JSON序列化失败", e);
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
-        }
+        return ToolResponseBuilder.error("SCHEMA_RETRIEVAL_ERROR", error)
+            .addMetadata("toolName", "retrieve_table_schema")
+            .build();
     }
 }

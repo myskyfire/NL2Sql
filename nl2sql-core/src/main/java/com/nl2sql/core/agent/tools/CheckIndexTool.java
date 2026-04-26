@@ -58,17 +58,24 @@ public class CheckIndexTool {
                 result.add(indexInfo);
             }
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("tableName", tableName);
-            response.put("indexCount", result.size());
-            response.put("indexes", result);
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("tableName", tableName);
+            data.put("indexCount", result.size());
+            data.put("indexes", result);
             
-            return objectMapper.writeValueAsString(response);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "check_index")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[CheckIndexTool] 检查失败", e);
-            return "{\"success\":false,\"error\":\"" + e.getMessage() + "\"}";
+            return ToolResponseBuilder.error("INDEX_CHECK_ERROR", e.getMessage())
+                .addMetadata("toolName", "check_index")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

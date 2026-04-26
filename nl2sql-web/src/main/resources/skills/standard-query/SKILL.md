@@ -143,30 +143,53 @@ Skill 内置三层风险评估：
 
 ## 返回结果
 
-成功时返回 JSON 格式：
+✅ **统一响应格式**：所有返回均包含 `success` 和 `type` 字段
+
+### 成功响应（type: "data"）
 ```json
 {
-  "status": "success",
+  "success": true,
+  "type": "data",
   "data": [],
   "rowCount": 10,
   "executionTime": 125.5,
-  "sql": "SELECT ..."
+  "sql": "SELECT ...",
+  "datasourceId": 1,
+  "followUpSuggestions": [
+    {"text": "🤖 AI 总结", "action": "generate_summary"},
+    {"text": "📊 生成图表", "action": "generate_chart"}
+  ],
+  "optimizationSuggestion": "优化建议（可选）"
 }
 ```
 
-失败时返回：
+### 需要澄清（type: "clarification"）
 ```json
 {
-  "status": "error",
+  "success": true,
+  "type": "clarification",
+  "needsClarification": true,
+  "clarificationMessage": "请明确查询意图..."
+}
+```
+
+### 错误响应（type: "error"）
+```json
+{
+  "success": false,
+  "type": "error",
   "error": "错误描述"
 }
 ```
 
-需要澄清时返回：
+### 高风险阻断（type: "error"）
 ```json
 {
-  "status": "clarification_needed",
-  "message": "澄清消息"
+  "success": false,
+  "type": "error",
+  "error": "⚠️ SQL风险评估为高风险，已阻断执行\n原因: ...",
+  "sql": "SELECT ...",
+  "optimizationSuggestion": "优化建议（可选）"
 }
 ```
 

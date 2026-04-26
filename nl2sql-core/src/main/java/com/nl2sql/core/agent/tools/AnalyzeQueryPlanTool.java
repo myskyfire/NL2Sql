@@ -37,7 +37,9 @@ public class AnalyzeQueryPlanTool {
             List<Map<String, Object>> explainResult = jdbcTemplate.queryForList("EXPLAIN " + sql);
             
             if (explainResult.isEmpty()) {
-                return "{\"success\":false,\"error\":\"无法获取执行计划\"}";
+                return ToolResponseBuilder.error("EXPLAIN_ERROR", "无法获取执行计划")
+                    .addMetadata("toolName", "analyze_query_plan")
+                    .build();
             }
             
             Map<String, Object> firstRow = explainResult.get(0);
@@ -99,31 +101,30 @@ public class AnalyzeQueryPlanTool {
                 }
             }
             
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("riskLevel", riskLevel);
-            result.put("risks", risks);
-            result.put("suggestions", suggestions);
-            result.put("explainResult", explainResult);
-            result.put("scanType", type);
-            result.put("estimatedRows", rows);
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("riskLevel", riskLevel);
+            data.put("risks", risks);
+            data.put("suggestions", suggestions);
+            data.put("explainResult", explainResult);
+            data.put("scanType", type);
+            data.put("estimatedRows", rows);
             
             log.info("[AnalyzeQueryPlanTool] 分析完成: riskLevel={}, risks={}", riskLevel, risks.size());
             
-            return objectMapper.writeValueAsString(result);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "analyze_query_plan")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[AnalyzeQueryPlanTool] 分析失败", e);
             
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("ANALYSIS_ERROR", e.getMessage())
+                .addMetadata("toolName", "analyze_query_plan")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
 }

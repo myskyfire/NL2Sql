@@ -30,7 +30,9 @@ public class EstimateCostTool {
             List<Map<String, Object>> explainResult = jdbcTemplate.queryForList("EXPLAIN " + sql);
             
             if (explainResult.isEmpty()) {
-                return "{\"success\":false,\"error\":\"无法获取执行计划\"}";
+                return ToolResponseBuilder.error("EXPLAIN_ERROR", "无法获取执行计划")
+                    .addMetadata("toolName", "estimate_cost")
+                    .build();
             }
             
             Map<String, Object> firstRow = explainResult.get(0);
@@ -46,22 +48,29 @@ public class EstimateCostTool {
             // 估算执行时间（粗略估计）
             long estimatedTimeMs = estimateExecutionTime(estimatedRows, accessType);
             
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("costScore", costScore);
-            result.put("costLevel", getCostLevel(costScore));
-            result.put("estimatedRows", estimatedRows);
-            result.put("estimatedTimeMs", estimatedTimeMs);
-            result.put("accessType", accessType);
-            result.put("usesIndex", !"ALL".equals(accessType));
-            result.put("usesTemporary", extra.contains("Using temporary"));
-            result.put("usesFilesort", extra.contains("Using filesort"));
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("costScore", costScore);
+            data.put("costLevel", getCostLevel(costScore));
+            data.put("estimatedRows", estimatedRows);
+            data.put("estimatedTimeMs", estimatedTimeMs);
+            data.put("accessType", accessType);
+            data.put("usesIndex", !"ALL".equals(accessType));
+            data.put("usesTemporary", extra.contains("Using temporary"));
+            data.put("usesFilesort", extra.contains("Using filesort"));
             
-            return objectMapper.writeValueAsString(result);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "estimate_cost")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
             
         } catch (Exception e) {
             log.error("[EstimateCostTool] 估算失败", e);
-            return "{\"success\":false,\"error\":\"" + e.getMessage() + "\"}";
+            return ToolResponseBuilder.error("COST_ESTIMATION_ERROR", e.getMessage())
+                .addMetadata("toolName", "estimate_cost")
+                .addMetadata("datasourceId", datasourceId)
+                .build();
         }
     }
     

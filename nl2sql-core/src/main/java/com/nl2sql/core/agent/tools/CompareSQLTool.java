@@ -22,7 +22,9 @@ public class CompareSQLTool {
             log.info("[CompareSQLTool] 对比SQL差异");
             
             if (originalSql == null || newSql == null) {
-                return "{\"success\":false,\"error\":\"SQL不能为空\"}";
+                return ToolResponseBuilder.error("NULL_SQL", "SQL不能为空")
+                    .addMetadata("toolName", "compare_sql")
+                    .build();
             }
             
             List<String> differences = new ArrayList<>();
@@ -62,17 +64,22 @@ public class CompareSQLTool {
                 differences.add("GROUP BY" + (newHasGroup ? "新增" : "移除"));
             }
             
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("isIdentical", differences.isEmpty());
-            result.put("differenceCount", differences.size());
-            result.put("differences", differences);
+            // ✅ 构建统一响应
+            Map<String, Object> data = new HashMap<>();
+            data.put("isIdentical", differences.isEmpty());
+            data.put("differenceCount", differences.size());
+            data.put("differences", differences);
             
-            return objectMapper.writeValueAsString(result);
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "compare_sql")
+                .build();
             
         } catch (Exception e) {
             log.error("[CompareSQLTool] 对比失败", e);
-            return "{\"success\":false,\"error\":\"" + e.getMessage() + "\"}";
+            return ToolResponseBuilder.error("COMPARE_ERROR", e.getMessage())
+                .addMetadata("toolName", "compare_sql")
+                .build();
         }
     }
     

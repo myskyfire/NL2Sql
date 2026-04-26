@@ -380,23 +380,22 @@ public class SQLValidatorTool extends BaseToolAdapter {
             com.nl2sql.core.agent.tool.ToolResult result = execute(context);
             
             if (result.isSuccess()) {
-                return objectMapper.writeValueAsString(result.getData());
+                Map<String, Object> data = (Map<String, Object>) result.getData();
+                // ✅ 构建统一响应
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "sql_validator")
+                    .build();
             } else {
-                Map<String, Object> error = new HashMap<>();
-                error.put("success", false);
-                error.put("error", result.getErrorMessage());
-                return objectMapper.writeValueAsString(error);
+                return ToolResponseBuilder.error("SQL_VALIDATION_ERROR", result.getErrorMessage())
+                    .addMetadata("toolName", "sql_validator")
+                    .build();
             }
         } catch (Exception e) {
             log.error("[SQLValidator] 执行失败", e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("EXECUTION_ERROR", e.getMessage())
+                .addMetadata("toolName", "sql_validator")
+                .build();
         }
     }
 }

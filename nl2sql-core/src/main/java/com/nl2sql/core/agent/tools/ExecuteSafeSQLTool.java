@@ -37,39 +37,40 @@ public class ExecuteSafeSQLTool {
             // 调用 SQLExecutionTool 执行SQL
             SQLExecutionTool.ExecutionResult result = sqlExecutionTool.executeSQL(sql, datasourceId, userId, username);
             
-            Map<String, Object> response = new HashMap<>();
-            
             if (result.isSuccess()) {
-                response.put("success", true);
-                response.put("data", result.getData());
-                response.put("rowCount", result.getData() != null ? result.getData().size() : 0);
-                response.put("executionTime", result.getExecutionTime());
-                response.put("sql", sql);
+                // ✅ 构建统一响应
+                Map<String, Object> data = new HashMap<>();
+                data.put("rows", result.getData());
+                data.put("rowCount", result.getData() != null ? result.getData().size() : 0);
+                data.put("executionTime", result.getExecutionTime());
+                data.put("sql", sql);
                 
-                log.info("[ExecuteSafeSQLTool] 执行成功: rowCount={}", response.get("rowCount"));
+                log.info("[ExecuteSafeSQLTool] 执行成功: rowCount={}", data.get("rowCount"));
+                
+                return ToolResponseBuilder.success("data")
+                    .withData(data)
+                    .addMetadata("toolName", "execute_safe_sql")
+                    .addMetadata("datasourceId", datasourceId)
+                    .addMetadata("userId", userId)
+                    .build();
             } else {
-                response.put("success", false);
-                response.put("error", result.getError());
-                response.put("sql", sql);
-                
                 log.warn("[ExecuteSafeSQLTool] 执行失败: {}", result.getError());
+                
+                return ToolResponseBuilder.error("SQL_EXECUTION_ERROR", result.getError())
+                    .addMetadata("toolName", "execute_safe_sql")
+                    .addMetadata("datasourceId", datasourceId)
+                    .addMetadata("userId", userId)
+                    .build();
             }
-            
-            return objectMapper.writeValueAsString(response);
             
         } catch (Exception e) {
             log.error("[ExecuteSafeSQLTool] 执行异常", e);
             
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", e.getMessage());
-            error.put("sql", sql);
-            
-            try {
-                return objectMapper.writeValueAsString(error);
-            } catch (Exception ex) {
-                return "{\"success\":false,\"error\":\"序列化失败\"}";
-            }
+            return ToolResponseBuilder.error("SQL_EXCEPTION", e.getMessage())
+                .addMetadata("toolName", "execute_safe_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .addMetadata("userId", userId)
+                .build();
         }
     }
 }
