@@ -332,40 +332,42 @@ java -jar nl2sql-web-1.0.0.jar
 
 ## 🏗️ 技术架构
 
-### 整体架构图
+### 整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                   前端展示层 (Web UI)                     │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
-│  │ 登录页面  │ │ 查询页面  │ │ 管理后台  │ │ 日志查看  │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
+│  查询页面 | Agent对话 | 管理后台 | 表关联管理 | 日志审计   │
 └────────────────────┬────────────────────────────────────┘
-                     │ HTTP/REST API + JWT Token
+                     │ HTTP/REST API + JWT Token + SSE
 ┌────────────────────▼────────────────────────────────────┐
-│                 Web控制层 (Controller)                    │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│  │NL2SQLCtrl    │ │AuthCtrl      │ │AdminCtrl     │    │
-│  └──────────────┘ └──────────────┘ └──────────────┘    │
+│                 Web控制层 (16个Controller)                │
+│  NL2SQL | Agent | StreamChat | Auth | Admin             │
+│  TableRelationship | IndustryConcept | RAG | Monitor    │
+│  Template | Translation | Feedback | PromptLearning     │
 └────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│                 业务服务层 (Service)                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
-│  │NL2SQLSvc │ │AuthSvc   │ │Metadata  │ │CacheSvc  │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
+│              核心业务层 (nl2sql-core)                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ ReAct Agent  │  │TableSelection│  │ NL2SQL Service│ │
+│  │ (推理引擎)    │  │Orchestrator  │  │ (主流程)      │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ Skill System │  │ Tool Layer   │  │ LLM Router   │  │
+│  │ (流程编排)    │  │ (原子能力)    │  │ (双模型路由)  │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
 └────┬──────────┬──────────┬──────────┬──────────┬────────┘
      │          │          │          │          │
 ┌────▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼────┐
-│安全校验 │ │RAG检索 │ │LLM服务 │ │SQL执行 │ │缓存服务 │
-│Security │ │Service │ │Router  │ │Executor│ │Redis   │
+│RAG检索  │ │三级缓存│ │SQL执行  │ │元数据  │ │安全校验 │
+│Service │ │Service │ │Executor│ │Service │ │Service │
 └────────┘ └───┬───┘ └───┬───┘ └───┬───┘ └────────┘
                │          │          │
         ┌──────▼───┐ ┌───▼──────┐ ┌─▼──────────┐
-        │Chroma/   │ │Ollama/   │ │MySQL DB    │
-        │Milvus/   │ │ChatGLM/  │ │(多数据源)  │
-        │Qdrant/   │ │Qwen/     │ │            │
-        │MySQL     │ │Baichuan  │ │            │
+        │Chroma    │ │Ollama    │ │MySQL DB    │
+        │向量库     │ │(qwen3+   │ │(多数据源)  │
+        │          │ │ qwen2.5) │ │            │
         └──────────┘ └──────────┘ └────────────┘
 ```
 
@@ -378,210 +380,89 @@ java -jar nl2sql-web-1.0.0.jar
 | **ORM** | MyBatis Plus | 3.5.5 | 数据持久化 |
 | **LLM集成** | LangChain4j | 1.12.2 | LLM编排框架 |
 | **Maven** | Apache Maven | 3.9+ | 构建工具 |
-| **向量模型** | all-MiniLM-L6-v2 | - | 文本向量化 |
-| **大模型** | 多提供者适配（Ollama/ChatGLM/Qwen等） | - | SQL生成/AI总结 |
-| **向量数据库** | Chroma / Milvus / Qdrant（可扩展） | - | RAG向量检索 |
-| **缓存** | Redis | 6.x | 分布式缓存 |
+| **向量模型** | bge-m3 | - | 文本向量化（多语言支持） |
+| **大模型** | Ollama (qwen3:8b + qwen2.5-coder:7b) | - | 双模型架构：推理+代码 |
+| **向量数据库** | Chroma (MySQL降级) | - | RAG向量检索 |
+| **缓存** | Redis + Caffeine | 6.x | 分布式缓存 + 本地缓存 |
 | **数据库** | MySQL | 8.0 | 数据存储 |
 | **SQL解析** | JSqlParser | 4.6 | SQL AST解析 |
 | **Excel** | Apache POI | 5.2.5 | Excel导出 |
 | **日志** | Logback + Logstash | 7.4 | JSON结构化日志 |
 | **前端** | HTML5 + CSS3 + JS | - | 用户界面 |
 
-### 🤖 LLM多提供者架构
+### 🤖 LLM双模型架构
 
 #### 设计理念
 
-借鉴LangChain/LangChain4j的设计思路，为多种企业内部部署的LLM提供统一适配层，实现：
-- **配置驱动**: 通过修改配置文件即可切换LLM后端，无需改代码
-- **故障转移**: 支持优先级列表，主LLM不可用时自动降级
-- **企业级安全**: 仅支持内部私有化部署，不依赖公有云API
+采用**推理模型 + 代码模型**分离架构，各司其职：
+- **推理模型（qwen3:8b）**: Agent决策、意图理解、数据总结、澄清追问
+- **代码模型（qwen2.5-coder:7b）**: SQL生成（专门优化代码能力）
+- **配置驱动**: 通过配置文件即可切换模型，无需改代码
+- **企业级安全**: 支持Ollama本地部署，不依赖公有云API
 
-#### 支持的LLM提供者
+#### 当前支持的模型
 
-| 提供者 | 部署方式 | 状态 | 适用场景 |
-|--------|---------|------|----------|
-| **Ollama** | 本地/内网服务器 | ✅ 默认启用 | 开发测试、小团队 |
-| **vLLM** | GPU服务器/K8s | ✅ 已实现 | 高并发生产环境（推荐） |
-| **TGI** | GPU服务器/K8s | ✅ 已实现 | HuggingFace生态企业 |
-| **TensorRT-LLM** | NVIDIA GPU服务器 | ✅ 已实现 | NVIDIA极致性能优化 |
-| **llama.cpp** | CPU/GPU混合 | ✅ 已实现 | 边缘设备、资源受限环境 |
-| **ChatGLM** | 企业内部服务器 | 🔧 预留 | 中大型企业 |
-| **Qwen** | 阿里云私有化部署 | 🔧 预留 | 阿里生态企业 |
-| **Baichuan** | 企业内部服务器 | 🔧 预留 | 百川生态企业 |
+| 模型 | 用途 | 部署方式 | 状态 |
+|------|------|---------|------|
+| **qwen3:8b** | 推理/Agent决策 | Ollama本地 | ✅ 默认启用 |
+| **qwen2.5-coder:7b** | SQL生成 | Ollama本地 | ✅ 默认启用 |
 
 #### 配置示例
 
 ```yaml
 # application.yml
 llm:
-  # 活跃的提供者名称（根据环境切换）
-  # 开发: ollama
-  # 生产: vllm | tgi | tensorrt | llamacpp
-  active-provider: ollama
+  provider: ollama
   
-  # 提供者优先级列表（用于自动故障转移）
-  provider-priority:
-    - ollama
-    - vllm
-    - tgi
-    - tensorrt
-    - llamacpp
-    - chatglm
-    - qwen
+  # 推理模型（Agent决策、意图理解）
+  reasoning:
+    model: qwen3:8b
+    temperature: 0.7
   
-  # ========== Ollama配置（开发环境）==========
+  # 代码模型（SQL生成）
+  code:
+    model: qwen2.5-coder:7b-instruct-q4_0
+    temperature: 0.0
+  
+  # Ollama服务地址
   ollama:
-    enabled: true
     base-url: http://localhost:11434
-    code-model: qwen2.5-coder:7b-instruct-q4_0
-    nlp-model: qwen3:8b
-    timeout: 60
-  
-  # ========== vLLM配置（生产 - 高性能GPU）==========
-  vllm:
-    enabled: false
-    base-url: http://gpu-server:8000/v1
-    model: Qwen/Qwen3-8B
-    api-key: ${VLLM_API_KEY:}
-    timeout: 60
-  
-  # ========== TGI配置（生产 - HuggingFace官方）==========
-  tgi:
-    enabled: false
-    base-url: http://tgi-server:8080/v1
-    model: Qwen/Qwen3-8B
-    api-key: ""
-    timeout: 60
-  
-  # ========== TensorRT-LLM配置（生产 - NVIDIA优化）==========
-  tensorrt:
-    enabled: false
-    base-url: http://triton-server:8000/v1
-    model: qwen3-8b-trt
-    api-key: ${TRITON_API_KEY:}
-    timeout: 60
-  
-  # ========== llama.cpp配置（生产 - CPU/GPU混合）==========
-  llamacpp:
-    enabled: false
-    base-url: http://cpu-server:8080/v1
-    model: /models/qwen3-8b-q4_k_m.gguf
-    api-key: ""
-    timeout: 60
-  
-  # ChatGLM配置（企业内部部署）
-  chatglm:
-    enabled: false
-    base-url: http://chatglm.internal.company.com:8000
-    model: chatglm3-6b
-    api-key: ${CHATGLM_API_KEY:}
-    timeout: 60
-  
-  # Qwen配置（阿里云私有化部署）
-  qwen:
-    enabled: false
-    base-url: http://qwen.internal.company.com:8000
-    model: qwen-7b-chat
-    api-key: ${QWEN_API_KEY:}
     timeout: 60
 ```
 
-#### 架构组件
-
-```
-┌─────────────────────────────────────────────┐
-│         LLMProvider (统一接口)               │
-│  - getName()       // 提供者名称             │
-│  - isAvailable()   // 健康检查              │
-│  - generate()      // 生成文本              │
-│  - generateJson()  // JSON响应              │
-└──────────────┬──────────────────────────────┘
-               │ 实现
-     ┌─────────┼──────────┬──────────┬──────────┬──────────┐
-     ▼         ▼          ▼          ▼          ▼          ▼
-┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
-│Ollama  │ │ vLLM   │ │ TGI    │ │TensorRT│ │llama.cpp│ │ChatGLM │
-│Provider│ │Provider│ │Provider│ │Provider│ │Provider│ │Provider│
-└────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────┐
-│      LLMProviderManager (管理器)             │
-│  - registerProvider()  // 注册提供者        │
-│  - setActiveProvider() // 切换活跃提供者     │
-│  - healthCheck()       // 健康检查          │
-│  - autoSelectProvider()// 自动选择          │
-└──────────────┬──────────────────────────────┘
-               │ 注入
-               ▼
-┌─────────────────────────────────────────────┐
-│           LLMService (业务服务)              │
-│  - generateSQL()     // SQL生成             │
-│  - summarizeResult() // 结果总结            │
-│  - clarifyQuestion() // 问题澄清            │
-│  - classifyIntent()  // 意图分类            │
-└─────────────────────────────────────────────┘
-```
-
-#### 运行时切换提供者
-
-```java
-@Autowired
-private LLMService llmService;
-
-// 切换到ChatGLM
-llmService.switchProvider("chatglm");
-
-// 查询健康状态
-Map<String, Boolean> status = llmService.getProviderHealthStatus();
-// 返回: {ollama=true, chatglm=false, qwen=true}
-```
-
-#### 扩展新的LLM提供者
-
-只需3步即可接入新的LLM：
-
-1. **实现LLMProvider接口**
-```java
-public class CustomProvider implements LLMProvider {
-    @Override
-    public String getName() { return "custom"; }
-    
-    @Override
-    public boolean isAvailable() { /* 健康检查 */ }
-    
-    @Override
-    public String generate(String prompt, double temperature) {
-        // 调用自定义LLM API
-    }
-    
-    @Override
-    public String generateJson(String systemPrompt, String userPrompt, double temperature) {
-        // 生成JSON响应
-    }
-}
-```
-
-2. **添加配置类**
-```java
-@Configuration
-@ConditionalOnProperty(name = "llm.custom.enabled", havingValue = "true")
-public class CustomConfig {
-    @Bean
-    public LLMProvider customProvider() {
-        return new CustomProvider(...);
-    }
-}
-```
-
-3. **更新配置文件**
+**单模型降级模式**（资源受限场景）:
 ```yaml
 llm:
-  custom:
-    enabled: true
-    base-url: http://custom.llm.com:8000
-    model: custom-model
+  provider: ollama
+  reasoning:
+    model: qwen2.5-coder:7b  # 使用同一模型
+  code:
+    model: qwen2.5-coder:7b
+  fallback:
+    single-model-mode: true
+```
+
+#### 工作流程
+
+```
+用户问题: "查询最近7天北京的订单总额"
+    ↓
+[ReAct Agent] 意图识别 → 复杂度评估 → MEDIUM
+    ↓
+[TableSelectionOrchestrator] 
+  ├─ L1缓存检查 (Redis MD5哈希)
+  ├─ L2模板匹配 (规则引擎)
+  └─ L3向量检索 (Chroma + Jaccard)
+    ↓
+[ModelRouterService] 选择代码模型 qwen2.5-coder:7b
+    ↓
+[LLM生成SQL] Prompt = 元数据 + RAG示例 + 用户问题
+    ↓
+[JSqlParser验证] AST解析 + 安全检查
+    ↓
+[SQLExecutor] 执行查询 + 分页
+    ↓
+返回结果: {data, chart, summary}
 ```
 
 ---
@@ -590,34 +471,30 @@ llm:
 
 #### 设计理念
 
-借鉴LLM多提供者架构的设计思路，为RAG知识库提供统一的向量存储抽象层，实现：
-- **优先使用向量数据库**: 配置了向量数据库时优先使用，提供更精准的语义检索
-- **自动降级策略**: 未配置或不可用时自动降级为MySQL全文检索，保证系统可用性
-- **多后端支持**: 支持多种常见向量数据库，可根据企业技术栈灵活选择
+采用**Chroma优先 + MySQL降级**策略，保证高可用：
+- **优先使用Chroma**: 提供精准的语义向量检索
+- **自动降级**: Chroma不可用时降级为MySQL全文检索
+- **企业级安全**: 支持本地部署，不依赖云端服务
 
-#### 支持的向量数据库
+#### 支持的向量存储
 
-| 向量数据库 | 部署方式 | 状态 | 适用场景 |
-|-----------|---------|------|----------|
+| 存储方式 | 部署方式 | 状态 | 适用场景 |
+|---------|---------|------|----------|
 | **Chroma** | 本地/内网服务器 | ✅ 已实现 | 开发测试、中小规模应用 |
-| **Milvus** | 企业内部服务器/K8s | 🔧 预留 | 大规模生产环境 |
-| **Qdrant** | 本地/云端托管 | 🔧 预留 | 高性能向量检索 |
-| **MySQL全文检索** | 内置（无需额外部署） | ✅ 降级方案 | 无向量数据库时的兜底方案 |
+| **MySQL全文检索** | 内置（无需额外部署） | ✅ 降级方案 | Chroma不可用时的兜底 |
 
-#### 三级降级策略
+> **注**: Milvus/Qdrant为预留接口，当前未实现
+
+#### 降级策略
 
 ```
 用户查询: "查询最近7天北京的订单总额"
     ↓
-[1] Chroma向量检索（优先级最高）
+[1] Chroma向量检索（优先）
     ├─ 如果Chroma可用 → 执行向量相似度搜索
     └─ 如果成功 → 返回Top-3相似问答对
     ↓ (失败或未配置)
-[2] MySQL向量检索（降级方案）
-    ├─ 如果MySQL向量服务可用 → 执行向量计算
-    └─ 如果成功 → 返回Top-3相似问答对
-    ↓ (失败或未配置)
-[3] MySQL全文检索（最终兜底）
+[2] MySQL全文检索（降级）
     ├─ 使用MATCH...AGAINST全文检索
     └─ 返回相关度最高的问答对
     ↓
@@ -628,62 +505,16 @@ llm:
 
 ```yaml
 # application.yml
-
-# Chroma向量数据库配置（优先使用）
 chroma:
   enabled: true                    # 是否启用Chroma
   url: http://localhost:8000       # Chroma服务地址
   collection-name: NL2SQL_rag      # 集合名称
   timeout: 30                      # 超时时间（秒）
 
-# Milvus向量数据库配置（预留）
-milvus:
-  enabled: false                   # 默认禁用
-  host: localhost                  # Milvus主机地址
-  port: 19530                      # Milvus端口
-  collection-name: nl2sql_rag      # 集合名称
-  dimension: 384                   # 向量维度（与embedding模型匹配）
-
-# Qdrant向量数据库配置（预留）
-qdrant:
-  enabled: false                   # 默认禁用
-  url: http://localhost:6333       # Qdrant服务地址
-  collection-name: nl2sql_knowledge
-  api-key: ${QDRANT_API_KEY:}      # API密钥（可选）
-
-# RAG知识库通用配置
 rag:
   similarity-threshold: 0.85       # 相似度阈值
   max-examples: 3                  # 最大检索示例数
   auto-learning: true              # 是否自动学习成功的SQL
-```
-
-#### 架构组件
-
-```
-┌─────────────────────────────────────────────┐
-│     RagKnowledgeBaseService (统一入口)        │
-│  - saveQAPair()      // 保存问答对          │
-│  - searchSimilar()   // 检索相似问题        │
-│  - recordUsage()     // 记录使用情况        │
-│  - updateQuality()   // 更新质量评分        │
-└──────────────┬──────────────────────────────┘
-               │ 三级降级策略
-     ┌─────────┼──────────┐
-     ▼         ▼          ▼
-┌────────┐ ┌────────┐ ┌────────┐
-│Chroma  │ │MySQL   │ │MySQL   │
-│Vector  │ │Vector  │ │Fulltext│
-│Service │ │Service │ │Search  │
-└────────┘ └────────┘ └────────┘
-     │          │          │
-     ▼          ▼          ▼
-┌────────┐ ┌────────┐ ┌────────┐
-│Chroma  │ │MySQL   │ │MySQL   │
-│DB      │ │VECTOR  │ │MATCH.. │
-│(Port   │ │函数    │ │AGAINST │
-│8000)   │ │        │ │        │
-└────────┘ └────────┘ └────────┘
 ```
 
 #### 运行时行为
@@ -692,112 +523,15 @@ rag:
 @Autowired
 private RagKnowledgeBaseService ragService;
 
-// 自动选择最优检索方式（内部实现三级降级）
+// 自动选择最优检索方式（内部实现降级策略）
 List<KnowledgeItem> examples = 
     ragService.searchSimilarQuestions("查询北京订单", 3);
 
 // 日志输出示例：
 // [INFO] RAG检索成功(Chroma向量): question=查询北京订单, found=3 items
-// [WARN] Chroma向量搜索失败，降级到MySQL向量: Connection refused
-// [INFO] RAG检索成功(MySQL向量): question=查询北京订单, found=2 items
-// [WARN] MySQL向量搜索失败，降级到全文检索: Function VEC_DISTANCE not found
+// [WARN] Chroma向量搜索失败，降级到全文检索: Connection refused
 // [INFO] RAG检索成功(MySQL): question=查询北京订单, found=1 items
 ```
-
-#### 扩展新的向量数据库
-
-只需3步即可接入新的向量数据库：
-
-1. **实现VectorService接口**
-```java
-public interface VectorService {
-    String getName();                          // 向量库名称
-    boolean isAvailable();                     // 健康检查
-    void addKnowledge(String q, String a,      // 添加知识
-                     String sql, String cat);
-    List<VectorResult> searchSimilar(          // 向量检索
-        String question, int maxResults, 
-        double threshold);
-}
-
-public class MilvusVectorService implements VectorService {
-    @Override
-    public String getName() { return "milvus"; }
-    
-    @Override
-    public boolean isAvailable() { 
-        // 检查Milvus连接
-    }
-    
-    @Override
-    public void addKnowledge(String question, String answer, 
-                            String sql, String category) {
-        // 调用Milvus API插入向量
-    }
-    
-    @Override
-    public List<VectorResult> searchSimilar(
-            String question, int maxResults, double threshold) {
-        // 调用Milvus API进行向量检索
-    }
-}
-```
-
-2. **添加到RagKnowledgeBaseService**
-```java
-@Service
-public class RagKnowledgeBaseService {
-    private final ChromaVectorService chromaService;
-    private final MySqlVectorService mysqlService;
-    private final MilvusVectorService milvusService; // 新增
-    
-    public List<KnowledgeItem> searchSimilarQuestions(
-            String question, int maxResults) {
-        // 1. 优先Chroma
-        if (chromaService != null && chromaService.isAvailable()) {
-            // ...
-        }
-        // 2. 其次Milvus（新增）
-        if (milvusService != null && milvusService.isAvailable()) {
-            // ...
-        }
-        // 3. 降级MySQL向量
-        if (mysqlService != null) {
-            // ...
-        }
-        // 4. 最终降级全文检索
-        return searchByMySQL(question, maxResults);
-    }
-}
-```
-
-3. **添加配置类**
-```java
-@Configuration
-@ConditionalOnProperty(name = "milvus.enabled", havingValue = "true")
-public class MilvusConfig {
-    @Bean
-    public MilvusVectorService milvusVectorService() {
-        return new MilvusVectorService(...);
-    }
-}
-```
-
-#### 性能对比
-
-| 检索方式 | 准确率 | 响应时间 | 资源消耗 | 适用规模 |
-|---------|--------|---------|---------|----------|
-| Chroma向量 | ⭐⭐⭐⭐⭐ | 50-100ms | 中等 | <10万条 |
-| Milvus向量 | ⭐⭐⭐⭐⭐ | 20-50ms | 较高 | >100万条 |
-| Qdrant向量 | ⭐⭐⭐⭐⭐ | 30-60ms | 中等 | <50万条 |
-| MySQL向量 | ⭐⭐⭐⭐ | 100-200ms | 较低 | <5万条 |
-| MySQL全文 | ⭐⭐⭐ | 50-150ms | 最低 | <10万条 |
-
-**建议**:
-- 开发环境: 使用Chroma或MySQL全文检索
-- 小规模生产: Chroma + MySQL降级
-- 大规模生产: Milvus/Qdrant + MySQL降级
-- 极简部署: 仅使用MySQL全文检索（无需额外依赖）
 
 ---
 
@@ -807,21 +541,27 @@ public class MilvusConfig {
 NL2SQL/
 ├── nl2sql-common/          # 公共模块 (工具类、统一响应)
 ├── nl2sql-core/            # 核心业务模块
+│   ├── agent/              # ReAct Agent引擎 (推理/Tool Calling)
+│   ├── cache/              # 三级缓存服务 (L1/L2/L3)
 │   ├── datasource/         # 动态数据源管理 (HikariCP)
-│   ├── metadata/           # 元数据服务 (表结构/字段信息)
-│   ├── retriever/          # 双层向量检索 (表+字段)
-│   ├── llm/                # LLM服务 (多模型路由/RAG)
-│   ├── rag/                # RAG知识库服务
+│   ├── error/              # 错误处理与自愈
+│   ├── event/              # 事件系统
 │   ├── executor/           # SQL执行器/纠错/分页/导出
-│   ├── cache/              # 智能缓存服务
-│   ├── visualization/      # 图表推荐服务
+│   ├── llm/                # LLM服务 (双模型路由/RAG)
+│   ├── metadata/           # 元数据服务 (表结构/字段信息)
 │   ├── monitor/            # 性能监控服务
+│   ├── observability/      # 可观测性 (链路追踪)
+│   ├── rag/                # RAG知识库服务
+│   ├── rerank/             # 重排序服务
+│   ├── retriever/          # 向量检索服务
+│   ├── service/            # 核心服务 (NL2SQL/TableSelection)
 │   ├── template/           # 查询模板服务
-│   └── security/           # 列级权限控制
+│   ├── validation/         # 验证层 (SQL安全/权限)
+│   └── visualization/      # 图表推荐服务
 ├── nl2sql-security/        # 安全模块 (SQL验证)
 ├── nl2sql-conversation/    # 对话管理模块
 ├── nl2sql-audit/           # 审计模块
-└── nl2sql-web/             # Web模块 (Controller + 前端)
+└── nl2sql-web/             # Web模块 (16个Controller + 前端)
 ```
 
 ---
