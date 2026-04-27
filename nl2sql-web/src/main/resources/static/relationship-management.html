@@ -180,7 +180,7 @@
         /* Modal */
         .modal-overlay {
             display: none;
-            position: absolute; /* ✅ 改为absolute，相对于iframe容器 */
+            position: absolute; /* ✅ 改为absolute，相对于body定位 */
             top: 0;
             left: 0;
             right: 0;
@@ -193,6 +193,7 @@
         
         .modal-overlay.active {
             display: flex;
+            position: absolute !important; /* ✅ 强制absolute，防止被其他CSS覆盖 */
         }
         
         .modal {
@@ -453,7 +454,6 @@
                 <table id="autoDetectTable" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                     <thead>
                         <tr style="background: #f5f7fa;">
-                            <th style="padding: 8px; text-align: left; width: 40px;"><input type="checkbox" id="selectAllAutoDetect" checked onchange="toggleSelectAllAutoDetect()"></th>
                             <th style="padding: 8px; text-align: left;">源表.字段</th>
                             <th style="padding: 8px; text-align: center;">→</th>
                             <th style="padding: 8px; text-align: left;">目标表.字段</th>
@@ -466,7 +466,7 @@
                 
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
                     <button class="btn btn-cancel" onclick="closeAutoDetectModal()">取消</button>
-                    <button class="btn btn-primary" onclick="saveAutoDetectedRelationships()">💾 批量保存 (<span id="selectedCount">0</span> 条)</button>
+                    <button class="btn btn-primary" onclick="saveAutoDetectedRelationships()">💾 批量保存 (<span id="totalCount">0</span> 条)</button>
                 </div>
             </div>
         </div>
@@ -481,6 +481,47 @@
         window.onload = function() {
             loadDatasources();
         };
+        
+        // ✅ 显示加载遮罩层
+        function showLoadingMask(message) {
+            const mask = document.createElement('div');
+            mask.id = 'loadingMask';
+            mask.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.6);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 99999;
+            `;
+            
+            mask.innerHTML = `
+                <div style="background: white; padding: 30px 40px; border-radius: 12px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                    <div style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+                    <div style="color: #333; font-size: 16px; font-weight: 500;">${message}</div>
+                </div>
+                <style>
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
+            
+            document.body.appendChild(mask);
+        }
+        
+        // ✅ 隐藏加载遮罩层
+        function hideLoadingMask() {
+            const mask = document.getElementById('loadingMask');
+            if (mask) {
+                mask.remove();
+            }
+        }
         
         // 加载数据源列表
         async function loadDatasources() {
@@ -812,7 +853,30 @@
                 return;
             }
             
-            if (!confirm('这将使用LLM自动推断表关联关系，可能需要较长时间，是否继续？')) return;
+            // ✅ 检查是否已有关联关系
+            try {
+                const checkResponse = await fetch(`/api/relationships?datasourceId=${currentDatasourceId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const checkResult = await checkResponse.json();
+                
+                if (checkResult.code === 200 && checkResult.data && checkResult.data.length > 0) {
+                    // 已有关联关系，提示用户
+                    const confirmOverwrite = confirm(
+                        `⚠️ 该数据源已有 ${checkResult.data.length} 条关联关系\n\n` +
+                        `自动推断将覆盖现有元数据，是否继续？`
+                    );
+                    
+                    if (!confirmOverwrite) {
+                        return; // 用户取消
+                    }
+                }
+            } catch (error) {
+                console.error('检查关联关系失败:', error);
+            }
+            
+            // ✅ 显示加载遮罩层
+            showLoadingMask('正在自动推断表关联关系，请稍候...');
             
             try {
                 const response = await fetch(`/api/relationships/auto-detect?datasourceId=${currentDatasourceId}`, {
@@ -821,14 +885,62 @@
                 });
                 const result = await response.json();
                 
+                // ✅ 隐藏加载遮罩层
+                hideLoadingMask();
+                
+                // ✅ 调试日志
+                console.log('[AutoDetect] result:', result);
+                console.log('[AutoDetect] result.data:', result.data);
+                console.log('[AutoDetect] typeof result.data:', typeof result.data);
+                console.log('[AutoDetect] Array.isArray(result.data):', Array.isArray(result.data));
+                
                 if (result.code === 200) {
+                    // ✅ 修复：严格提取 relationships 数组
+                    let relationships;
+                    
+                    console.log('[AutoDetect] 开始提取 relationships');
+                    
+                    if (Array.isArray(result.data) && result.data.length > 0) {
+                        // 数组格式：result.data = [{data: {relationships: [...]}}]
+                        console.log('[AutoDetect] 检测到数组格式，提取 result.data[0].data.relationships');
+                        const firstItem = result.data[0];
+                        
+                        if (firstItem && firstItem.data && firstItem.data.relationships) {
+                            relationships = firstItem.data.relationships;
+                        } else {
+                            console.error('[AutoDetect] 数组元素结构异常:', firstItem);
+                            alert('推断结果格式错误');
+                            return;
+                        }
+                    } else if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+                        // 对象格式：{data: {relationships: [...]}}
+                        console.log('[AutoDetect] 检测到对象格式，提取 result.data.relationships');
+                        relationships = result.data.relationships;
+                    } else {
+                        console.error('[AutoDetect] 数据格式异常:', result.data);
+                        alert('推断结果格式错误');
+                        return;
+                    }
+                    
+                    console.log('[AutoDetect] relationships:', relationships);
+                    console.log('[AutoDetect] Array.isArray(relationships):', Array.isArray(relationships));
+                    
+                    if (!Array.isArray(relationships)) {
+                        alert('推断结果格式错误：relationships不是数组');
+                        console.error('relationships:', relationships);
+                        return;
+                    }
+                    
+                    console.log('[AutoDetect] relationships.length:', relationships.length);
+                    
                     // ✅ 显示推断结果预览弹框
-                    showAutoDetectResults(result.data);
+                    showAutoDetectResults(relationships);
                 } else {
                     alert(result.message || '推断失败');
                 }
             } catch (error) {
                 console.error('自动推断失败:', error);
+                hideLoadingMask();
                 alert('推断失败: ' + error.message);
             }
         }
@@ -1042,37 +1154,48 @@
         
         // ✅ 显示自动推断结果
         function showAutoDetectResults(relationships) {
+            console.log('[showAutoDetectResults] 被调用，relationships.length:', relationships.length);
+            
             if (!relationships || relationships.length === 0) {
                 alert('未推断到任何关联关系');
                 return;
             }
             
-            // 保存到全局变量，并标记为选中
-            window.autoDetectedRelationships = relationships.map(rel => ({
-                ...rel,
-                selected: true
-            }));
+            // ✅ 直接保存所有数据，不需要selected标记
+            window.autoDetectedRelationships = relationships;
+            console.log('[showAutoDetectResults] 已保存到 window.autoDetectedRelationships');
             
             renderAutoDetectTable();
-            document.getElementById('autoDetectModal').classList.add('active');
+            console.log('[showAutoDetectResults] 已调用 renderAutoDetectTable');
+            
+            const modal = document.getElementById('autoDetectModal');
+            console.log('[showAutoDetectResults] autoDetectModal元素:', modal);
+            console.log('[showAutoDetectResults] 添加active类之前 className:', modal.className);
+            
+            modal.classList.add('active');
+            
+            console.log('[showAutoDetectResults] 添加active类之后 className:', modal.className);
+            console.log('[showAutoDetectResults] 完成');
         }
         
         // 渲染自动推断表格
         function renderAutoDetectTable() {
+            console.log('[renderAutoDetectTable] 开始渲染');
+            
             const tbody = document.getElementById('autoDetectBody');
+            console.log('[renderAutoDetectTable] tbody元素:', tbody);
+            
             const relationships = window.autoDetectedRelationships || [];
+            console.log('[renderAutoDetectTable] relationships.length:', relationships.length);
             
             if (relationships.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #999;">暂无数据</td></tr>';
-                updateSelectedCount();
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #999;">暂无数据</td></tr>';
+                updateTotalCount();
                 return;
             }
             
-            tbody.innerHTML = relationships.map((rel, index) => `
-                <tr style="${!rel.selected ? 'opacity: 0.5;' : ''}">
-                    <td style="padding: 8px;">
-                        <input type="checkbox" ${rel.selected ? 'checked' : ''} onchange="toggleAutoDetectItem(${index})">
-                    </td>
+            const html = relationships.map((rel, index) => `
+                <tr>
                     <td style="padding: 8px;"><strong>${rel.source_table}</strong>.${rel.source_column}</td>
                     <td style="padding: 8px; text-align: center; color: #667eea;">→</td>
                     <td style="padding: 8px;"><strong>${rel.target_table}</strong>.${rel.target_column}</td>
@@ -1083,38 +1206,30 @@
                 </tr>
             `).join('');
             
-            updateSelectedCount();
+            console.log('[renderAutoDetectTable] 生成的HTML长度:', html.length);
+            console.log('[renderAutoDetectTable] 前3条数据示例:', relationships.slice(0, 3));
+            
+            tbody.innerHTML = html;
+            
+            console.log('[renderAutoDetectTable] tbody.innerHTML长度:', tbody.innerHTML.length);
+            console.log('[renderAutoDetectTable] tbody.children.length:', tbody.children.length);
+            
+            updateTotalCount();
+            console.log('[renderAutoDetectTable] 渲染完成');
         }
         
-        // 切换单个项目的选中状态
-        function toggleAutoDetectItem(index) {
-            if (window.autoDetectedRelationships && window.autoDetectedRelationships[index]) {
-                window.autoDetectedRelationships[index].selected = !window.autoDetectedRelationships[index].selected;
-                renderAutoDetectTable();
-            }
+        // ✅ 更新总数
+        function updateTotalCount() {
+            const count = (window.autoDetectedRelationships || []).length;
+            document.getElementById('totalCount').textContent = count;
         }
         
-        // 删除单个项目
+        // ✅ 删除单行
         function removeAutoDetectItem(index) {
             if (window.autoDetectedRelationships) {
                 window.autoDetectedRelationships.splice(index, 1);
                 renderAutoDetectTable();
             }
-        }
-        
-        // 全选/取消全选
-        function toggleSelectAllAutoDetect() {
-            const selectAll = document.getElementById('selectAllAutoDetect').checked;
-            if (window.autoDetectedRelationships) {
-                window.autoDetectedRelationships.forEach(rel => rel.selected = selectAll);
-                renderAutoDetectTable();
-            }
-        }
-        
-        // 更新选中数量
-        function updateSelectedCount() {
-            const count = (window.autoDetectedRelationships || []).filter(r => r.selected).length;
-            document.getElementById('selectedCount').textContent = count;
         }
         
         // 关闭自动推断模态框
@@ -1130,14 +1245,9 @@
                 return;
             }
             
-            const selected = window.autoDetectedRelationships.filter(r => r.selected);
-            if (selected.length === 0) {
-                alert('请至少选择一条关联关系');
-                return;
-            }
-            
             try {
-                const relationships = selected.map(rel => ({
+                // ✅ 直接保存表格中所有数据
+                const relationships = window.autoDetectedRelationships.map(rel => ({
                     datasourceId: parseInt(currentDatasourceId),
                     sourceTable: rel.source_table,
                     sourceColumn: rel.source_column,
@@ -1157,7 +1267,7 @@
                 const result = await response.json();
                 
                 if (result.code === 200) {
-                    alert(`成功保存 ${selected.length} 条关联关系`);
+                    alert(`成功保存 ${relationships.length} 条关联关系`);
                     closeAutoDetectModal();
                     loadRelationships();
                 } else {

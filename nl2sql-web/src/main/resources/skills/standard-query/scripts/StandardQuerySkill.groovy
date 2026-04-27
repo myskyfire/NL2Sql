@@ -35,6 +35,8 @@ class StandardQuerySkill {
         Long userId = context.getParameter("userId")
         String username = context.getParameter("username")
         String sessionId = context.getParameter("sessionId")
+        Boolean sqlOnly = context.getParameter("sqlOnly") != null ? 
+            (Boolean) context.getParameter("sqlOnly") : false  // ✅ 默认执行SQL
         
         println "[StandardQuerySkill] 开始执行标准查询: question=${question}, datasourceId=${datasourceId}"
         
@@ -150,7 +152,16 @@ class StandardQuerySkill {
             if (!hasSyntaxError) {
                 log.info("Step 2.5: 评估SQL风险")
                 publishEvent(context, sessionId, "assessing_risk", "🔍 评估SQL风险...")
-                RiskAssessmentResult riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer, nl2sqlService, context, sessionId)
+                
+                RiskAssessmentResult riskResult
+                if (sqlOnly) {
+                    // ✅ 离线模式：仅使用静态规则校验，不执行 EXPLAIN
+                    log.info("✅ 离线模式：跳过 EXPLAIN，使用静态规则校验")
+                    riskResult = staticRiskAssessment(sql)
+                } else {
+                    // ✅ 在线模式：完整风险评估（EXPLAIN + LLM）
+                    riskResult = assessSQLRisk(sql, question, datasourceId, llmService, riskAnalyzer, nl2sqlService, context, sessionId)
+                }
                 
                 if ("HIGH".equals(riskResult.getRiskLevel())) {
                     log.warn("SQL风险评估为高风险，阻断执行: {}", riskResult.getReason())
@@ -184,6 +195,17 @@ class StandardQuerySkill {
             }
             
             // Step 3: 执行SQL（带自动修正，最多2次）
+            if (sqlOnly) {
+                // ✅ 离线模式：仅返回SQL，不执行
+                log.info("✅ 离线模式：仅生成SQL，不执行")
+                publishEvent(context, sessionId, "sql_generated_only", "✅ SQL生成完成（离线模式）")
+                
+                // ✅ 如果有中风险结果，构建优化建议
+                String optimizationSuggestion = mediumRiskResult != null ? buildOptimizationSuggestionForFrontend(mediumRiskResult) : null
+                
+                return createSuccessResult(null, 0, 0, sql, datasourceId, optimizationSuggestion)
+            }
+            
             log.info("Step 3: 执行SQL")
             publishEvent(context, sessionId, "executing_sql", "⚙️ 执行SQL查询...")
             
@@ -426,9 +448,86 @@ class StandardQuerySkill {
             }
             
         } catch (Exception e) {
-            log.error("❌ 风险评估失败，默认低风险: {}", e.message, e)
-            return new RiskAssessmentResult("LOW", "风险评估失败，默认继续执行")
+            log.error("❌ 风险评估失败: {}", e.message, e)
+            
+            // ✅ 离线模式降级：使用静态规则校验
+            log.info("✅ 降级为静态规则校验（离线模式）")
+            return staticRiskAssessment(sql)
         }
+    }
+    
+    /**
+     * ✅ 新增：静态 SQL 风险评估（无需连库，适用于离线模式）
+     */
+    private RiskAssessmentResult staticRiskAssessment(String sql) {
+        if (sql == null || sql.isEmpty()) {
+            return new RiskAssessmentResult("LOW", "空 SQL")
+        }
+        
+        String upperSql = sql.toUpperCase().trim()
+        List<String> risks = []
+        String riskLevel = "LOW"
+        
+        // 规则1: 检测全表扫描风险（无 WHERE 条件）
+        if (upperSql.startsWith("SELECT") && !upperSql.contains("WHERE")) {
+            // 检查是否有 LIMIT 限制
+            if (!upperSql.contains("LIMIT")) {
+                risks.add("⚠️ 无 WHERE 条件且无 LIMIT，可能导致全表扫描")
+                riskLevel = "MEDIUM"
+            }
+        }
+        
+        // 规则2: 检测多表 JOIN 复杂度
+        int joinCount = 0
+        if (upperSql.contains(" JOIN ")) {
+            joinCount = upperSql.split(" JOIN ").length - 1
+            if (joinCount >= 3) {
+                risks.add("🔴 多表 JOIN（${joinCount}个），性能风险高")
+                riskLevel = "HIGH"
+            } else if (joinCount >= 2) {
+                risks.add("⚠️ 多表 JOIN（${joinCount}个），建议优化")
+                if ("MEDIUM".compareTo(riskLevel) > 0) {
+                    riskLevel = "MEDIUM"
+                }
+            }
+        }
+        
+        // 规则3: 检测子查询嵌套
+        int selectCount = 0
+        for (int i = 0; i < upperSql.length(); i++) {
+            if (upperSql.substring(i).startsWith("SELECT")) {
+                selectCount++
+            }
+        }
+        if (selectCount >= 3) {
+            risks.add("🔴 多层子查询嵌套（${selectCount}层），性能差")
+            riskLevel = "HIGH"
+        } else if (selectCount == 2) {
+            risks.add("⚠️ 包含子查询，建议优化为 JOIN")
+            if ("MEDIUM".compareTo(riskLevel) > 0) {
+                riskLevel = "MEDIUM"
+            }
+        }
+        
+        // 规则4: 检测危险操作
+        if (upperSql.contains("DROP ") || upperSql.contains("TRUNCATE ") || 
+            upperSql.contains("DELETE FROM") || upperSql.contains("UPDATE ")) {
+            risks.add("🔴 包含数据修改/删除操作，禁止执行")
+            riskLevel = "HIGH"
+        }
+        
+        // 规则5: 检测大结果集风险（无 LIMIT 的复杂查询）
+        if ((joinCount >= 2 || selectCount >= 2) && !upperSql.contains("LIMIT")) {
+            risks.add("⚠️ 复杂查询无 LIMIT，可能返回大量数据")
+            if ("MEDIUM".compareTo(riskLevel) > 0) {
+                riskLevel = "MEDIUM"
+            }
+        }
+        
+        String reason = risks.isEmpty() ? "静态校验通过" : risks.join("; ")
+        log.info("[静态校验] riskLevel={}, risks={}", riskLevel, risks.size())
+        
+        return new RiskAssessmentResult(riskLevel, reason)
     }
     
     /**
@@ -1061,7 +1160,7 @@ ${sql}
     }
     
     /**
-     * 生成 ECharts 配置
+     * 生成 ECharts 配置（✅ 支持多指标）
      */
     private Map<String, Object> generateEChartsConfig(String chartType, List<Map<String, Object>> data) {
         if (data == null || data.isEmpty()) {
@@ -1071,30 +1170,48 @@ ${sql}
         Map<String, Object> config = [:]
         config.put("type", chartType)
         
-        // 提取 categories 和 values
+        // ✅ 提取分类列（第一列）
         List<String> categories = []
-        List<Object> values = []
         
-        // 假设第一列是分类，第二列是数值
-        String categoryKey = null
-        String valueKey = null
+        // ✅ 提取所有数值列（除第一列外的所有数字列）
+        Map<String, List<Object>> seriesMap = new LinkedHashMap<>()
         
         if (!data.isEmpty()) {
-            def keys = data.get(0).keySet()
-            def iterator = keys.iterator()
-            if (iterator.hasNext()) categoryKey = iterator.next()
-            if (iterator.hasNext()) valueKey = iterator.next()
-        }
-        
-        if (categoryKey != null && valueKey != null) {
+            def keys = data.get(0).keySet().toList()
+            String categoryKey = keys.get(0)  // 第一列作为分类
+            
+            // 提取分类
             for (def row : data) {
                 categories.add(String.valueOf(row.get(categoryKey)))
-                values.add(row.get(valueKey))
+            }
+            
+            // ✅ 提取其他列作为系列
+            for (int i = 1; i < keys.size(); i++) {
+                String valueKey = keys.get(i)
+                List<Object> values = []
+                
+                for (def row : data) {
+                    Object val = row.get(valueKey)
+                    // 只添加数字类型的值
+                    if (val instanceof Number) {
+                        values.add(val)
+                    } else if (val != null) {
+                        try {
+                            values.add(Double.parseDouble(String.valueOf(val)))
+                        } catch (Exception e) {
+                            values.add(0)  // 非数字默认为0
+                        }
+                    } else {
+                        values.add(0)
+                    }
+                }
+                
+                seriesMap.put(valueKey, values)
             }
         }
         
         config.put("categories", categories)
-        config.put("values", values)
+        config.put("series", seriesMap)  // ✅ 改为series映射，支持多指标
         config.put("title", getChartTypeName(chartType))
         
         return config

@@ -548,6 +548,24 @@
                 currentContext.lastQuery = lastUserMessage.textContent.trim();
             }
             
+            // ✅ 兼容统一响应格式（type字段）- 优先级最高
+            if (data.type) {
+                if (data.type === 'clarification') {
+                    data.status = 'clarification_needed';
+                    // 从嵌套的clarification对象中提取字段到顶层
+                    if (data.clarification) {
+                        Object.assign(data, data.clarification);
+                    }
+                } else if (data.type === 'data') {
+                    data.status = 'success';
+                } else if (data.type === 'error') {
+                    data.status = 'error';
+                    if (!data.error && data.message) {
+                        data.error = data.message;
+                    }
+                }
+            }
+            
             // ✅ 兼容 forceExecuteQuery 返回的格式（有 success 但没有 status）
             if (!data.status && data.success !== undefined) {
                 data.status = data.success ? 'success' : 'error';
@@ -653,16 +671,33 @@
             
             let html = '';
             
-            // 情况1：AI总结结果（有 summary 但没有 data）
-            if (data.summary && !data.data) {
-                console.log('[AI总结] 检测到 summary:', data.summary);
-                const formattedSummary = formatAISummary(data.summary);
+            // 情况1：AI总结（type=summary）
+            if (data.type === 'summary') {
+                console.log('[AI总结] 检测到 type=summary:', data.message);
+                const formattedSummary = formatAISummary(data.message);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
                 addMessage(html, 'agent');
                 
                 // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
                 if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
                     const followUpHtml = renderRemainingFollowUpHints('summary');
+                    if (followUpHtml) {
+                        addMessage(followUpHtml, 'agent');
+                    }
+                }
+                return;
+            }
+            
+            // 情况2：图表生成（type=chart）
+            if (data.type === 'chart') {
+                console.log('[图表生成] 检测到 type=chart:', data.chartType);
+                html += await renderDataTable(data.data);
+                html += renderChartFromConfig(data.echartsConfig, data.chartType);
+                addMessage(html, 'agent');
+                
+                // ✅ 图表生成后，重新渲染剩余追问按钮
+                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
+                    const followUpHtml = renderRemainingFollowUpHints('chart');
                     if (followUpHtml) {
                         addMessage(followUpHtml, 'agent');
                     }
@@ -1532,6 +1567,10 @@
         
         // 选择数据源
         function selectDatasource(datasourceId, datasourceName) {
+            // ✅ 隐藏澄清选项，防止重复点击
+            const clarificationOptions = document.querySelectorAll('.clarification-options');
+            clarificationOptions.forEach(el => el.style.display = 'none');
+            
             // ✅ 修正：不显示用户消息，避免污染对话历史
             // addMessage(`我选择了: ${datasourceName}`, 'user');
             
@@ -1573,6 +1612,10 @@
         // 确认使用推荐的数据源
         async function confirmDatasource(confirmed) {
             if (confirmed && pendingDatasourceId) {
+                // ✅ 隐藏澄清选项，防止重复点击
+                const clarificationOptions = document.querySelectorAll('.clarification-options');
+                clarificationOptions.forEach(el => el.style.display = 'none');
+                
                 // ✅ 修正：不显示用户消息，避免污染对话历史
                 // addMessage('✅ 是的，使用这个数据源', 'user');
                 
@@ -1968,22 +2011,29 @@
             });
         }
         
-        // 构建柱状图配置
+        // 构建柱状图配置（✅ 支持多系列）
         function buildBarChartOption(config) {
-            return {
-                title: {
-                    text: config.title || '柱状图',
-                    left: 'center',
-                    textStyle: { fontSize: 16 }
-                },
-                tooltip: { trigger: 'axis' },
-                xAxis: {
-                    type: 'category',
-                    data: config.categories || [],
-                    axisLabel: { rotate: 45 }
-                },
-                yAxis: { type: 'value' },
-                series: [{
+            const series = [];
+            
+            // ✅ 如果存在series映射，支持多指标
+            if (config.series && typeof config.series === 'object') {
+                const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
+                let colorIndex = 0;
+                
+                for (const [name, values] of Object.entries(config.series)) {
+                    series.push({
+                        name: name,
+                        type: 'bar',
+                        data: values || [],
+                        itemStyle: {
+                            color: colors[colorIndex % colors.length]
+                        }
+                    });
+                    colorIndex++;
+                }
+            } else {
+                // 兼容旧格式：单一values数组
+                series.push({
                     type: 'bar',
                     data: config.values || [],
                     itemStyle: {
@@ -1992,26 +2042,56 @@
                             { offset: 1, color: '#764ba2' }
                         ])
                     }
-                }]
-            };
-        }
-        
-        // 构建折线图配置
-        function buildLineChartOption(config) {
+                });
+            }
+            
             return {
                 title: {
-                    text: config.title || '折线图',
+                    text: config.title || '柱状图',
                     left: 'center',
                     textStyle: { fontSize: 16 }
                 },
                 tooltip: { trigger: 'axis' },
+                legend: series.length > 1 ? { data: Object.keys(config.series || {}) } : null,
                 xAxis: {
                     type: 'category',
                     data: config.categories || [],
                     axisLabel: { rotate: 45 }
                 },
                 yAxis: { type: 'value' },
-                series: [{
+                series: series
+            };
+        }
+        
+        // 构建折线图配置（✅ 支持多系列）
+        function buildLineChartOption(config) {
+            const series = [];
+            
+            // ✅ 如果存在series映射，支持多指标
+            if (config.series && typeof config.series === 'object') {
+                const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
+                let colorIndex = 0;
+                
+                for (const [name, values] of Object.entries(config.series)) {
+                    series.push({
+                        name: name,
+                        type: 'line',
+                        data: values || [],
+                        smooth: config.smooth !== false,
+                        lineStyle: { color: colors[colorIndex % colors.length], width: 3 },
+                        areaStyle: config.type === 'area' ? {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: colors[colorIndex % colors.length] + '4D' },  // 30%透明度
+                                { offset: 1, color: colors[colorIndex % colors.length] + '0D' }  // 5%透明度
+                            ])
+                        } : null,
+                        itemStyle: { color: colors[colorIndex % colors.length] }
+                    });
+                    colorIndex++;
+                }
+            } else {
+                // 兼容旧格式：单一values数组
+                series.push({
                     type: 'line',
                     data: config.values || [],
                     smooth: config.smooth !== false,
@@ -2023,7 +2103,24 @@
                         ])
                     } : null,
                     itemStyle: { color: '#667eea' }
-                }]
+                });
+            }
+            
+            return {
+                title: {
+                    text: config.title || '折线图',
+                    left: 'center',
+                    textStyle: { fontSize: 16 }
+                },
+                tooltip: { trigger: 'axis' },
+                legend: series.length > 1 ? { data: Object.keys(config.series || {}) } : null,
+                xAxis: {
+                    type: 'category',
+                    data: config.categories || [],
+                    axisLabel: { rotate: 45 }
+                },
+                yAxis: { type: 'value' },
+                series: series
             };
         }
         
