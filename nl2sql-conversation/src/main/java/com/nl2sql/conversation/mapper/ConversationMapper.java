@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Param;
  * 对话历史Mapper
  */
 @Mapper
-public interface ConversationMapper {
+public interface  ConversationMapper {
     
     /**
      * 插入对话消息

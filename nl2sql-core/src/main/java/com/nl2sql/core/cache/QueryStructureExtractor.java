@@ -68,13 +68,16 @@ public class QueryStructureExtractor {
         // 4. 提取意图
         structure.setIntent(detectIntent(query));
         
-        // 5. 提取目标关键词（支持行业扩展）
+        // ✅ 5. 提取时间粒度（每天/每周/每月）
+        structure.setTimeGranularity(extractTimeGranularity(query));
+        
+        // 6. 提取目标关键词（支持行业扩展）
         structure.setTarget(extractTarget(query));
         
-        // 6. 提取金额
+        // 7. 提取金额
         structure.setAmount(extractAmount(query));
         
-        // 7. 提取ID/编号
+        // 8. 提取ID/编号
         structure.setId(extractId(query));
         
         log.debug("[QueryStructure] 提取完成: query={}, structure={}", query, structure);
@@ -93,6 +96,11 @@ public class QueryStructureExtractor {
         
         // 意图
         normalized.put("intent", structure.getIntent());
+        
+        // ✅ 新增：时间粒度（区分"每天"vs"总计"）
+        if (structure.getTimeGranularity() != null) {
+            normalized.put("time_granularity", structure.getTimeGranularity());
+        }
         
         // 实体（归一化）
         Map<String, Object> entities = new HashMap<>();
@@ -204,11 +212,15 @@ public class QueryStructureExtractor {
     }
     
     private String detectIntent(String query) {
+        // ✅ 增强：检测聚合关键词（包括"XX数/XX量/XX额"等隐含统计）
         if (query.contains("统计") || query.contains("汇总") || query.contains("平均") || 
-            query.contains("合计") || query.contains("总数")) {
+            query.contains("合计") || query.contains("总数") ||
+            query.contains("订单数") || query.contains("用户数") || query.contains("商品数") ||
+            query.contains("数量") || query.contains("次数") || query.contains("频次")) {
             return "aggregate";
         }
-        if (query.contains("排序") || query.contains("排名") || query.contains("最")) {
+        // ✅ 修复：排除"最近"等时间词，只匹配真正的排序意图
+        if ((query.contains("排序") || query.contains("排名")) && !query.contains("最近")) {
             return "sort";
         }
         return "query";
@@ -277,9 +289,30 @@ public class QueryStructureExtractor {
         return null;
     }
     
+    /**
+     * ✅ 提取时间粒度（每天/每周/每月）
+     */
+    private String extractTimeGranularity(String query) {
+        if (query.contains("每天") || query.contains("每日") || query.contains("按天")) {
+            return "day";
+        }
+        if (query.contains("每周") || query.contains("按周")) {
+            return "week";
+        }
+        if (query.contains("每月") || query.contains("按月")) {
+            return "month";
+        }
+        return null;
+    }
+    
     private AmountExpression extractAmount(String query) {
+        // ✅ 修复：排除时间表达式中的数字（如"7天"、"30日"）
+        // 先移除时间相关模式
+        String cleanedQuery = query.replaceAll("(最近|过去|近)\\d+(天|周|月|年)", "")
+                                    .replaceAll("\\d+[天周月年]", "");
+        
         Pattern amountPattern = Pattern.compile("(\\d+[万千元亿]?元?|[￥$€£]\\d+([万千元亿])?)");
-        Matcher matcher = amountPattern.matcher(query);
+        Matcher matcher = amountPattern.matcher(cleanedQuery);
         if (matcher.find()) {
             String value = matcher.group();
             if (value.contains("万") || value.contains("千") || value.contains("亿")) {
@@ -353,6 +386,7 @@ public class QueryStructureExtractor {
         private TimeExpression time;        // 时间表达式
         private String location;            // 地点
         private String intent;              // 意图：query/aggregate/sort
+        private String timeGranularity;     // ✅ 时间粒度：day/week/month（区分"每天"vs"总计"）
         private String target;              // 目标关键词：订单/余额/库存等
         private AmountExpression amount;    // 金额表达式
         private IdExpression id;            // ID/编号表达式

@@ -232,6 +232,26 @@ public class AgentConfig {
                             }
                         }
                         
+                        // ✅ 从 userMessage 的 Context 中提取 sqlOnly 参数
+                        if (userMessage != null && userMessage.contains("\"sqlOnly\"")) {
+                            try {
+                                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                // 提取 Context JSON
+                                int contextStart = userMessage.indexOf("Context: ");
+                                if (contextStart >= 0) {
+                                    String contextJson = userMessage.substring(contextStart + 9);
+                                    Map<String, Object> contextMap = mapper.readValue(contextJson, Map.class);
+                                    Boolean sqlOnly = (Boolean) contextMap.get("sqlOnly");
+                                    if (sqlOnly != null) {
+                                        context.setParameter("sqlOnly", sqlOnly);
+                                        log.info("[{}] 检测到 sqlOnly={}", skill.getToolName(), sqlOnly);
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.warn("[{}] 解析 sqlOnly 失败: {}", skill.getToolName(), e.getMessage());
+                            }
+                        }
+                        
                         Object result;
                         if (hasWorkflow) {
                             // ✅ Workflow Skill：由 WorkflowEngine 执行
@@ -355,11 +375,12 @@ public class AgentConfig {
                     // 调用 AISummaryTool
                     String summary = aiSummaryTool.summarize(lastQuery, generatedSQL, dataJson);
                     
-                    // 返回结构化结果
+                    // ✅ 返回统一响应格式（type=summary）
                     Map<String, Object> result = new HashMap<>();
-                    result.put("status", "success");
-                    result.put("summary", summary);
-                    result.put("datasourceId", dsId);  // ⚠️ 重要：返回 datasourceId 供前端后续使用
+                    result.put("success", true);
+                    result.put("type", "summary");
+                    result.put("message", summary);  // AI总结文本
+                    result.put("datasourceId", dsId);
                     return mapper.writeValueAsString(result);
                 } catch (Exception e) {
                     log.error("[summarize_result] 执行失败", e);
@@ -440,12 +461,14 @@ public class AgentConfig {
                 // 生成 ECharts 配置
                 Map<String, Object> echartsConfig = generateEChartsConfig(chartType, queryData);
                 
+                // ✅ 返回统一响应格式（type=chart）
                 Map<String, Object> result = new HashMap<>();
-                result.put("status", "chart_generated");
+                result.put("success", true);
+                result.put("type", "chart");
                 result.put("chartType", getChartTypeName(chartType));
                 result.put("echartsConfig", echartsConfig);
                 result.put("data", queryData);
-                result.put("datasourceId", dsId);  // ⚠️ 重要：返回 datasourceId 供前端后续使用
+                result.put("datasourceId", dsId);
                 
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 return mapper.writeValueAsString(result);
@@ -498,8 +521,10 @@ public class AgentConfig {
                 try {
                     String report = reportGeneratorTool.generateReport(userQuery, sql, dataJson);
                     
+                    // ✅ 返回统一响应格式（type=report）
                     Map<String, Object> result = new HashMap<>();
-                    result.put("status", "success");
+                    result.put("success", true);
+                    result.put("type", "report");
                     result.put("report", report);
                     result.put("datasourceId", dsId);
                     
@@ -749,30 +774,48 @@ public class AgentConfig {
         Map<String, Object> config = new HashMap<>();
         config.put("type", chartType);
         
-        // 提取 categories 和 values
+        // ✅ 提取分类列（第一列）
         List<String> categories = new ArrayList<>();
-        List<Object> values = new ArrayList<>();
         
-        // 假设第一列是分类，第二列是数值
-        String categoryKey = null;
-        String valueKey = null;
+        // ✅ 提取所有数值列（除第一列外的所有数字列）
+        Map<String, List<Object>> seriesMap = new LinkedHashMap<>();
         
         if (!data.isEmpty()) {
-            Set<String> keys = data.get(0).keySet();
-            Iterator<String> iterator = keys.iterator();
-            if (iterator.hasNext()) categoryKey = iterator.next();
-            if (iterator.hasNext()) valueKey = iterator.next();
-        }
-        
-        if (categoryKey != null && valueKey != null) {
+            List<String> keys = new ArrayList<>(data.get(0).keySet());
+            String categoryKey = keys.get(0);  // 第一列作为分类
+            
+            // 提取分类
             for (Map<String, Object> row : data) {
                 categories.add(String.valueOf(row.get(categoryKey)));
-                values.add(row.get(valueKey));
+            }
+            
+            // ✅ 提取其他列作为系列
+            for (int i = 1; i < keys.size(); i++) {
+                String valueKey = keys.get(i);
+                List<Object> values = new ArrayList<>();
+                
+                for (Map<String, Object> row : data) {
+                    Object val = row.get(valueKey);
+                    // 只添加数字类型的值
+                    if (val instanceof Number) {
+                        values.add(val);
+                    } else if (val != null) {
+                        try {
+                            values.add(Double.parseDouble(String.valueOf(val)));
+                        } catch (Exception e) {
+                            values.add(0);  // 非数字默认为0
+                        }
+                    } else {
+                        values.add(0);
+                    }
+                }
+                
+                seriesMap.put(valueKey, values);
             }
         }
         
         config.put("categories", categories);
-        config.put("values", values);
+        config.put("series", seriesMap);  // ✅ 改为series映射，支持多指标
         config.put("title", getChartTypeName(chartType));
         
         return config;

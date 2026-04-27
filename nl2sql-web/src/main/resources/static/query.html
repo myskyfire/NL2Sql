@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataMind 查询</title>
+    <title>SQL生成器</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f7fa; padding: 20px; }
@@ -41,7 +41,7 @@
 <body>
     <div class="query-container">
         <div class="input-section">
-            <h3>输入你的问题</h3>
+            <h3>🔍 SQL生成器</h3>
             
             <!-- 数据源选择 -->
             <div style="margin-bottom: 15px;">
@@ -53,42 +53,19 @@
             
             <textarea id="queryInput" placeholder="例如：查看上个月订单数量"></textarea>
             
-            <div class="options-row">
-                <div class="option-item">
-                    <input type="checkbox" id="autoExecute" checked>
-                    <label for="autoExecute">自动生成后立即执行</label>
-                </div>
-                <div class="option-item">
-                    <label for="resultMode">结果显示：</label>
-                    <select id="resultMode">
-                        <option value="data">仅显示数据</option>
-                        <option value="summary" selected>AI智能总结</option>
-                    </select>
-                </div>
-            </div>
-            
-            <button class="btn" onclick="executeQuery()">🚀 执行查询</button>
-            <button class="btn btn-export" id="exportBtn" onclick="exportToExcel()" style="display:none;">📊 导出Excel</button>
+            <button class="btn" onclick="generateSQL()">🚀 生成SQL</button>
         </div>
         <div class="result-section" id="resultSection" style="display:none;">
-            <h3>查询结果</h3>
+            <h3>SQL生成结果</h3>
             <div id="messages"></div>
             <div id="sqlDisplay"></div>
-            <div id="chartSection" class="chart-section" style="display:none;">
-                <h4 style="margin-bottom: 12px;">📊 图表推荐</h4>
-                <div id="chartTabs" class="chart-tabs"></div>
-                <div id="chartContainer" class="chart-container"></div>
-            </div>
-            <div id="tableContainer"></div>
-            <div id="aiSummary" style="display:none;"></div>
         </div>
     </div>
     <script>
         const token = localStorage.getItem('token');
         const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
         let currentSQL = null;
-        let currentData = null;
-        let currentQuery = null;  // 保存原始用户查询
+        let lastQuery = null;  // ✅ 保存最后一次的查询
         
         // 页面加载时获取数据源列表
         window.onload = async function() {
@@ -119,9 +96,12 @@
             }
         }
         
-        async function executeQuery() {
+        async function generateSQL() {
             const query = document.getElementById('queryInput').value.trim();
             if (!query) { alert('请输入查询内容'); return; }
+            
+            // ✅ 保存查询问题
+            lastQuery = query;
             
             const datasourceId = document.getElementById('datasourceSelect').value;
             if (!datasourceId) {
@@ -129,229 +109,95 @@
                 return;
             }
             
-            const autoExecute = document.getElementById('autoExecute').checked;
-            const resultMode = document.getElementById('resultMode').value;
-            
             const resultSection = document.getElementById('resultSection');
             const messagesDiv = document.getElementById('messages');
             const sqlDisplay = document.getElementById('sqlDisplay');
-            const tableContainer = document.getElementById('tableContainer');
-            const aiSummaryDiv = document.getElementById('aiSummary');
-            const exportBtn = document.getElementById('exportBtn');
-            const chartSection = document.getElementById('chartSection');
             
             resultSection.style.display = 'block';
             messagesDiv.innerHTML = '<div class="message success">正在生成SQL...</div>';
             sqlDisplay.innerHTML = '';
-            tableContainer.innerHTML = '';
-            aiSummaryDiv.style.display = 'none';
-            aiSummaryDiv.innerHTML = '';
-            chartSection.style.display = 'none';
-            exportBtn.style.display = 'none';
             currentSQL = null;
-            currentData = null;
-            currentQuery = query;  // 保存原始查询
             
             try {
-                // 第一步：生成SQL
-                const response = await fetch('/api/query', {
+                // ✅ 调用 Agent 对话接口生成 SQL（离线模式）
+                const response = await fetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': token },
                     body: JSON.stringify({ 
-                        query: query, 
-                        username: userInfo.username, 
-                        sessionId: 'default',
+                        message: query,
                         datasourceId: parseInt(datasourceId),
-                        autoExecute: false  // 先不自动执行
+                        sessionId: 'datamind_' + (userInfo.userId || 'default'),
+                        context: { sqlOnly: true }  // ✅ 离线模式：仅生成SQL
                     })
                 });
                 const result = await response.json();
                 
                 if (result.code === 200 && result.data) {
                     const data = result.data;
+                    
+                    // ✅ 根据type字段路由响应
+                    if (data.type === 'clarification') {
+                        messagesDiv.innerHTML = `<div class="message warning">💬 ${data.message || '请补充更多信息'}</div>`;
+                        sqlDisplay.innerHTML = '';
+                        return;
+                    }
+                    
+                    if (data.type === 'error') {
+                        messagesDiv.innerHTML = `<div class="message error">❌ ${data.message || '查询失败'}</div>`;
+                        sqlDisplay.innerHTML = '';
+                        return;
+                    }
+                    
+                    // ✅ 处理成功响应（包含SQL）
                     let messagesHtml = '';
                     
-                    // 处理需要澄清的情况
-                    if (data.status === 'clarification') {
-                        messagesHtml += `<div class="message warning">💬 ${data.clarification || '请补充更多信息'}</div>`;
-                        messagesDiv.innerHTML = messagesHtml;
-                        sqlDisplay.innerHTML = '';
-                        tableContainer.innerHTML = '';
-                        return;
-                    }
+                    // ✅ 离线模式：使用sql字段；在线模式：可能使用generatedSQL
+                    const generatedSQL = data.sql || data.generatedSQL;
                     
-                    // 处理错误情况（如缺少元数据）
-                    if (data.status === 'error') {
-                        messagesHtml += `<div class="message error">❌ ${data.error || '查询失败'}</div>`;
-                        messagesDiv.innerHTML = messagesHtml;
-                        sqlDisplay.innerHTML = '';
-                        tableContainer.innerHTML = '';
-                        return;
-                    }
-                    
-                    // 处理权限禁止
-                    if (data.status === 'forbidden') {
-                        messagesHtml += `<div class="message error">🚫 ${data.error}</div>`;
-                        messagesDiv.innerHTML = messagesHtml;
-                        sqlDisplay.innerHTML = '';
-                        tableContainer.innerHTML = '';
-                        return;
-                    }
-                    
-                    if (data.warning) {
-                        messagesHtml += `<div class="message warning">⚠️ ${data.warning}</div>`;
-                    }
-                    
-                    if (data.generatedSQL) {
-                        currentSQL = data.generatedSQL;
+                    if (generatedSQL) {
+                        currentSQL = generatedSQL;
                         messagesHtml += `<div class="message success">✅ SQL生成成功</div>`;
+                        
+                        // ✅ 检查风险等级，高风险时弹框提示
+                        if (data.riskLevel === 'HIGH') {
+                            const riskReason = data.riskReason || 'SQL存在高风险';
+                            const optimizationSuggestion = data.optimizationSuggestion || '';
+                            
+                            const confirmExecute = confirm(
+                                `⚠️ SQL风险评估：高风险\n\n` +
+                                `原因：${riskReason}\n\n` +
+                                `${optimizationSuggestion ? '优化建议：' + optimizationSuggestion + '\n\n' : ''}` +
+                                `是否仍要查看此SQL？`
+                            );
+                            
+                            if (!confirmExecute) {
+                                messagesDiv.innerHTML = messagesHtml + '<div class="message error">❌ 已取消，SQL风险过高</div>';
+                                sqlDisplay.innerHTML = '';
+                                return;
+                            }
+                        }
                         
                         // 显示SQL和操作按钮
                         sqlDisplay.innerHTML = `
                             <strong>生成的SQL:</strong>
-                            <div class="sql-display">${escapeHtml(data.generatedSQL)}</div>
+                            <div class="sql-display">${escapeHtml(generatedSQL)}</div>
                             <div class="sql-actions">
-                                <button class="btn" onclick="executeManualSQL()">▶️ 手动执行</button>
                                 <button class="btn btn-secondary" onclick="copySQL()">📋 复制SQL</button>
                                 <button class="btn btn-secondary" onclick="editSQL()">✏️ 编辑SQL</button>
+                                <button class="btn btn-success" onclick="submitFeedback(5)">⭐ 好评</button>
+                                <button class="btn btn-warning" onclick="submitFeedback(1)">⚠️ 反馈问题</button>
                             </div>
                         `;
                         
                         messagesDiv.innerHTML = messagesHtml;
-                        
-                        // 如果勾选了自动执行，立即执行
-                        if (autoExecute) {
-                            await executeManualSQL();
-                        }
                     } else {
                         messagesDiv.innerHTML = messagesHtml + '<div class="message error">SQL生成失败</div>';
                     }
+                } else {
+                    messagesDiv.innerHTML = `<div class="message error">请求失败: ${result.message || '未知错误'}</div>`;
                 }
             } catch (error) {
                 messagesDiv.innerHTML = `<div class="message error">请求失败: ${error.message}</div>`;
-            }
-        }
-        
-        // 手动执行SQL
-        async function executeManualSQL() {
-            if (!currentSQL) {
-                alert('没有可执行的SQL');
-                return;
-            }
-            
-            const datasourceId = document.getElementById('datasourceSelect').value;
-            if (!datasourceId) {
-                alert('⚠️ 请先选择数据源');
-                return;
-            }
-            
-            const resultMode = document.getElementById('resultMode').value;
-            const tableContainer = document.getElementById('tableContainer');
-            const aiSummaryDiv = document.getElementById('aiSummary');
-            const exportBtn = document.getElementById('exportBtn');
-            const messagesDiv = document.getElementById('messages');
-            
-            messagesDiv.innerHTML += '<div class="message success">正在执行SQL...</div>';
-            tableContainer.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">⏳ 执行中...</div>';
-            aiSummaryDiv.style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/manual-sql', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': token },
-                    body: JSON.stringify({ 
-                        sql: currentSQL,
-                        datasourceId: parseInt(datasourceId)
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.code === 200) {
-                    if (result.data.error) {
-                        tableContainer.innerHTML = `<div class="message error">❌ 执行失败: ${result.data.error}</div>`;
-                        exportBtn.style.display = 'none';
-                        return;
-                    }
-                    
-                    currentData = result.data.data;
-                    
-                    // 显示数据表格
-                    if (currentData && currentData.length > 0) {
-                        const headers = Object.keys(currentData[0]);
-                        let tableHtml = '<table><thead><tr>' + headers.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>';
-                        currentData.forEach(row => {
-                            tableHtml += '<tr>' + headers.map(h => `<td>${row[h] !== null ? escapeHtml(String(row[h])) : ''}</td>`).join('') + '</tr>';
-                        });
-                        tableHtml += '</tbody></table>';
-                        tableContainer.innerHTML = `
-                            <p style="margin-top:12px;color:#666;">✅ 返回 ${result.data.rowCount} 行数据，耗时 ${result.data.executionTime.toFixed(3)} 秒</p>
-                            ${tableHtml}
-                        `;
-                        
-                        // 仅在“仅显示数据”模式下显示导出按钮
-                        if (resultMode === 'data') {
-                            exportBtn.style.display = 'inline-block';
-                        } else {
-                            exportBtn.style.display = 'none';
-                        }
-                        
-                        // 如果需要AI总结
-                        if (resultMode === 'summary') {
-                            await generateSummary(currentSQL, currentData);
-                        }
-                    } else {
-                        tableContainer.innerHTML = '<div class="message warning">⚠️ 查询结果为空</div>';
-                        exportBtn.style.display = 'none';
-                    }
-                } else {
-                    tableContainer.innerHTML = `<div class="message error">❌ ${result.message}</div>`;
-                    exportBtn.style.display = 'none';
-                }
-            } catch (error) {
-                tableContainer.innerHTML = `<div class="message error">❌ 执行失败: ${error.message}</div>`;
-                exportBtn.style.display = 'none';
-            }
-        }
-        
-        // 生成AI总结
-        async function generateSummary(sql, data) {
-            const aiSummaryDiv = document.getElementById('aiSummary');
-            aiSummaryDiv.style.display = 'block';
-            aiSummaryDiv.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">⏳ AI正在分析数据...</div>';
-            
-            console.log('[AI总结] currentQuery:', currentQuery);
-            console.log('[AI总结] sql:', sql);
-            console.log('[AI总结] data行数:', data.length);
-            
-            try {
-                const response = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': token },
-                    body: JSON.stringify({ 
-                        query: currentQuery,  // 传入原始用户查询
-                        username: userInfo.username,
-                        sessionId: 'default',
-                        skipSQLGeneration: true,  // 跳过SQL生成，直接让LLM总结
-                        sql: sql,  // 传入SQL语句
-                        data: data  // 传入查询结果数据
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.code === 200 && result.data.summary) {
-                    aiSummaryDiv.innerHTML = `
-                        <div style="margin-top:16px;padding:16px;background:linear-gradient(135deg, #667eea15 0%, #764ba215 100%);border-radius:8px;border-left:4px solid #667eea;">
-                            <h4 style="margin-bottom:12px;color:#667eea;">🤖 AI智能总结</h4>
-                            <div style="line-height:1.8;color:#333;">${result.data.summary}</div>
-                        </div>
-                    `;
-                } else {
-                    aiSummaryDiv.innerHTML = '<div class="message warning">⚠️ AI总结生成失败</div>';
-                }
-            } catch (error) {
-                aiSummaryDiv.innerHTML = `<div class="message error">❌ 总结失败: ${error.message}</div>`;
             }
         }
         
@@ -376,169 +222,71 @@
                 if (sqlDisplay) {
                     sqlDisplay.textContent = currentSQL;
                 }
-                alert('✅ SQL已更新，可以点击“手动执行”重新执行');
+                alert('✅ SQL已更新');
             }
         }
         
-        // 监听结果显示模式变化
-        document.addEventListener('DOMContentLoaded', function() {
-            const resultModeSelect = document.getElementById('resultMode');
-            if (resultModeSelect) {
-                resultModeSelect.addEventListener('change', function() {
-                    const exportBtn = document.getElementById('exportBtn');
-                    // 如果已有数据，根据模式切换导出按钮可见性
-                    if (currentData && currentData.length > 0) {
-                        if (this.value === 'data') {
-                            exportBtn.style.display = 'inline-block';
-                        } else {
-                            exportBtn.style.display = 'none';
-                        }
-                    }
-                });
-            }
-        });
-        
-        // HTML转义
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        // 渲染图表
-        function renderCharts(recommendation) {
-            const chartSection = document.getElementById('chartSection');
-            const chartTabs = document.getElementById('chartTabs');
-            const chartContainer = document.getElementById('chartContainer');
-            
-            chartSection.style.display = 'block';
-            chartTabs.innerHTML = '';
-            chartContainer.innerHTML = '';
-            
-            const charts = recommendation.charts;
-            
-            // 创建标签页
-            charts.forEach((chart, index) => {
-                const tab = document.createElement('div');
-                tab.className = 'chart-tab' + (index === 0 ? ' active' : '');
-                tab.textContent = chart.type === 'TABLE' ? '📋 表格' : 
-                                 chart.type === 'BAR' ? '📊 柱状图' :
-                                 chart.type === 'LINE' ? '📈 折线图' :
-                                 chart.type === 'PIE' ? '🥧 饼图' : chart.type;
-                tab.onclick = () => showChart(index);
-                chartTabs.appendChild(tab);
-            });
-            
-            // 显示第一个图表
-            showChart(0);
-            
-            function showChart(index) {
-                // 更新标签激活状态
-                document.querySelectorAll('.chart-tab').forEach((tab, i) => {
-                    tab.classList.toggle('active', i === index);
-                });
-                
-                const chart = charts[index];
-                
-                if (chart.type === 'TABLE') {
-                    // 表格视图
-                    let html = '<table><thead><tr>';
-                    if (chart.series && chart.series.length > 0) {
-                        const headers = Object.keys(chart.series[0]);
-                        headers.forEach(h => html += `<th>${h}</th>`);
-                        html += '</tr></thead><tbody>';
-                        chart.series.forEach(row => {
-                            html += '<tr>';
-                            headers.forEach(h => html += `<td>${row[h] !== null ? row[h] : ''}</td>`);
-                            html += '</tr>';
-                        });
-                    }
-                    html += '</tbody></table>';
-                    chartContainer.innerHTML = html;
-                } else if (chart.type === 'BAR' || chart.type === 'LINE') {
-                    // 柱状图/折线图（简化文本展示）
-                    let html = `<h4>${chart.title}</h4>`;
-                    html += '<div style="margin-top:12px;">';
-                    if (chart.xLabels && chart.series) {
-                        chart.series.forEach(serie => {
-                            html += `<div style="margin-bottom:8px;"><strong>${serie.name}:</strong></div>`;
-                            serie.data.forEach((val, i) => {
-                                html += `<div style="padding:4px 0;">${chart.xLabels[i]}: ${val}</div>`;
-                            });
-                        });
-                    }
-                    html += '</div>';
-                    html += '<div style="margin-top:12px;padding:8px;background:#f0f0f0;border-radius:4px;font-size:12px;color:#666;">💡 提示：集成ECharts后可显示可视化图表</div>';
-                    chartContainer.innerHTML = html;
-                } else if (chart.type === 'PIE') {
-                    // 饼图（简化文本展示）
-                    let html = `<h4>${chart.title}</h4>`;
-                    html += '<div style="margin-top:12px;">';
-                    if (chart.series && chart.series.length > 0) {
-                        const items = chart.series[0].data || [];
-                        items.forEach(item => {
-                            html += `<div style="padding:6px 0;">🔹 ${item.name}: ${item.value}</div>`;
-                        });
-                    }
-                    html += '</div>';
-                    html += '<div style="margin-top:12px;padding:8px;background:#f0f0f0;border-radius:4px;font-size:12px;color:#666;">💡 提示：集成ECharts后可显示饼图</div>';
-                    chartContainer.innerHTML = html;
-                }
-            }
-        }
-        
-        async function exportToExcel() {
-            if (!currentSQL) {
-                alert('没有可导出的查询');
+        // ✅ 提交SQL反馈
+        async function submitFeedback(rating) {
+            if (!currentSQL || !lastQuery) {
+                alert('❌ 没有可反馈的SQL');
                 return;
             }
             
+            let feedbackText = '';
+            
+            // 低分反馈需要填写原因
+            if (rating <= 3) {
+                feedbackText = prompt('请说明SQL的问题（可选）：\n- 表选择错误\n- 字段不正确\n- 逻辑错误\n- 其他问题');
+                if (feedbackText === null) {
+                    return; // 用户取消
+                }
+            } else {
+                feedbackText = 'SQL生成准确';
+            }
+            
             try {
-                const response = await fetch('/api/export/excel', {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    alert('❌ 请先登录');
+                    return;
+                }
+                
+                const response = await fetch('/api/feedback/submit', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': token
                     },
                     body: JSON.stringify({
-                        sql: currentSQL,
-                        fileName: '查询结果'
+                        rating: rating,
+                        feedbackText: feedbackText,
+                        question: lastQuery,
+                        generatedSql: currentSQL,
+                        executedSql: currentSQL,  // 离线模式未执行，使用生成的SQL
+                        executionSuccess: null,  // 离线模式未知
+                        sessionId: 'datamind_' + (userInfo.userId || 'default')
                     })
                 });
                 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(errorText || '导出失败');
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    alert(rating >= 4 ? '✅ 感谢您的好评！' : '✅ 感谢您的反馈，我们会持续改进！');
+                } else {
+                    alert('❌ 提交失败: ' + result.message);
                 }
-                
-                // 下载文件
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                
-                // 从响应头获取文件名
-                const contentDisposition = response.headers.get('Content-Disposition');
-                let fileName = '查询结果.xlsx';
-                if (contentDisposition) {
-                    const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
-                    if (filenameMatch && filenameMatch[1]) {
-                        fileName = decodeURIComponent(filenameMatch[1].replace(/"/g, ''));
-                    }
-                }
-                
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                
-                alert('导出成功！');
-                
             } catch (error) {
-                alert('导出失败: ' + error.message);
-                console.error('导出错误:', error);
+                console.error('提交反馈失败:', error);
+                alert('❌ 网络错误，请稍后重试');
             }
+        }
+        
+        // HTML转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
     </script>
 </body>

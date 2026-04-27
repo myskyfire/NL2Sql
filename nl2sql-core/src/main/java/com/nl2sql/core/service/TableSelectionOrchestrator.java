@@ -453,12 +453,18 @@ public class TableSelectionOrchestrator {
                                 }
                             }
                             
-                            // ✅ 关键修复：如果找到了新表，重新验证；否则已经在上面return了
+                            // ✅ 关键修复：LLM响应格式正确，设置handled=true
+                            handled = true;
+                            
+                            // 如果找到了新表，重新验证；否则结束迭代
                             if (foundNew) {
                                 log.info("[TableSelection] 已补充{}个新表，重新验证表完整性", 
                                     missingTables.size());
-                                handled = true;
                                 continue; // 继续下一轮验证
+                            } else {
+                                // 所有建议的表都已存在，结束表选择
+                                log.info("[TableSelection] 所有建议的表都已在列表中，结束表选择");
+                                break;
                             }
                         }
                     }
