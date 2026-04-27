@@ -2080,7 +2080,7 @@ docker run -p 8000:8000 chromadb/chroma
 
 ---
 
-## 🚀 生产环境部署指南
+## 🚀 未来可选优化方案
 
 ### LLM后端选择
 
@@ -2231,52 +2231,6 @@ llm:
 - [ ] 定时任务调度（定期执行常用查询）
 - [ ] 数据血缘分析（追踪字段来源和去向）
 - [ ] BI报表功能（自定义仪表盘）
-
----
-
-## 🤝 贡献
-
-欢迎贡献代码、报告Issue或提出建议！
-
-### 贡献流程
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
-### 开发规范
-
-- 遵循 [阿里巴巴Java开发手册](https://github.com/alibaba/p3c)
-- 提交前运行 `mvn clean package` 确保编译通过
-- 添加必要的单元测试
-- 更新相关文档
-
----
-
-## 📄 License
-
-本项目采用 MIT License - 查看 [LICENSE](LICENSE) 文件了解详情
-
----
-
-## 👥 团队
-
-**核心开发者**: Jinzhao
-
-**特别感谢**: 
-- [LangChain4j](https://github.com/langchain4j/langchain4j) - LLM编排框架
-- [Ollama](https://ollama.com/) - 本地大模型运行时
-- [Spring Boot](https://spring.io/projects/spring-boot) - 应用框架
-
----
-
-## 📧 联系方式
-
-- 📮 Issue: [GitHub Issues](https://github.com/your-repo/NL2Sql/issues)
-- 📧 Email: your-email@example.com
-- 💬 讨论群: [加入Discord](https://discord.gg/your-server)
 
 ---
 
@@ -2502,9 +2456,45 @@ for tc in selected:
 
 ---
 
+## 🤝 贡献
+
+欢迎贡献代码、报告Issue或提出建议！
+
+### 贡献流程
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+### 开发规范
+
+- 遵循 [阿里巴巴Java开发手册](https://github.com/alibaba/p3c)
+- 提交前运行 `mvn clean package` 确保编译通过
+- 添加必要的单元测试
+- 更新相关文档
+
 ---
 
-## 🚀 未来可选优化方案
+## 📄 License
+
+本项目采用 MIT License - 查看 [LICENSE](LICENSE) 文件了解详情
+
+---
+
+## 👥 团队
+
+**核心开发者**: Jinzhao
+
+**特别感谢**: 
+- [LangChain4j](https://github.com/langchain4j/langchain4j) - LLM编排框架
+- [Ollama](https://ollama.com/) - 本地大模型运行时
+- [Spring Boot](https://spring.io/projects/spring-boot) - 应用框架
+
+---
+
+## 🚀 生产环境部署指南
 
 ### 1. LLM Query Rewrite（完整语义重写）
 
@@ -2701,6 +2691,14 @@ Schema Linking + SQL生成
 - **虚拟表抽象**: 将远程表映射为本地虚拟表
 - **分布式执行引擎**: 下推过滤条件到各数据源，本地合并结果
 - **数据一致性保证**: 事务隔离级别选择（READ_COMMITTED/REPEATABLE_READ）
+
+---
+
+## 📧 联系方式
+
+- 📮 Issue: [GitHub Issues](https://github.com/your-repo/NL2Sql/issues)
+- 📧 Email: your-email@example.com
+- 💬 讨论群: [加入Discord](https://discord.gg/your-server)
 
 ---
 
