@@ -7,7 +7,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-green.svg?style=flat-square&logo=spring)](https://spring.io/projects/spring-boot)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0-blue.svg?style=flat-square&logo=mysql)](https://www.mysql.com/)
 [![Redis](https://img.shields.io/badge/Redis-6.x-red.svg?style=flat-square&logo=redis)](https://redis.io/)
-[![Status](https://img.shields.io/badge/status-production%20ready-brightgreen.svg?style=flat-square)]()
+[![Status](https://img.shields.io/badge/status-POC%20Validation-yellow.svg?style=flat-square)]()
 
 **🚀 企业级自然语言数据分析平台 | Enterprise Natural Language Data Platform**
 
@@ -21,7 +21,15 @@
 
 ## 📖 项目简介
 
-DataMind AI（数智洞察）是一款基于 **Spring Boot + LangChain4j** 构建的企业级自然语言数据分析平台。**支持多种企业内部部署的LLM**（Ollama、ChatGLM、Qwen等），用户只需用自然语言描述数据需求（如"查询最近7天的订单总额"），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
+DataMind AI（数智洞察）是一款基于 **Spring Boot + LangChain4j** 构建的企业级自然语言数据分析平台。**支持多种企业内部部署的LLM**（Ollama、ChatGLM、Qwen等），用户只需用自然语言描述数据需求（如“查询最近7天的订单总额”），系统即可自动生成SQL、执行查询、并以可视化图表和AI总结的形式呈现结果。
+
+### 📌 项目定位
+
+**DataMind AI定位为特定业务场景的NL2SQL查询平台底座**，而非通用解决方案：
+
+- ✅ **已验证场景**: 电商订单查询、用户分析等简单到中等复杂度查询
+- ⚠️ **局限性**: 复杂多表JOIN、跨数据源查询仍需人工干预
+- 🔄 **持续迭代**: 当前聚焦垂直领域深耕，通用场景仍在探索中
 
 ### ✨ 核心价值
 
@@ -33,7 +41,7 @@ DataMind AI（数智洞察）是一款基于 **Spring Boot + LangChain4j** 构�
 </td>
 <td width="25%" align="center">
 <b>⚡ 秒级响应</b><br>
-平均3秒内返回结果<br>含LLM调用时间
+缓存命中时<1秒，未命中时3-5秒<br>含LLM调用时间
 </td>
 <td width="25%" align="center">
 <b>🔒 企业级安全</b><br>
@@ -49,7 +57,7 @@ AI自动分析数据<br>提供业务建议
 ### 🌟 核心特性
 
 #### 🔍 智能查询引擎
-- **🧠 RAG检索增强**: 双层向量检索（表+字段）+ 历史SQL示例注入，准确率>85%
+- **🧠 RAG检索增强**: 双层向量检索（表+字段）+ 历史SQL示例注入，简单查询准确率>85%，复杂JOIN场景约60-70%
 - **🎯 多模型智能路由**: SIMPLE/MEDIUM/COMPLEX三级复杂度评估，动态选择最优LLM
 - **💬 同义词词典**: 自动识别业务术语（订单/定单、用户/客户、DAU/GMV等）
 - **🏭 行业概念库**: 数据库驱动的行业术语管理，支持电商/金融/医疗等5大行业
@@ -71,7 +79,12 @@ AI自动分析数据<br>提供业务建议
 - **👤 密码加密存储**: AES-256-GCM加密数据库密码
 
 #### 💾 性能优化与缓存
-- **⚡ 语义缓存**: 基于SQL语义MD5哈希的Redis缓存，命中率>60%，TTL 30分钟
+- **🎯 三级缓存架构**: 
+  - L1: Redis精确匹配（SQL语义MD5哈希，TTL 30分钟）
+  - L2: 归一化模板匹配（规则引擎提取查询结构，评分≥4才缓存）
+  - L3: Chroma向量检索 + Jaccard二次校验（语义相似度>0.85，TTL 24小时）
+  - 综合命中率>60%，LLM调用减少60%
+- **⚡ 语义缓存**: 基于SQL语义MD5哈希的Redis缓存
 - **🔗 HikariCP连接池**: 每个数据源独立连接池，懒加载创建
   - 最大连接数: 10个/数据源
   - 最小空闲: 2个连接
@@ -88,7 +101,8 @@ AI自动分析数据<br>提供业务建议
 - **📝 上下文压缩**: 智能提取关键信息，避免Prompt过长
 - **❓ 智能澄清**: 当查询意图不明确时主动询问（数据源选择、表关系澄清）
 - **💾 数据源会话缓存**: Redis会话级缓存（30分钟TTL），单数据源场景响应时间减少50-70%，支持清除命令和连续失败保护
-- **🤖 ReAct Agent架构**: 基于Ollama原生Tool Calling，LLM通过结构化`tool_calls`自主决策工具调用
+- **🤖 ReAct Agent架构**: 基于Ollama原生Tool Calling，LLM通过结构化`tool_calls`自主决策工具调用；**注意**: 复杂多步推理场景稳定性不足，当前聚焦确定性流程优化
+- **📡 SSE流式响应**: 前端可订阅实时进度事件：`creating` → `schema_retrieved` → `sql_generated` → `executing` → `query_result` → `ai_summary` → `completed`
 
 #### 📊 可视化与导出
 - **📈 智能图表推荐**: 根据数据特征自动推荐柱状图/折线图/饼图/表格
