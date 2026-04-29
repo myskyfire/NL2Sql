@@ -2,8 +2,10 @@ package com.nl2sql.metadata.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.llm.LLMService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -17,10 +19,13 @@ import java.util.*;
 @Service
 public class TermExpansionService {
     
+    @Autowired(required = false)
+    private LLMService llmService;
+    
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     /**
-     * 基于DDL扩词（当前使用规则生成，LLM集成待实现）
+     * 基于DDL扩词（调用LLM）
      * 
      * @param ddl DDL建表语句
      * @return 扩展后的术语列表
@@ -30,8 +35,25 @@ public class TermExpansionService {
             return Collections.emptyList();
         }
         
-        // TODO: 集成LLM服务
-        log.info("[TermExpansion] LLM集成待实现，使用规则生成");
+        // 优先使用LLM生成
+        if (llmService != null) {
+            try {
+                log.info("[TermExpansion] 调用LLM生成术语扩词...");
+                String prompt = buildLLMPrompt(ddl);
+                String response = llmService.generateAnswer(prompt);
+                List<TermExpansion> expansions = parseLLMResponse(response);
+                
+                log.info("[TermExpansion] LLM生成{}个术语扩展", expansions.size());
+                return expansions;
+                
+            } catch (Exception e) {
+                log.error("[TermExpansion] LLM调用失败，降级为规则生成", e);
+            }
+        } else {
+            log.warn("[TermExpansion] LLMService未配置，使用规则生成降级方案");
+        }
+        
+        // 降级：规则生成
         return expandByRules(ddl);
     }
     
