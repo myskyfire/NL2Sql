@@ -1,0 +1,7 @@
+chore: 更新PR Agent工作流配置
+
+## 变更内容
+- 修改 `.github/workflows/pr_agent.yml` GitHub Actions工作流配置
+
+## 影响范围
+- **低风险**：仅CI/CD配置变更，不影响业务功能

@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>术语自动补全验证</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 700px;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 32px;
+            font-size: 14px;
+        }
+        
+        .input-wrapper {
+            position: relative;
+            margin-bottom: 24px;
+        }
+        
+        #queryInput {
+            width: 100%;
+            padding: 16px 20px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            outline: none;
+            transition: all 0.3s;
+        }
+        
+        #queryInput:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+        
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .autocomplete-dropdown.active {
+            display: block;
+        }
+        
+        .autocomplete-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background: #f5f7fa;
+        }
+        
+        .autocomplete-item .term {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .autocomplete-item .type {
+            font-size: 12px;
+            color: #999;
+            padding: 2px 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+        
+        .highlight {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 24px;
+            margin-top: 24px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .stat-item {
+            flex: 1;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .test-terms {
+            margin-top: 24px;
+        }
+        
+        .test-terms h3 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        
+        .test-term {
+            display: inline-block;
+            padding: 6px 12px;
+            margin: 4px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        
+        .test-term:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .info-box {
+            margin-top: 24px;
+            padding: 16px;
+            background: #e8eeff;
+            border-left: 4px solid #667eea;
+            border-radius: 4px;
+        }
+        
+        .info-box h3 {
+            font-size: 14px;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+        
+        .info-box ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .info-box li {
+            font-size: 13px;
+            color: #555;
+            margin: 4px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+        
+        .info-box li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 术语自动补全验证</h1>
+        <p class="subtitle">输入电商行业术语，体验智能提示功能</p>
+        
+        <div class="input-wrapper">
+            <input 
+                type="text" 
+                id="queryInput" 
+                placeholder="输入查询，如：查询最近7天订单..."
+                autocomplete="off"
+            >
+            <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="charCount">0</div>
+                <div class="stat-label">输入字符</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="matchCount">0</div>
+                <div class="stat-label">匹配术语</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="selectCount">0</div>
+                <div class="stat-label">选择次数</div>
+            </div>
+        </div>
+        
+        <div class="test-terms">
+            <h3>快速测试：</h3>
+            <div id="testTerms"></div>
+        </div>
+        
+        <div class="info-box">
+            <h3>✨ 功能特性</h3>
+            <ul>
+                <li>支持任意位置输入触发（提取最后一个词）</li>
+                <li>防抖处理（300ms延迟）</li>
+                <li>模糊匹配 + 按使用频率排序</li>
+                <li>键盘导航（↑↓选择，Enter确认，Esc关闭）</li>
+                <li>二级缓存（Caffeine L1 + Redis L2）</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        // ✅ 全局变量
+        let debounceTimer = null;
+        let selectedIndex = -1;
+        let selectCount = 0;
+        let currentSuggestions = [];
+        
+        // ✅ DOM元素
+        const input = document.getElementById('queryInput');
+        const dropdown = document.getElementById('autocompleteDropdown');
+        const charCountEl = document.getElementById('charCount');
+        const matchCountEl = document.getElementById('matchCount');
+        const selectCountEl = document.getElementById('selectCount');
+        const testTermsContainer = document.getElementById('testTerms');
+        
+        // ✅ 初始化测试术语按钮
+        function initTestTerms() {
+            const testTerms = ['订单', '用户', 'GMV', '销售额', '商品', '转化率'];
+            testTerms.forEach(term => {
+                const btn = document.createElement('span');
+                btn.className = 'test-term';
+                btn.textContent = term;
+                btn.onclick = () => {
+                    input.value = term;
+                    input.focus();
+                    handleInput();
+                };
+                testTermsContainer.appendChild(btn);
+            });
+        }
+        
+        // ✅ 防抖函数
+        function debounce(func, delay) {
+            return function(...args) {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+        
+        // ✅ 渲染下拉列表
+        function renderDropdown(suggestions, prefix) {
+            if (suggestions.length === 0) {
+                dropdown.classList.remove('active');
+                return;
+            }
+            
+            currentSuggestions = suggestions;
+            selectedIndex = -1;
+            
+            const html = suggestions.map((item, index) => {
+                const highlightedTerm = highlightMatch(item.term, prefix);
+                
+                return `
+                    <div class="autocomplete-item" data-index="${index}" onclick="selectTerm(${index})">
+                        <span class="term">${highlightedTerm}</span>
+                        <span class="type">${item.type}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            dropdown.innerHTML = html;
+            dropdown.classList.add('active');
+            
+            matchCountEl.textContent = suggestions.length;
+        }
+        
+        // ✅ 高亮匹配文本
+        function highlightMatch(term, prefix) {
+            if (!prefix) return term;
+            
+            const regex = new RegExp(`(${prefix})`, 'gi');
+            return term.replace(regex, '<span class="highlight">$1</span>');
+        }
+        
+        // ✅ 选择术语（显示动作列表）
+        async function selectTerm(index) {
+            if (index < 0 || index >= currentSuggestions.length) {
+                return;
+            }
+            
+            const selectedTerm = currentSuggestions[index].term;
+            const currentValue = input.value;
+            
+            // ✅ 调用后端HanLP分词API获取精确词边界
+            try {
+                const response = await fetch(`/api/terms/segment?text=${encodeURIComponent(currentValue)}`);
+                const result = await response.json();
+                
+                if (result.success && result.words && result.words.length > 0) {
+                    // 获取最后一个词
+                    const lastWord = result.words[result.words.length - 1];
+                    const lastWordStart = result.positions[result.positions.length - 1];
+                    
+                    // 替换最后一个词
+                    const prefix = currentValue.substring(0, lastWordStart);
+                    input.value = prefix + selectedTerm;
+                } else {
+                    // 兜底：使用正则匹配
+                    const match = currentValue.match(/[\u4e00-\u9fa5a-zA-Z]{2,}$/);
+                    if (match) {
+                        const startIndex = currentValue.length - match[0].length;
+                        input.value = currentValue.substring(0, startIndex) + selectedTerm;
+                    } else {
+                        input.value = selectedTerm;
+                    }
+                }
+            } catch (error) {
+                console.error('❌ 分词API失败:', error);
+                // 兜底逻辑
+                const match = currentValue.match(/[\u4e00-\u9fa5a-zA-Z]{2,}$/);
+                if (match) {
+                    const startIndex = currentValue.length - match[0].length;
+                    input.value = currentValue.substring(0, startIndex) + selectedTerm;
+                } else {
+                    input.value = selectedTerm;
+                }
+            }
+            
+            dropdown.classList.remove('active');
+            
+            selectCount++;
+            selectCountEl.textContent = selectCount;
+            
+            console.log(`✅ 选择术语: ${selectedTerm}, 完整输入: ${input.value}`);
+            
+            // ✅ 查询该术语关联的动作
+            await showTermActions(selectedTerm);
+        }
+        
+        // ✅ 新增：显示术语动作列表
+        async function showTermActions(term) {
+            try {
+                const response = await fetch(`/api/terms/actions?term=${encodeURIComponent(term)}`);
+                const result = await response.json();
+                
+                if (result.success && result.data && result.data.length > 0) {
+                    renderActionDropdown(result.data, term);
+                } else {
+                    console.log('⚠️ 该术语没有关联动作');
+                }
+            } catch (error) {
+                console.error('❌ 查询术语动作失败:', error);
+            }
+        }
+        
+        // ✅ 新增：渲染动作下拉框
+        function renderActionDropdown(actions, term) {
+            const html = actions.map((action, index) => `
+                <div class="autocomplete-item" data-index="${index}" onclick="executeAction('${action.sqlTemplateId}', '${action.actionLabel}')">
+                    <span class="term">${action.actionLabel}</span>
+                    <span class="type">${action.action}</span>
+                </div>
+            `).join('');
+            
+            dropdown.innerHTML = html;
+            dropdown.classList.add('active');
+            
+            matchCountEl.textContent = actions.length;
+            
+            console.log(`✅ 显示${actions.length}个动作选项`);
+        }
+        
+        // ✅ 新增：执行动作（调用模板生成SQL）
+        async function executeAction(templateId, actionLabel) {
+            console.log(`🚀 执行动作: ${actionLabel}, 模板ID: ${templateId}`);
+            
+            // TODO: 调用后端接口生成SQL并展示结果
+            alert(`即将执行: ${actionLabel}\n模板ID: ${templateId}\n\n（此功能待集成到主查询页面）`);
+            
+            dropdown.classList.remove('active');
+        }
+        
+        // ✅ 处理输入事件（渐进式提示）
+        function handleInput() {
+            const value = input.value;
+            charCountEl.textContent = value.length;
+            
+            if (value.trim().length === 0) {
+                dropdown.classList.remove('active');
+                matchCountEl.textContent = 0;
+                return;
+            }
+            
+            // ✅ 渐进式提示策略：
+            // 1. 输入≥2字符才触发（避免单字符误触）
+            // 2. 以空格/标点结尾时优先触发（用户完成一个词）
+            // 3. 否则提取最后一个词进行匹配
+            const lastWord = extractLastWord(value);
+            
+            console.log('[handleInput] 完整输入:', value, '| 最后一个词:', lastWord, '| 长度:', lastWord.length);
+            
+            // 仅当最后一个词≥2字符时才触发补全
+            if (lastWord.length >= 2) {
+                debouncedSearch(lastWord);
+            } else {
+                dropdown.classList.remove('active');
+                matchCountEl.textContent = 0;
+            }
+        }
+        
+        // ✅ 提取最后一个词（以空格/标点分隔，或提取最后2-4个中文字符）
+        function extractLastWord(text) {
+            if (!text || text.trim() === '') return '';
+            
+            const trimmed = text.trim();
+            
+            // 1. 先尝试按空格/标点分割
+            const parts = trimmed.split(/[\s,，.。!！?？;；:：]+/);
+            const lastPart = parts[parts.length - 1].trim();
+            
+            if (lastPart.length === 0) return '';
+            
+            // 2. 如果最后一部分包含中文且长度>4，提取最后2-4个字符
+            //    （假设用户输入的是"最近7天订单"，需要提取"订单"）
+            if (/[\u4e00-\u9fa5]/.test(lastPart) && lastPart.length > 4) {
+                // 从后往前提取连续的中文或数字
+                let end = lastPart.length;
+                let start = end;
+                
+                // 找到最后一个非中文/数字的位置
+                for (let i = end - 1; i >= 0; i--) {
+                    const char = lastPart[i];
+                    if (/[\u4e00-\u9fa50-9a-zA-Z]/.test(char)) {
+                        start = i;
+                    } else {
+                        break;
+                    }
+                }
+                
+                const candidate = lastPart.substring(start, end);
+                
+                // 如果候选词长度>=2，返回最后2-4个字符
+                if (candidate.length >= 2) {
+                    // 优先返回最后2个字符（如"订单"）
+                    return candidate.length > 4 ? candidate.substring(candidate.length - 4) : candidate;
+                }
+            }
+            
+            // 3. 否则返回整个最后一部分
+            return lastPart;
+        }
+        
+        // ✅ ESC键关闭下拉框（跳过补全）
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                dropdown.classList.remove('active');
+                input.focus();
+            }
+        });
+        
+        // ✅ 执行搜索（防抖后）- 直接调用API
+        async function searchTerms(prefix) {
+            try {
+                const response = await fetch(`/api/terms/suggest?prefix=${encodeURIComponent(prefix)}&limit=10`);
+                const result = await response.json();
+                
+                let suggestions = [];
+                if (result.success && result.data) {
+                    suggestions = result.data.map(item => ({
+                        term: item.term,
+                        type: item.type,
+                        usage_count: item.usageCount
+                    }));
+                } else {
+                    console.warn('⚠️ API返回失败:', result.message);
+                }
+                
+                renderDropdown(suggestions, prefix);
+            } catch (error) {
+                console.error('❌ 调用术语建议API失败:', error);
+                renderDropdown([], prefix);
+            }
+        }
+        
+        const debouncedSearch = debounce(searchTerms, 300);
+        
+        // ✅ 键盘事件处理
+        function handleKeydown(e) {
+            if (!dropdown.classList.contains('active')) {
+                return;
+            }
+            
+            switch(e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    selectedIndex = Math.min(selectedIndex + 1, currentSuggestions.length - 1);
+                    updateSelection();
+                    break;
+                    
+                case 'ArrowUp':
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, -1);
+                    updateSelection();
+                    break;
+                    
+                case 'Enter':
+                    e.preventDefault();
+                    if (selectedIndex >= 0) {
+                        selectTerm(selectedIndex);
+                    }
+                    break;
+                    
+                case 'Escape':
+                    e.preventDefault();
+                    dropdown.classList.remove('active');
+                    break;
+            }
+        }
+        
+        function updateSelection() {
+            const items = dropdown.querySelectorAll('.autocomplete-item');
+            items.forEach((item, index) => {
+                if (index === selectedIndex) {
+                    item.classList.add('selected');
+                    item.scrollIntoView({ block: 'nearest' });
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+        
+        function handleClickOutside(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        }
+        
+        input.addEventListener('input', handleInput);
+        input.addEventListener('keydown', handleKeydown);
+        document.addEventListener('click', handleClickOutside);
+        
+        initTestTerms();
+        
+        console.log('✅ 术语自动补全功能验证页面已加载');
+    </script>
+</body>
+</html>

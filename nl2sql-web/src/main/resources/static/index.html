@@ -723,6 +723,13 @@
         </div>
     </div>
     
+    <!-- ✅ 表关联管理模态框（在父窗口渲染） -->
+    <div class="modal-overlay" id="relationshipModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;">
+        <div class="modal" id="relationshipModalContent" style="background:white;border-radius:12px;width:90%;max-width:700px;max-height:90vh;overflow-y:auto;">
+            <!-- 动态内容将通过JavaScript注入 -->
+        </div>
+    </div>
+    
     <script>
         // ✅ 立即检查登录状态（在最前面）
         const token = localStorage.getItem('token');
@@ -1616,7 +1623,151 @@
             
             // 窗口大小改变时重新调整
             window.addEventListener('resize', adjustMenuSpacing);
+            
+            // ✅ 监听iframe的postMessage消息
+            window.addEventListener('message', handleIframeMessage);
         };
+        
+        // ✅ 处理iframe发送的消息
+        function handleIframeMessage(event) {
+            const data = event.data;
+            
+            if (data.type === 'SHOW_MODAL') {
+                showRelationshipModal(data.modalType);
+            } else if (data.type === 'CLOSE_MODAL') {
+                closeRelationshipModal();
+            }
+        }
+        
+        // ✅ 显示表关联管理模态框
+        function showRelationshipModal(modalType) {
+            const overlay = document.getElementById('relationshipModalOverlay');
+            const content = document.getElementById('relationshipModalContent');
+            const iframe = document.getElementById('iframe-relationship-management');
+            
+            if (!overlay || !content || !iframe) {
+                console.error('❌ 模态框元素不存在');
+                return;
+            }
+            
+            // 根据类型设置不同的内容
+            let modalHTML = '';
+            
+            if (modalType === 'create' || modalType === 'edit') {
+                // 创建/编辑模态框 - 从iframe中获取表单
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const form = iframeDoc.getElementById('relationshipForm');
+                const modalTitle = iframeDoc.getElementById('modalTitle');
+                
+                if (form && modalTitle) {
+                    modalHTML = `
+                        <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                            <h2 style="font-size:18px;color:#333;margin:0;">${modalTitle.textContent}</h2>
+                            <button onclick="closeRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+                        </div>
+                        <div class="modal-body" style="padding:24px;">
+                            ${form.outerHTML}
+                        </div>
+                        <div class="modal-footer" style="padding:16px 24px;border-top:1px solid #e0e0e0;display:flex;justify-content:flex-end;gap:12px;">
+                            <button class="btn btn-cancel" onclick="closeRelationshipModal()" style="padding:10px 20px;background:#f5f5f5;color:#333;border:none;border-radius:6px;cursor:pointer;">取消</button>
+                            <button class="btn btn-primary" onclick="saveRelationshipFromParent()" style="padding:10px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;">保存</button>
+                        </div>
+                    `;
+                }
+            } else if (modalType === 'sqlParse') {
+                // SQL解析模态框
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const sqlInput = iframeDoc.getElementById('sqlInput');
+                const parseResults = iframeDoc.getElementById('parseResults');
+                
+                if (sqlInput) {
+                    modalHTML = `
+                        <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                            <h2 style="font-size:18px;color:#333;margin:0;">📝 从SQL提取关联关系</h2>
+                            <button onclick="closeRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+                        </div>
+                        <div class="modal-body" style="padding:24px;">
+                            <div class="form-group" style="margin-bottom:20px;">
+                                <label style="display:block;margin-bottom:8px;font-weight:500;color:#333;">粘贴SQL语句</label>
+                                <textarea id="parentSqlInput" rows="8" placeholder="SELECT o.*, u.name FROM orders o JOIN users u ON o.user_id = u.id WHERE ..." style="width:100%;padding:10px 12px;border:2px solid #e0e0e0;border-radius:6px;font-size:14px;font-family:monospace;">${sqlInput.value}</textarea>
+                            </div>
+                            <button onclick="parseSQLFromParent()" style="width:100%;padding:10px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;margin-bottom:20px;">🔍 解析SQL</button>
+                            <div id="parentParseResults" style="display:${parseResults && parseResults.style.display !== 'none' ? 'block' : 'none'};">
+                                <!-- 解析结果将在这里显示 -->
+                            </div>
+                        </div>
+                    `;
+                }
+            } else if (modalType === 'autoDetect') {
+                // 自动推断结果模态框
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const autoDetectTable = iframeDoc.getElementById('autoDetectTable');
+                
+                if (autoDetectTable) {
+                    modalHTML = `
+                        <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                            <h2 style="font-size:18px;color:#333;margin:0;">🤖 自动推断结果预览</h2>
+                            <button onclick="closeRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+                        </div>
+                        <div class="modal-body" style="padding:24px;">
+                            <div style="margin-bottom:16px;padding:12px;background:#f0f7ff;border-left:4px solid #667eea;border-radius:4px;">
+                                <strong>💡 提示：</strong>请检查以下推断结果，删除不正确的关联关系，确认无误后点击“批量保存”。
+                            </div>
+                            ${autoDetectTable.outerHTML}
+                            <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px;">
+                                <button class="btn btn-cancel" onclick="closeRelationshipModal()" style="padding:10px 20px;background:#f5f5f5;color:#333;border:none;border-radius:6px;cursor:pointer;">取消</button>
+                                <button class="btn btn-primary" onclick="saveAutoDetectedFromParent()" style="padding:10px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;">💾 批量保存</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            content.innerHTML = modalHTML;
+            overlay.style.display = 'flex';
+        }
+        
+        // ✅ 关闭表关联管理模态框
+        function closeRelationshipModal() {
+            const overlay = document.getElementById('relationshipModalOverlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+        }
+        
+        // ✅ 从父窗口保存关联关系
+        function saveRelationshipFromParent() {
+            const iframe = document.getElementById('iframe-relationship-management');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.saveRelationship) {
+                iframe.contentWindow.saveRelationship();
+                closeRelationshipModal();
+            }
+        }
+        
+        // ✅ 从父窗口解析SQL
+        function parseSQLFromParent() {
+            const iframe = document.getElementById('iframe-relationship-management');
+            const parentSqlInput = document.getElementById('parentSqlInput');
+            
+            if (iframe && iframe.contentWindow && iframe.contentWindow.parseSQL) {
+                // 同步输入框内容到iframe
+                const iframeSqlInput = iframe.contentDocument.getElementById('sqlInput');
+                if (iframeSqlInput && parentSqlInput) {
+                    iframeSqlInput.value = parentSqlInput.value;
+                }
+                
+                iframe.contentWindow.parseSQL();
+            }
+        }
+        
+        // ✅ 从父窗口保存自动推断结果
+        function saveAutoDetectedFromParent() {
+            const iframe = document.getElementById('iframe-relationship-management');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.saveAutoDetectedRelationships) {
+                iframe.contentWindow.saveAutoDetectedRelationships();
+                closeRelationshipModal();
+            }
+        }
     </script>
 </body>
 </html>

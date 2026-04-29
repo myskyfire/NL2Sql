@@ -378,9 +378,10 @@ public class TableRelationshipService {
             log.warn("LLM推断失败，仅使用规则引擎结果: {}", e.getMessage());
         }
         
-        // 3. 合并结果（检测冲突）
+        // 3. 合并结果（智能去重 + 真正冲突检测）
         Map<String, Map<String, Object>> mergedMap = new LinkedHashMap<>();
         List<Map<String, Object>> conflicts = new ArrayList<>();
+        int duplicateCount = 0; // 重复发现计数
         
         // 先添加规则引擎结果
         for (Map<String, Object> rel : ruleBasedResults) {
@@ -395,31 +396,42 @@ public class TableRelationshipService {
                 // 无冲突，直接添加
                 mergedMap.put(key, rel);
             } else {
-                // 检测到冲突，标记为需要用户确认
+                // ✅ 优化：检查是否为真正的冲突（内容不同）还是重复发现（内容一致）
                 Map<String, Object> existing = mergedMap.get(key);
-                Map<String, Object> conflict = new HashMap<>();
-                conflict.put("key", key);
-                conflict.put("ruleBased", existing);
-                conflict.put("llmBased", rel);
-                conflict.put("hasConflict", true);
-                conflicts.add(conflict);
+                boolean isRealConflict = isContentDifferent(existing, rel);
                 
-                log.warn("检测到冲突: {}", key);
+                if (isRealConflict) {
+                    // 真正冲突：内容不一致，需用户确认
+                    Map<String, Object> conflict = new HashMap<>();
+                    conflict.put("key", key);
+                    conflict.put("ruleBased", existing);
+                    conflict.put("llmBased", rel);
+                    conflict.put("hasConflict", true);
+                    conflicts.add(conflict);
+                    
+                    log.warn("检测到真正冲突: {} (规则引擎: {}, LLM: {})", 
+                        key, existing.get("relationshipType"), rel.get("relationshipType"));
+                } else {
+                    // 重复发现：内容一致，仅记录日志
+                    duplicateCount++;
+                    log.debug("重复发现关联（已去重）: {}", key);
+                }
             }
         }
         
         List<Map<String, Object>> finalResults = new ArrayList<>(mergedMap.values());
         
-        // 如果有冲突，在返回结果中添加冲突信息
+        // 如果有真正冲突，在返回结果中添加冲突信息
         if (!conflicts.isEmpty()) {
             Map<String, Object> resultWithConflicts = new HashMap<>();
             resultWithConflicts.put("relationships", finalResults);
             resultWithConflicts.put("conflicts", conflicts);
             resultWithConflicts.put("hasConflicts", true);
             resultWithConflicts.put("conflictCount", conflicts.size());
+            resultWithConflicts.put("duplicateCount", duplicateCount); // 新增：重复发现数量
             
-            log.info("智能推断完成，共 {} 条关联关系，{} 个冲突需用户确认", 
-                finalResults.size(), conflicts.size());
+            log.info("智能推断完成，共 {} 条关联关系，{} 个真正冲突需用户确认，{} 个重复发现已去重", 
+                finalResults.size(), conflicts.size(), duplicateCount);
             
             // 返回包含冲突信息的特殊格式
             Map<String, Object> wrapper = new HashMap<>();
@@ -428,7 +440,8 @@ public class TableRelationshipService {
             return Collections.singletonList(wrapper);
         }
         
-        log.info("智能推断完成，共 {} 条关联关系", finalResults.size());
+        log.info("智能推断完成，共 {} 条关联关系（{} 个重复发现已去重）", 
+            finalResults.size(), duplicateCount);
         return finalResults;
     }
     
@@ -803,6 +816,58 @@ public class TableRelationshipService {
         } catch (Exception e) {
             log.error("[TableRelationship] LLM调用超时({}s)", timeoutSeconds, e);
             throw new RuntimeException("LLM调用超时: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * ✅ 新增：判断两个关联关系是否内容不同（真正冲突）
+     * 
+     * @param existing 已存在的关联
+     * @param incoming 新发现的关联
+     * @return true=内容不同（真正冲突），false=内容一致（重复发现）
+     */
+    private boolean isContentDifferent(Map<String, Object> existing, Map<String, Object> incoming) {
+        // ✅ 仅比较置信度和描述，不再比较relationship_type（用户无法理解）
+        
+        // confidence差异超过阈值（如0.2）→ 潜在冲突
+        Double existingConfidence = getDoubleValue(existing.get("confidence"));
+        Double incomingConfidence = getDoubleValue(incoming.get("confidence"));
+        
+        if (existingConfidence != null && incomingConfidence != null) {
+            double diff = Math.abs(existingConfidence - incomingConfidence);
+            if (diff > 0.2) {
+                log.debug("置信度差异较大: {} vs {}", existingConfidence, incomingConfidence);
+                return true; // 置信度差异大，视为冲突
+            }
+        }
+        
+        // description明显不同 → 潜在冲突
+        String existingDesc = (String) existing.get("description");
+        String incomingDesc = (String) incoming.get("description");
+        
+        if (existingDesc != null && incomingDesc != null) {
+            // 如果两者都不为空且完全不同（非子串关系）
+            if (!existingDesc.contains(incomingDesc) && !incomingDesc.contains(existingDesc)) {
+                return true;
+            }
+        }
+        
+        // 内容基本一致，视为重复发现
+        return false;
+    }
+    
+    /**
+     * 安全获取Double值
+     */
+    private Double getDoubleValue(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
     

@@ -1,0 +1,8 @@
+chore: 更新PR Agent模型为Gemini 1.5 Flash 8B
+
+## 变更内容
+- 修改 `.github/workflows/pr_agent.yml` 中的 `config.model` 配置
+- 切换至 `gemini/gemini-1.5-flash-8b` 模型
+
+## 影响范围
+- **低风险**：仅CI/CD中PR自动评审使用的LLM模型变更
