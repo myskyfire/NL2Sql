@@ -24,8 +24,8 @@ public class ReActAgent {
     private final Map<String, ToolExecutor> tools;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    // 最大迭代次数，防止无限循环
-    private static final int MAX_ITERATIONS = 10;
+    // ✅ P1优化：降低最大迭代次数，qwen3.5-plus通常2-3次即可完成
+    private static final int MAX_ITERATIONS = 5;
     
     public ReActAgent(LLMService llmService) {
         this.llmService = llmService;

@@ -31,8 +31,8 @@ public class ContextSummarizerTool {
                 return "无对话历史";
             }
             
-            // 如果对话较少，不需要压缩
-            if (conversationHistory.size() <= 5) {
+            // ✅ P2优化：提高压缩阈值，减少不必要的LLM调用
+            if (conversationHistory.size() <= 10) {
                 return "对话较短，无需压缩";
             }
             

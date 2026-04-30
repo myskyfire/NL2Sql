@@ -117,8 +117,8 @@ public class SQLValidatorTool extends BaseToolAdapter {
                         break;
                     }
                     
-                    log.info("[SQLValidator] 尝试修正幻觉列名...");
-                    sql = attemptHallucinationCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues);
+                    log.info("[SQLValidator] 尝试统一纠错...");
+                    sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues);
                     continue;
                 }
             }
@@ -135,10 +135,11 @@ public class SQLValidatorTool extends BaseToolAdapter {
                 attempt, report.isSyntaxValid(), 
                 report.getAggregationIssues().size() + report.getJoinIssues().size());
             
-            // 语法错误修正
+            // 语法错误修正（使用统一纠错）
             if (!report.isSyntaxValid()) {
-                log.info("[SQLValidator] 尝试修正语法错误: {}", report.getSyntaxError());
-                sql = attemptSyntaxCorrection(sql, report.getSyntaxError(), question, schemaInfo, relationshipInfo);
+                log.info("[SQLValidator] 尝试统一纠错（语法错误）: {}", report.getSyntaxError());
+                List<String> issues = Collections.singletonList("语法错误: " + report.getSyntaxError());
+                sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, issues);
                 continue;
             }
             
@@ -157,8 +158,9 @@ public class SQLValidatorTool extends BaseToolAdapter {
                 log.warn("[SQLValidator] {}", warning.toString());
                 
                 if (attempt < maxRetries) {
-                    log.info("[SQLValidator] 尝试修正聚合/JOIN问题...");
-                    sql = attemptAggregationCorrection(sql, question, schemaInfo, relationshipInfo, warning.toString());
+                    log.info("[SQLValidator] 尝试统一纠错...");
+                    sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, 
+                        report.getAggregationIssues().isEmpty() ? report.getJoinIssues() : report.getAggregationIssues());
                     continue;
                 } else {
                     log.warn("[SQLValidator] 达到最大重试次数，返回原SQL（可能存在风险）");
@@ -259,10 +261,10 @@ public class SQLValidatorTool extends BaseToolAdapter {
     }
     
     /**
-     * 修正幻觉列名
+     * ✅ P2优化：合并三种纠错为一次LLM调用，减少延迟
      */
-    private String attemptHallucinationCorrection(String sql, String question, String schemaInfo, 
-                                                  String relationshipInfo, List<String> issues) {
+    private String attemptUnifiedCorrection(String sql, String question, String schemaInfo, 
+                                           String relationshipInfo, List<String> issues) {
         try {
             StringBuilder issueDesc = new StringBuilder();
             for (String issue : issues) {
@@ -270,7 +272,7 @@ public class SQLValidatorTool extends BaseToolAdapter {
             }
             
             String correctionPrompt = String.format(
-                "MySQL SQL专家。以下SQL包含不存在的列名（幻觉），请修正。\n\n" +
+                "MySQL SQL专家。以下SQL存在问题，请修正。\n\n" +
                 "用户问题：%s\n\n" +
                 "表结构：\n%s\n\n" +
                 "%s" +
@@ -279,7 +281,7 @@ public class SQLValidatorTool extends BaseToolAdapter {
                 "要求：\n" +
                 "1. 只输出修正后的SQL，无标记\n" +
                 "2. **严格基于上述表结构中的列名**，不要臆造\n" +
-                "3. 不确定则使用表中已有的相关字段\n" +
+                "3. SELECT非聚合字段必须出现在GROUP BY中\n" +
                 "4. 保持原有查询意图",
                 question, schemaInfo,
                 relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
@@ -290,71 +292,7 @@ public class SQLValidatorTool extends BaseToolAdapter {
             return MarkdownUtils.cleanSQL(correctedSql);
             
         } catch (Exception e) {
-            log.error("[SQLValidator] 幻觉列名修正失败", e);
-            return sql;
-        }
-    }
-    
-    /**
-     * 修正语法错误
-     */
-    private String attemptSyntaxCorrection(String failedSql, String errorMessage, 
-                                           String question, String schemaInfo, String relationshipInfo) {
-        try {
-            String correctionPrompt = String.format(
-                "MySQL SQL专家。以下SQL存在语法错误，请修正。\n\n" +
-                "用户问题：%s\n\n" +
-                "表结构：\n%s\n\n" +
-                "%s" +
-                "失败的SQL:\n%s\n\n" +
-                "错误信息:\n%s\n\n" +
-                "要求：\n" +
-                "1. 只输出修正后的SQL，无标记\n" +
-                "2. 保持原有查询意图\n" +
-                "3. 仔细检查括号、关键字、字段名",
-                question, schemaInfo,
-                relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
-                failedSql, errorMessage
-            );
-            
-            String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
-            return MarkdownUtils.cleanSQL(correctedSql);
-            
-        } catch (Exception e) {
-            log.error("[SQLValidator] 语法修正失败", e);
-            return failedSql;
-        }
-    }
-    
-    /**
-     * 修正聚合/JOIN问题
-     */
-    private String attemptAggregationCorrection(String sql, String question, String schemaInfo, 
-                                                String relationshipInfo, String issues) {
-        try {
-            String correctionPrompt = String.format(
-                "MySQL SQL专家。以下SQL存在逻辑问题，请修正。\n\n" +
-                "用户问题：%s\n\n" +
-                "表结构：\n%s\n\n" +
-                "%s" +
-                "有问题的SQL:\n%s\n\n" +
-                "问题:\n%s\n\n" +
-                "要求：\n" +
-                "1. 只输出修正后的SQL，无标记\n" +
-                "2. **重要：SELECT非聚合字段必须出现在GROUP BY中**\n" +
-                "   - 错误：SELECT o.created_at ... GROUP BY DATE_FORMAT(o.created_at, ...)\n" +
-                "   - 正确：SELECT DATE_FORMAT(o.created_at, '%%Y-%%m-%%d') AS '订单日期' ... GROUP BY DATE_FORMAT(o.created_at, '%%Y-%%m-%%d')\n" +
-                "3. 确保SELECT和GROUP BY使用相同表达式",
-                question, schemaInfo,
-                relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
-                sql, issues
-            );
-            
-            String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
-            return MarkdownUtils.cleanSQL(correctedSql);
-            
-        } catch (Exception e) {
-            log.error("[SQLValidator] 聚合/JOIN修正失败", e);
+            log.error("[SQLValidator] 统一纠错失败", e);
             return sql;
         }
     }
