@@ -56,9 +56,30 @@ public interface IndustryConceptAdminMapper {
                                  @Param("priority") Integer priority);
     
     /**
-     * 查询数据源的行业代码
+     * 查询数据源的行业代码(按优先级)
      */
     String selectIndustryCodeByDatasourceId(@Param("datasourceId") Long datasourceId);
+    
+    /**
+     * 查询数据源的业务类别
+     */
+    @Select("SELECT business_category FROM datasource_config WHERE id = #{datasourceId}")
+    String selectBusinessCategory(@Param("datasourceId") Long datasourceId);
+    
+    /**
+     * 查询行业模板信息
+     */
+    Map<String, Object> selectIndustryTemplate(@Param("industryCode") String industryCode);
+    
+    /**
+     * 查询已审核的行业概念列表
+     */
+    List<Map<String, Object>> selectApprovedConcepts(@Param("industryCode") String industryCode);
+    
+    /**
+     * 查询概念关系(同义词)
+     */
+    List<Map<String, Object>> selectConceptRelations(@Param("industryCode") String industryCode);
     
     /**
      * 查询数据源的业务类别
