@@ -259,12 +259,8 @@ public class TableSelectionOrchestrator {
             
             progressPublisher.accept("generating_sql");
             
-            // 0. 同义词扩展（增强语义理解）
-            String expandedQuery = synonymService.expandSynonyms(query, datasourceId);
-            if (!expandedQuery.equals(query)) {
-                log.info("[TableSelection] 查询扩展: {} -> {}", query, expandedQuery);
-                progressPublisher.accept("synonym_expansion");
-            }
+            // 0. ✅ P0优化：删除空的同义词扩展调用，直接使用原始query
+            String expandedQuery = query;
             
             // ✅ 记录归一化信息
             String normalizedQuery = schemaRetrievalService.normalizeQueryForCache(query);
