@@ -175,6 +175,10 @@ public class AgentConfig {
                 // ✅ 检查是否是 Workflow Skill
                 boolean hasWorkflow = groovySkillExecutor.hasWorkflow(skill.getSkillPath());
                 
+                // ✅ 改造1：加载完整 SKILL.md 内容作为 tool description
+                String fullSkillContent = groovySkillExecutor.loadFullSkillContent(skill.getSkillPath());
+                String llmVisibleDescription = buildLlmVisibleDescription(fullSkillContent, skill.getDescription(), hasWorkflow);
+                
                 agent.registerTool(skill.getToolName(), (args, dsId, userId, username, userMessage) -> {
                     try {
                         // ✅ 自动校验必需参数（从 Skill 元数据中获取）
@@ -313,7 +317,7 @@ public class AgentConfig {
                         log.error("[{}] 执行失败", skill.getToolName(), e);
                         return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
                     }
-                }, skill.getDescription() + (hasWorkflow ? " [Workflow]" : " [Groovy]"));
+                }, llmVisibleDescription);  // ✅ 使用完整的 SKILL.md 内容作为 description
                 
                 log.info("启用 {} ({})", skill.getToolName(), hasWorkflow ? "Workflow" : "Groovy");
             }
@@ -832,5 +836,94 @@ public class AgentConfig {
             case "area": return "面积图";
             default: return "图表";
         }
+    }
+    
+    /**
+     * ✅ 改造1：构建 LLM 可见的 tool description
+     * 从完整 SKILL.md 中提取关键章节，拼接成一段完整的工具使用指南
+     * 
+     * @param fullContent SKILL.md 完整内容
+     * @param shortDescription frontmatter 中的简短描述
+     * @param hasWorkflow 是否是 Workflow Skill
+     * @return 适合 LLM 阅读的完整描述
+     */
+    private String buildLlmVisibleDescription(String fullContent, String shortDescription, boolean hasWorkflow) {
+        if (fullContent == null || fullContent.trim().isEmpty()) {
+            return shortDescription + (hasWorkflow ? " [Workflow]" : " [Groovy]");
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        
+        // 1. 添加简短描述（作为开头）
+        if (shortDescription != null && !shortDescription.trim().isEmpty()) {
+            sb.append(shortDescription).append("\n\n");
+        }
+        
+        // 2. 提取关键章节
+        String[] keySections = {"适用场景", "不适用场景", "参数", "返回", "示例"};
+        for (String section : keySections) {
+            String content = extractMarkdownSection(fullContent, section);
+            if (content != null && !content.trim().isEmpty()) {
+                sb.append(content).append("\n\n");
+            }
+        }
+        
+        // 3. 添加标记
+        if (hasWorkflow) {
+            sb.append("[实现方式: 声明式 Workflow]\n");
+        } else {
+            sb.append("[实现方式: Groovy 脚本]\n");
+        }
+        
+        String result = sb.toString().trim();
+        
+        // 4. 长度控制：如果超过 3000 字符，截断并提示
+        if (result.length() > 3000) {
+            log.warn("[buildLlmVisibleDescription] Tool description 过长 ({} chars)，已截断", result.length());
+            return result.substring(0, 3000) + "\n\n...（内容过长，已截断）";
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 从 Markdown 中提取指定章节内容
+     * 
+     * @param markdown 完整 Markdown 文本
+     * @param sectionTitle 章节标题（如“适用场景”）
+     * @return 章节内容（包含标题），未找到返回 null
+     */
+    private String extractMarkdownSection(String markdown, String sectionTitle) {
+        if (markdown == null || sectionTitle == null) {
+            return null;
+        }
+        
+        // 匹配 ## 章节标题
+        String pattern = "##\\s*" + sectionTitle;
+        int startIndex = -1;
+        
+        // 查找章节起始位置
+        String[] lines = markdown.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].matches(pattern)) {
+                startIndex = i;
+                break;
+            }
+        }
+        
+        if (startIndex == -1) {
+            return null;
+        }
+        
+        // 提取章节内容（直到下一个 ## 或文件末尾）
+        StringBuilder sectionContent = new StringBuilder();
+        for (int i = startIndex; i < lines.length; i++) {
+            if (i > startIndex && lines[i].startsWith("##")) {
+                break;  // 遇到下一个章节，停止
+            }
+            sectionContent.append(lines[i]).append("\n");
+        }
+        
+        return sectionContent.toString().trim();
     }
 }

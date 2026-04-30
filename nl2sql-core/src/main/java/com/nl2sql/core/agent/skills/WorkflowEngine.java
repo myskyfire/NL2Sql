@@ -93,6 +93,35 @@ public class WorkflowEngine {
                     variables.put(outputVar, result);
                     log.info("[WorkflowEngine] 步骤 {} 完成: tool={}, output_var={}", stepId, toolName, outputVar);
                     
+                } else if ("call_groovy".equals(action) && step.containsKey("script")) {
+                    // ✅ Groovy 脚本调用（混合模式）
+                    String scriptName = (String) step.get("script");
+                    Map<String, Object> params = resolveParams((Map<String, Object>) step.get("input"), variables);
+                    
+                    // 构建脚本路径（相对于当前 Skill 目录）
+                    String skillDir = skillPath.substring(0, skillPath.lastIndexOf('/') + 1);
+                    String scriptPath = skillDir + scriptName;
+                    
+                    log.info("[WorkflowEngine] 步骤 {} 调用 Groovy 脚本: {}", stepId, scriptPath);
+                    
+                    // 通过 GroovySkillExecutor 执行脚本
+                    Object result = executeGroovyScript(scriptPath, params, context);
+                    
+                    // 解析结果（Groovy 返回 JSON 字符串）
+                    Map<String, Object> resultMap;
+                    if (result instanceof String) {
+                        resultMap = objectMapper.readValue((String) result, Map.class);
+                    } else if (result instanceof Map) {
+                        resultMap = (Map<String, Object>) result;
+                    } else {
+                        resultMap = Map.of("result", result);
+                    }
+                    
+                    // 保存到 output_var 或 stepId
+                    String outputVar = (String) step.getOrDefault("output_var", stepId);
+                    variables.put(outputVar, resultMap);
+                    log.info("[WorkflowEngine] 步骤 {} 完成: script={}, output_var={}", stepId, scriptName, outputVar);
+                    
                 } else if ("call_skill".equals(action) && step.containsKey("skill")) {
                     // Skill 调用
                     String skillName = (String) step.get("skill");
@@ -444,5 +473,66 @@ public class WorkflowEngine {
         }
         
         return current;
+    }
+    
+    /**
+     * ✅ 执行 Groovy 脚本（混合模式支持）
+     */
+    private Object executeGroovyScript(String scriptPath, Map<String, Object> params, SkillContext context) {
+        try {
+            log.info("[WorkflowEngine] 执行 Groovy 脚本: {}", scriptPath);
+            
+            // 加载 Groovy 脚本
+            var resource = new org.springframework.core.io.ClassPathResource(
+                scriptPath,
+                getClass().getClassLoader()
+            );
+            
+            if (!resource.exists()) {
+                throw new IllegalArgumentException("Groovy 脚本不存在: " + scriptPath);
+            }
+            
+            // 读取脚本内容
+            String scriptContent;
+            try (var reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(resource.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                scriptContent = reader.lines().collect(java.util.stream.Collectors.joining("\n"));
+            }
+            
+            // 编译并执行
+            groovy.lang.GroovyClassLoader classLoader = new groovy.lang.GroovyClassLoader();
+            Class<?> scriptClass = classLoader.parseClass(scriptContent);
+            Object scriptInstance = scriptClass.getDeclaredConstructor().newInstance();
+            
+            // 查找 execute 方法
+            java.lang.reflect.Method executeMethod = null;
+            for (java.lang.reflect.Method method : scriptClass.getMethods()) {
+                if ("execute".equals(method.getName()) && 
+                    method.getParameterCount() == 1 &&
+                    SkillContext.class.isAssignableFrom(method.getParameterTypes()[0])) {
+                    executeMethod = method;
+                    break;
+                }
+            }
+            
+            if (executeMethod == null) {
+                throw new IllegalStateException("Groovy 脚本中未找到 execute(SkillContext) 方法");
+            }
+            
+            // 将参数设置到 context
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                context.setParameter(entry.getKey(), entry.getValue());
+            }
+            
+            // 执行脚本
+            Object result = executeMethod.invoke(scriptInstance, context);
+            
+            log.info("[WorkflowEngine] Groovy 脚本执行成功: {}", scriptPath);
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[WorkflowEngine] Groovy 脚本执行失败: {}", scriptPath, e);
+            throw new RuntimeException("Groovy 脚本执行失败: " + e.getMessage(), e);
+        }
     }
 }

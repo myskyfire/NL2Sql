@@ -127,6 +127,34 @@ public class GroovySkillExecutor implements ApplicationContextAware {
     }
     
     /**
+     * 读取 SKILL.md 完整内容（用于注入到 LLM context）
+     * 
+     * @param skillPath SKILL.md 所在目录路径（classpath）
+     * @return SKILL.md 完整文本内容
+     */
+    public String loadFullSkillContent(String skillPath) {
+        try {
+            String skillMdPath = skillPath.endsWith("/") ? skillPath + "SKILL.md" : skillPath + "/SKILL.md";
+            var resource = new ClassPathResource(skillMdPath, getClass().getClassLoader());
+            
+            if (!resource.exists()) {
+                log.warn("[GroovySkillExecutor] SKILL.md 不存在: {}", skillMdPath);
+                return "";
+            }
+            
+            // 读取完整文件内容
+            try (var reader = new BufferedReader(
+                    new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+                return reader.lines().collect(Collectors.joining("\n"));
+            }
+            
+        } catch (Exception e) {
+            log.error("[GroovySkillExecutor] 读取 SKILL.md 失败: {}", skillPath, e);
+            return "";
+        }
+    }
+    
+    /**
      * 执行 Skill
      * 
      * @param skillPath SKILL.md 所在目录路径（classpath）
