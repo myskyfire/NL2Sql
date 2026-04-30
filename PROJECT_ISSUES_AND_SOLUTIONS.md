@@ -1156,3 +1156,254 @@ function selectDatasource(datasourceId, datasourceName) {
 - ✅ 澄清类交互（数据源、表关系等）完成后，应重新发送原始问题+澄清结果
 - ✅ 前端状态管理要清晰，避免从UI元素反推业务数据
 
+---
+
+## 8. LLM超时与异常处理问题
+
+### 问题8.1：LLM调用超时后错误信息被当作SQL执行
+**时间**：2026-04-30  
+**现象**：复杂查询导致阿里云API超时，返回 `"LLM调用失败: API调用失败: request timed out"`，该错误信息被传递给后续流程，导致：
+- EXPLAIN执行失败
+- 安全拦截触发
+- SQL纠错服务再次调用LLM（形成死循环）
+
+**根本原因**：
+- `LLMService.generateSQL()` 捕获异常后返回错误字符串，而非抛出异常
+- 上层代码无法区分“正常SQL”和“错误信息”
+- 缺少重试机制，单次超时直接失败
+
+**解决方案**：
+
+**1. 实现重试机制（OpenAICompatibleProvider）**
+```java
+@Override
+public Map<String, Object> generateWithTools(...) {
+    // ✅ 重试机制：最多2次，超时时间逐级增加（60s → 90s）
+    int maxRetries = 2;
+    int[] timeouts = {60, 90};
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            log.info("[OpenAICompatibleProvider] 第{}/{}次尝试，超时={}秒", attempt, maxRetries, timeouts[attempt - 1]);
+            
+            // 构建请求并发送
+            HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(timeouts[attempt - 1]))
+                .build();
+            
+            // ... 发送请求 ...
+            
+            log.info("[OpenAICompatibleProvider] ✅ 第{}次尝试成功", attempt);
+            return unifiedResponse;
+            
+        } catch (HttpTimeoutException e) {
+            log.warn("[OpenAICompatibleProvider] 第{}次尝试超时: {}", attempt, e.getMessage());
+            if (attempt == maxRetries) {
+                log.error("[OpenAICompatibleProvider] ❌ 所有重试均失败");
+                throw new RuntimeException("LLM调用超时，已重试" + maxRetries + "次", e);
+            }
+            // 继续下一次重试
+        } catch (Exception e) {
+            log.error("[OpenAICompatibleProvider] Tool Calling 失败", e);
+            throw new RuntimeException("Tool Calling 失败: " + e.getMessage(), e);
+        }
+    }
+    
+    throw new RuntimeException("LLM调用失败");
+}
+```
+
+**2. 异常处理规范化（全链路）**
+
+| 层级 | 修改前 | 修改后 |
+|------|--------|--------|
+| LLMService.generateSQL() | 返回错误字符串 | 抛出RuntimeException |
+| MultiModelService.generateSQL() | 返回错误字符串 | 抛出异常 |
+| ReActAgent.execute() | 返回错误字符串 | 重新抛出异常 |
+| SQLCorrectionService | 无检测 | 添加LLM错误检测 |
+| SQLExecutor | 无检测 | 执行前拦截LLM错误信息 |
+
+```java
+// LLMService.java
+} catch (Exception e) {
+    log.error("[LLMService] SQL生成失败", e);
+    throw new RuntimeException("SQL生成失败: " + e.getMessage(), e);  // ✅ 抛出异常
+}
+
+// SQLCorrectionService.java
+String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
+correctedSql = cleanSQL(correctedSql);
+
+// ✅ 关键校验：检查是否为 LLM 错误信息
+if (correctedSql.contains("LLM调用失败") || 
+    correctedSql.contains("API调用失败") || 
+    correctedSql.contains("request timed out") ||
+    correctedSql.contains("timeout")) {
+    log.error("[SQLCorrection] LLM 返回错误信息，非有效 SQL: {}", correctedSql);
+    return failedSql; // 返回原 SQL，避免死循环
+}
+
+// SQLExecutor.java
+// ✅ 关键校验：检查是否为 LLM 错误信息（避免死循环）
+if (sql.contains("LLM调用失败") || 
+    sql.contains("API调用失败") || 
+    sql.contains("request timed out")) {
+    result.setError("SQL生成失败：LLM服务异常，请稍后重试");
+    result.setExecutionTime(0);
+    log.error("[SQL拦截] 检测到 LLM 错误信息: {}", sql);
+    return result;
+}
+```
+
+**配置调整**：
+```yaml
+# application-local.yml
+llm:
+  aliyun:
+    timeout: 60  # 基础超时，配合重试机制（60s → 90s）
+```
+
+**效果**：
+- ✅ 超时自动重试，提高成功率
+- ✅ 异常正确传递，避免死循环
+- ✅ 最坏情况总耗时约150秒（2.5分钟），可接受
+- ✅ 前端收到明确错误提示，而非诡异SQL
+
+**经验教训**：
+- ✅ **LLM调用失败必须抛出异常，不能返回错误字符串**
+- ✅ **异常处理需追踪完整调用链，确保每层都能正确处理**
+- ✅ **重试机制需要在Provider层实现，而非业务层**
+- ✅ **超时时间需要平衡成功率和用户体验**
+
+---
+
+### 问题8.2：低分示例匹配逻辑误判修正后的SQL
+**时间**：2026-04-30  
+**现象**：第一次生成错误SQL（ORDER BY使用单引号 `'销售额'`）被打1星，第二次生成正确SQL（使用反引号 `` `销售额` ``）仍被标记为“与低分示例完全匹配”，触发不必要的重新生成。
+
+**根本原因**：
+- `checkExactMatchLowRating` 只比较 `question`，不比较 `generated_sql`
+- 只要问题相同，无论SQL是否正确，都会匹配到低分记录
+
+**解决方案**：
+
+**1. RagFeedbackMapper.xml**
+```xml
+<!-- 检查是否有相同问题的低分反馈 -->
+<select id="checkExactMatchLowRating" resultType="...">
+    SELECT question, generated_sql, feedback_text, rating, 1.0 as relevance
+    FROM rag_feedback
+    WHERE question = #{question}
+      AND rating &lt;= 2
+      AND generated_sql = #{generatedSql}  -- ✅ 关键修复：必须 SQL 也完全相同
+    ORDER BY created_at DESC
+    LIMIT 1
+</select>
+```
+
+**2. RagFeedbackMapper.java**
+```java
+LowRatingExample checkExactMatchLowRating(
+    @Param("question") String question,
+    @Param("generatedSql") String generatedSql  // ✅ 新增参数
+);
+```
+
+**3. LowRatingExampleService.java**
+```java
+LowRatingExample exactMatch = ragFeedbackMapper.checkExactMatchLowRating(
+    question,
+    generatedSql  // ✅ 传入 SQL
+);
+```
+
+**效果**：
+- ✅ 只有 question + SQL 都完全相同时才匹配低分记录
+- ✅ 修正后的正确SQL不再被误判
+- ✅ 减少不必要的LLM调用
+
+**经验教训**：
+- ✅ **低分示例匹配需要精确到SQL级别，而非仅问题级别**
+- ✅ **RAG系统需要持续优化匹配逻辑，避免误判**
+
+---
+
+### 问题8.3：SQL验证将AS别名误判为幻觉列名
+**时间**：2026-04-30  
+**现象**：生成的SQL包含 `SUM(oi.subtotal) AS `销售额``，但验证服务报错：`❌ 列名 '`销售额`' 不在 Schema 白名单中，可能是大模型幻觉`
+
+**根本原因**：
+- `extractAllColumns` 提取了 ORDER BY 中的别名（如 `` `销售额` ``）
+- 白名单只包含真实列名，不包含别名
+- 导致误判为“幻觉列名”
+
+**解决方案**：
+
+**SQLValidationService.java - extractAllColumns方法**
+```java
+private Set<String> extractAllColumns(PlainSelect select) {
+    Set<String> columns = new HashSet<>();
+    
+    // 1. 提取 SELECT 中的列（✅ 只提取 Column 类型，跳过 Function/Aggregate）
+    if (select.getSelectItems() != null) {
+        for (SelectItem item : select.getSelectItems()) {
+            if (item instanceof SelectExpressionItem) {
+                SelectExpressionItem sei = (SelectExpressionItem) item;
+                Expression expr = sei.getExpression();
+                
+                // ✅ 只提取真实列名，跳过聚合函数和表达式
+                if (expr instanceof Column) {
+                    Column col = (Column) expr;
+                    String columnName = col.getColumnName();
+                    if (col.getTable() != null) {
+                        columnName = col.getTable().getName() + "." + columnName;
+                    }
+                    columns.add(columnName);
+                }
+                // ⚠️ 注意：不提取 Function/Aggregate 等表达式，因为它们是计算结果，不是真实列
+            }
+        }
+    }
+    
+    // 2. 提取 WHERE 中的列（简化版，只处理简单情况）
+    // ...
+    
+    // 3. 提取 ORDER BY 中的列（✅ 关键修复：跳过字符串常量/别名）
+    if (select.getOrderByElements() != null) {
+        for (OrderByElement orderBy : select.getOrderByElements()) {
+            Expression expr = orderBy.getExpression();
+            
+            // ✅ 只提取真实列名，跳过字符串常量（如 '销售额'）
+            if (expr instanceof Column) {
+                Column col = (Column) expr;
+                String columnName = col.getColumnName();
+                
+                // ⚠️ 如果列名是带引号的字符串（如 `销售额` 或 '销售额'），跳过
+                if (columnName.startsWith("`") || columnName.startsWith("'") || 
+                    columnName.startsWith("\"")) {
+                    log.debug("[SQLValidation] 跳过 ORDER BY 中的别名: {}", columnName);
+                    continue;
+                }
+                
+                if (col.getTable() != null) {
+                    columnName = col.getTable().getName() + "." + columnName;
+                }
+                columns.add(columnName);
+            }
+            // ⚠️ 注意：不提取 Function/Aggregate，因为它们是计算结果
+        }
+    }
+    
+    return columns;
+}
+```
+
+**效果**：
+- ✅ 不再误报 AS 别名为幻觉列名
+- ✅ 只校验真实数据库列名
+- ✅ 准确性提升
+
+**经验教训**：
+- ✅ **SQL验证需要区分“真实列名”和“计算表达式/别名”**
+- ✅ **白名单校验只能用于真实列名，不能用于别名**
+

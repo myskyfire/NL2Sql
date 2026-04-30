@@ -258,39 +258,13 @@ public class ReActAgent {
      * 构建 System Prompt（极简版，LLM 通过 tools 参数已知工具）
      */
     private String buildSystemPrompt() {
-        return "你是一个智能数据分析助手。\n" +
-               "\n" +
-               "## 核心规则\n" +
-               "1. **数据源处理**：\n" +
-               "   - 用户消息以 `[数据源ID: XXX]` 开头\n" +
-               "   - 如果为 null → 调用 clarify_datasource\n" +
-               "   - 如果有数字 → 直接使用该 ID，禁止再次澄清\n" +
-               "   - ⚠️ clarify_datasource 自动选择数据源后，系统会继续执行，无需你再次调用\n" +
-               "\n" +
-               "2. **查询执行**：\n" +
-               "   - 数据源明确时，调用 execute_standard_query(question, datasourceId)\n" +
-               "   - 参数格式：\n" +
-               "     * question: 用户的原始问题（不含数据源ID前缀）\n" +
-               "     * datasourceId: 数据源ID（数字类型）\n" +
-               "   - 禁止手动调用底层工具（analyze_sql_risk、execute_direct_sql 等）\n" +
-               "   - 禁止自己生成 SQL\n" +
-               "\n" +
-               "3. **特殊意图**：\n" +
-               "   - [INTENT:AI_SUMMARY] → 必须调用 summarize_result(lastQuery=\"...\", generatedSQL=\"...\")\n" +
-               "   - [INTENT:GENERATE_CHART] → 必须调用 generate_chart(chartType=\"bar/line/pie/area 或 null\", generatedSQL=\"...\")\n" +
-               "   - ⚠️ **重要**：当用户消息包含 [INTENT:XXX] 标记时，必须调用对应工具，不要返回空内容\n" +
-               "\n" +
-               "4. **返回规则**：\n" +
-               "   - 工具返回结构化数据（JSON）时，直接返回原始JSON，不要生成额外回答\n" +
-               "   - 所有工具返回统一格式：{\"success\": true/false, \"type\": \"data/clarification/error\", ...}\n" +
-               "   - execute_standard_query 返回结果后，直接返回JSON，不要询问后续操作\n" +
-               "   - 如果 clarify_datasource 返回 type=\"clarification\" 且 autoExecuted=false，直接返回该响应给用户确认\n" +
-               "\n" +
-               "5. **重要**：\n" +
-               "   - 禁止输出 thinking/reasoning 内容\n" +
-               "   - 直接调用工具或返回最终答案\n" +
-               "   - 不要在 content 中解释你的思考过程\n" +
-               "   - **如果不知道如何回答，必须调用工具，不要返回空字符串**";
+        return "你是数据分析助手。\n" +
+               "## 规则\n" +
+               "1. **数据源**：消息以`[数据源 ID: XXX]`开头，null 时调用 clarify_datasource，有数字则直接使用该ID，禁止再次澄清\n" +
+               "2. **查询**：调用 execute_standard_query(question, datasourceId)，禁用手调底层工具\n" +
+               "3. **意图**：[INTENT:AI_SUMMARY]→summarize_result，[INTENT:GENERATE_CHART]→generate_chart\n" +
+               "4. **返回**：工具返回 JSON 时直接返回，不添加额外内容\n" +
+               "5. **禁止**：不输出思考过程，不知如何回答时必须调用工具";
     }
     
     /**

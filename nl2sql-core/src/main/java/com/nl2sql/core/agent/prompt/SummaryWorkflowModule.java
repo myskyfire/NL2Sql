@@ -15,14 +15,9 @@ public class SummaryWorkflowModule implements PromptModule {
     
     @Override
     public String build() {
-        StringBuilder sb = new StringBuilder();
-        
-        sb.append("## 处理 AI 总结意图\n");
-        sb.append("- 如果消息包含 [INTENT:AI_SUMMARY] → 从消息中提取用户问题和 SQL，然后调用 summarize_result 工具\n");
-        sb.append("  格式：{\"name\": \"summarize_result\", \"arguments\": {\"context\": {\"lastQuery\": \"提取的用户问题\", \"generatedSQL\": \"提取的SQL\"}}}\n");
-        sb.append("- ⚠️ **重要**：不要询问数据源，不要调用其他工具\n\n");
-        
-        return sb.toString();
+        return "## AI 总结\n" +
+               "- [INTENT:AI_SUMMARY]→调用 summarize_result，从消息提取问题和 SQL\n" +
+               "- 不要询问数据源或调用其他工具\n\n";
     }
     
     @Override

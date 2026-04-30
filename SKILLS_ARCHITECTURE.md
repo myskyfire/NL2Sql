@@ -1,4 +1,4 @@
-﻿# Skills 架构设计文档
+# Skills 架构设计文档
 
 ## 1. 什么是 Skills？
 
@@ -371,7 +371,89 @@ Agent 回复：返回完整分析报告
 
 ---
 
-## 10. 总结
+## 10. Skills热部署与管理（最新）
+
+### 10.1 热部署架构
+
+**提交记录**: `90385d9 feat: Skills架构优化与热部署支持`
+
+系统支持Skills的动态加载和热部署，无需重启应用即可更新Skill逻辑。
+
+**核心组件**:
+1. **GroovySkillExecutor**: Groovy脚本执行器，支持动态编译和缓存
+2. **SkillsAdminController**: 管理端点，提供重载、扫描、列表查询功能
+3. **ApiKeyAuthFilter**: API Key认证过滤器，保护管理端点
+
+### 10.2 管理端点
+
+**配置项**:
+```yaml
+# application.yml
+admin:
+  api:
+    key: ${ADMIN_API_KEY:}  # 可选，生产环境强制要求
+```
+
+**API列表**:
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/skills/reload` | POST | 清除Groovy脚本缓存，重新加载 |
+| `/api/admin/skills/rescan` | POST | 触发重新扫描Skills目录 |
+| `/api/admin/skills/list` | GET | 获取已发现的Skills列表 |
+
+**使用示例**:
+```bash
+# 重载Skills（需要API Key）
+curl -X POST http://localhost:8080/api/admin/skills/reload \
+  -H "X-API-Key: your-secret-key"
+
+# 列出所有Skills
+curl http://localhost:8080/api/admin/skills/list \
+  -H "X-API-Key: your-secret-key"
+```
+
+### 10.3 混合模式示例（hybrid-example）
+
+系统提供了Workflow + Groovy混合架构的示例Skill，展示声明式编排与灵活逻辑结合的最佳实践。
+
+**文件位置**: `nl2sql-web/src/main/resources/skills/hybrid-example/`
+
+**结构**:
+```
+hybrid-example/
+├── SKILL.md                    # Skill描述文件
+├── workflow.yml                # Workflow定义
+└── scripts/
+    ├── SmartTableSelector.groovy   # 智能选表脚本
+    └── SQLCorrector.groovy         # SQL验证与修正脚本
+```
+
+**WorkflowEngine扩展**:
+```java
+// 支持call_groovy action
+} else if ("call_groovy".equals(action) && step.containsKey("script")) {
+    String scriptName = (String) step.get("script");
+    Object result = executeGroovyScript(scriptPath, params, context);
+    // 解析结果并保存到output_var
+}
+```
+
+### 10.4 Skills边界优化
+
+**删除的Skills**:
+- ❌ `nl2sql-workflow` - 能力被execute_standard_query完全覆盖
+- ❌ `execute_simple_query` - 与标准查询重叠，Workflow无法处理失败场景
+
+**新增的Skills**:
+- ✅ `sql-validate-execute` - SQL验证与执行
+- ✅ `sql-performance-analysis` - SQL性能分析
+
+**修正的配置**:
+- `sql-validate-execute` 的 workflow 配置：`execute_sql` → `execute_safe_sql`
+
+---
+
+## 11. 总结
 
 当前的 Skills 实现是一个**基于 Skills 理念的 Tool 封装模式**，具备以下特点：
 
@@ -379,6 +461,9 @@ Agent 回复：返回完整分析报告
 - 2 个可用的 Skills（StandardQuerySkill、ReportWithInsightsSkill）
 - Skills 的 Tool 封装和注册机制
 - Agent 可以通过 SystemMessage 引导选择 Skills
+- **Skills热部署支持**（最新）
+- **混合模式示例**（Workflow + Groovy）
+- **管理端点与API Key认证**
 
 ⚠️ **待完善**:
 - 缺少声明式元数据和自动发现机制

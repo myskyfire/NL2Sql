@@ -74,15 +74,15 @@ public class TranslationController {
             if (!needLLMTranslation.isEmpty()) {
                 // 构建翻译Prompt
                 StringBuilder prompt = new StringBuilder();
-                prompt.append("请将以下数据库字段名翻译成简洁的中文，保持原顺序返回JSON格式。\n\n");
+                prompt.append("请将以下数据库字段名翻译成简洁中文，保持原顺序。\n\n");
                 prompt.append("字段列表：\n");
                 for (String col : needLLMTranslation) {
                     prompt.append("- ").append(col).append("\n");
                 }
                 prompt.append("\n要求：\n");
-                prompt.append("1. 只返回JSON格式：{\"字段名\": \"中文翻译\"}\n");
-                prompt.append("2. 翻译要简洁准确，例如：total_amount -> 总金额, created_at -> 创建时间\n");
-                prompt.append("3. 不要添加任何解释或其他内容\n");
+                prompt.append("1. 只返回 JSON：{\"字段名\":\"中文翻译\"}\n");
+                prompt.append("2. 简洁准确，如：total_amount->总金额，created_at->创建时间\n");
+                prompt.append("3. 不要其他内容\n");
                 
                 String response = nl2sqlService.generateSQL(prompt.toString(), 1L);
                 

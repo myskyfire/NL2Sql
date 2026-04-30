@@ -377,11 +377,11 @@ java -jar nl2sql-web-1.0.0.jar
 |------|------|------|------|
 | **后端框架** | Spring Boot | 3.2.5 | 应用框架（Jakarta EE） |
 | **JDK** | Java | 21 | 运行环境 |
-| **ORM** | MyBatis Plus | 3.5.5 | 数据持久化 |
+| **ORM** | MyBatis Plus + 原生MyBatis | 3.5.5 | 数据持久化（混合模式） |
 | **LLM集成** | LangChain4j | 1.12.2 | LLM编排框架 |
 | **Maven** | Apache Maven | 3.9+ | 构建工具 |
 | **向量模型** | bge-m3 | - | 文本向量化（多语言支持） |
-| **大模型** | Ollama (qwen3:8b + qwen2.5-coder:7b) | - | 双模型架构：推理+代码 |
+| **大模型** | Ollama (qwen3:8b + qwen2.5-coder:7b) / 阿里云通义千问 | - | 双模型架构：推理+代码，支持多云部署 |
 | **向量数据库** | Chroma (MySQL降级) | - | RAG向量检索 |
 | **缓存** | Redis + Caffeine | 6.x | 分布式缓存 + 本地缓存 |
 | **数据库** | MySQL | 8.0 | 数据存储 |
@@ -406,6 +406,11 @@ java -jar nl2sql-web-1.0.0.jar
 |------|------|---------|------|
 | **qwen3:8b** | 推理/Agent决策 | Ollama本地 | ✅ 默认启用 |
 | **qwen2.5-coder:7b** | SQL生成 | Ollama本地 | ✅ 默认启用 |
+| **阿里云通义千问** | 推理+SQL生成 | 阿里云API | ✅ 支持（需配置API Key） |
+
+**最新特性**：
+- ✅ **LLM超时重试机制**：最多2次，超时时间递增（60s → 90s），提高复杂查询成功率
+- ✅ **多云支持**：同时支持Ollama本地部署和阿里云API，可灵活切换
 
 #### 配置示例
 
@@ -563,6 +568,11 @@ NL2SQL/
 ├── nl2sql-audit/           # 审计模块
 └── nl2sql-web/             # Web模块 (16个Controller + 前端)
 ```
+
+**最新架构优化**（2026-04）：
+- ✅ **MyBatis迁移完成**：所有硬编码SQL已迁移到XML Mapper文件，符合Controller-Service-Mapper分层架构
+- ✅ **Skills热部署支持**：Groovy脚本动态加载，无需重启应用即可更新Skill逻辑
+- ✅ **LLM多云支持**：同时支持Ollama本地部署和阿里云API
 
 ---
 

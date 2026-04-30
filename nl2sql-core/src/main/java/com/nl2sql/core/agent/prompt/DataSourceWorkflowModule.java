@@ -15,15 +15,10 @@ public class DataSourceWorkflowModule implements PromptModule {
     
     @Override
     public String build() {
-        StringBuilder sb = new StringBuilder();
-        
-        sb.append("## ⚠️ 关键第一步：检查用户消息开头的 [数据源ID: XXX] 标记\n");
-        sb.append("- ⚠️ **重要**：每条用户消息都会以 `[数据源ID: XXX]` 开头\n");
-        sb.append("- 如果 `[数据源ID: null]` → 必须调用 clarify_datasource 获取推荐的数据源\n");
-        sb.append("- 如果 `[数据源ID: 数字]`（如 `[数据源ID: 1]`）→ **直接使用这个数字作为 datasourceId**\n");
-        sb.append("- ⚠️ **绝对禁止**：如果已有数据源ID，绝对不能再次调用 clarify_datasource！\n\n");
-        
-        return sb.toString();
+        return "## 数据源处理\n" +
+               "- 检查消息开头`[数据源 ID: XXX]`\n" +
+               "- null → 调用 clarify_datasource\n" +
+               "- 有数字 → 直接用，禁止再次澄清\n\n";
     }
     
     @Override

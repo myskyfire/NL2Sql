@@ -43,14 +43,14 @@ public class AISummaryTool {
             promptBuilder.append("你是一个专业的数据分析师。请根据以下查询结果进行分析和总结。\n\n");
             
             if (userQuery != null && !userQuery.isEmpty()) {
-                promptBuilder.append("用户问题：").append(userQuery).append("\n\n");
+                promptBuilder.append("问题：").append(userQuery).append("\n\n");
             }
             
             if (sql != null && !sql.isEmpty()) {
-                promptBuilder.append("SQL查询：\n").append(sql).append("\n\n");
+                promptBuilder.append("SQL：\n").append(sql).append("\n\n");
             }
             
-            promptBuilder.append("查询结果：共").append(data.size()).append("行数据\n\n");
+            promptBuilder.append("结果：共").append(data.size()).append("行\n\n");
             
             // 以表格形式展示数据
             Set<String> columns = data.get(0).keySet();
@@ -58,7 +58,7 @@ public class AISummaryTool {
             promptBuilder.append(header).append("\n");
             promptBuilder.append(String.join("-|-", java.util.Collections.nCopies(columns.size(), "---"))).append("\n");
             
-            // 最多显示15行
+            // 最多显示 15 行
             int displayRows = Math.min(15, data.size());
             for (int i = 0; i < displayRows; i++) {
                 Map<String, Object> row = data.get(i);
@@ -71,21 +71,15 @@ public class AISummaryTool {
             }
             
             if (data.size() > 15) {
-                promptBuilder.append("... 还有 ").append(data.size() - 15).append(" 行数据\n");
+                promptBuilder.append("... 还有 ").append(data.size() - 15).append(" 行\n");
             }
             promptBuilder.append("\n");
             
-            promptBuilder.append("请分析以上数据并总结：\n");
-            promptBuilder.append("1. 数据的主要趋势或模式\n");
+            promptBuilder.append("请总结：\n");
+            promptBuilder.append("1. 主要趋势或模式\n");
             promptBuilder.append("2. 关键数值和异常点\n");
             promptBuilder.append("3. 业务洞察和建议\n\n");
-            promptBuilder.append("要求：\n");
-            promptBuilder.append("- 必须基于上述实际数据进行分析\n");
-            promptBuilder.append("- 使用清晰的段落结构，每个要点之间用空行分隔\n");
-            promptBuilder.append("- 数字列表格式：1. xxx\\n\\n2. xxx\\n\\n3. xxx\n");
-            promptBuilder.append("- 子项使用破折号：- xxx\n");
-            promptBuilder.append("- 控制总字数在200字以内\n");
-            promptBuilder.append("- 用简洁的中文回答");
+            promptBuilder.append("要求：基于实际数据，段落清晰，200 字以内，简洁中文");
             
             String summary = modelRouter.getMultiModelService().summarizeResult(promptBuilder.toString());
             
