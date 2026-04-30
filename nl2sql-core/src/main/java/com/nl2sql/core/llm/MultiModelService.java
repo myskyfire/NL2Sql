@@ -162,12 +162,7 @@ public class MultiModelService {
      */
     public String generateAnswer(String question) {
         String prompt = String.format(
-            "请回答以下问题，要求:\n" +
-            "1. 用简洁清晰的中文回答\n" +
-            "2. 如果有数据，突出关键数值和趋势\n" +
-            "3. 不超过200字\n\n" +
-            "问题: %s\n\n" +
-            "回答:",
+            "简洁回答(200字内)，突出关键数据:\n问题: %s\n回答:",
             question
         );
         

@@ -89,7 +89,7 @@ public class LLMService {
      * 总结查询结果（使用推理模型）
      */
     public String summarizeResult(String query, Object result) {
-        String systemPrompt = "你是一个数据分析助手。请用简洁的中文总结查询结果，不超过3句话。";
+        String systemPrompt = "用3句话总结查询结果。";
         String userPrompt = String.format("问题: %s\n查询结果: %s", query, result.toString());
         
         try {
@@ -106,7 +106,7 @@ public class LLMService {
      * 澄清用户问题（使用推理模型）
      */
     public String clarifyQuestion(String query, String missingInfo) {
-        String systemPrompt = "你是一个友好的对话助手。请生成一个友好的追问，提示用户补充缺少的信息。";
+        String systemPrompt = "友好地追问缺失信息。";
         String userPrompt = String.format("用户问题: %s\n缺少信息: %s", query, missingInfo);
         
         try {
@@ -123,7 +123,7 @@ public class LLMService {
      * 意图分类（使用推理模型）
      */
     public String classifyIntent(String query) {
-        String systemPrompt = "请将用户问题分类为以下类型之一：QUERY（查询）、CREATE（创建）、UPDATE（更新）、DELETE（删除）、OTHER（其他）。只返回分类名称，不要其他内容。";
+        String systemPrompt = "分类: QUERY/CREATE/UPDATE/DELETE/OTHER，只返回类型。";
         String userPrompt = "用户问题: " + query;
         
         try {

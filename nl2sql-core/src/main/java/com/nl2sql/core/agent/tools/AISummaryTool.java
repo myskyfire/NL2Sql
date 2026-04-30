@@ -40,7 +40,7 @@ public class AISummaryTool {
             }
             
             StringBuilder promptBuilder = new StringBuilder();
-            promptBuilder.append("你是一个专业的数据分析师。请根据以下查询结果进行分析和总结。\n\n");
+            promptBuilder.append("分析查询结果:\n\n");
             
             if (userQuery != null && !userQuery.isEmpty()) {
                 promptBuilder.append("问题：").append(userQuery).append("\n\n");
@@ -75,11 +75,7 @@ public class AISummaryTool {
             }
             promptBuilder.append("\n");
             
-            promptBuilder.append("请总结：\n");
-            promptBuilder.append("1. 主要趋势或模式\n");
-            promptBuilder.append("2. 关键数值和异常点\n");
-            promptBuilder.append("3. 业务洞察和建议\n\n");
-            promptBuilder.append("要求：基于实际数据，段落清晰，200 字以内，简洁中文");
+            promptBuilder.append("要求：基于实际数据，段落清晰，200字以内，简洁中文");
             
             String summary = modelRouter.getMultiModelService().summarizeResult(promptBuilder.toString());
             

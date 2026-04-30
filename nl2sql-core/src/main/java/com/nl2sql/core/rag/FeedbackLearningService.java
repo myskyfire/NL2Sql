@@ -267,17 +267,17 @@ public class FeedbackLearningService {
     private String buildCorrectionPrompt(String question, String wrongSql, 
                                         String feedbackText, List<String> errorCategories) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一个SQL专家。用户提出了一个问题，但之前生成的SQL是错误的。\n\n");
+        prompt.append("SQL专家。用户问题生成的SQL是错误的，请修正。\n\n");
         prompt.append("用户问题: ").append(question).append("\n\n");
         prompt.append("错误的SQL:\n").append(wrongSql).append("\n\n");
         prompt.append("用户反馈: ").append(feedbackText).append("\n\n");
         prompt.append("错误类型: ").append(String.join(", ", errorCategories)).append("\n\n");
         prompt.append("请分析错误原因，并生成正确的SQL。\n\n");
         prompt.append("要求:\n");
-        prompt.append("1. 只返回SQL语句，不要任何解释\n");
-        prompt.append("2. 确保SQL语法正确\n");
+        prompt.append("1. 只返回SQL语句，不要解释\n");
+        prompt.append("2. 确保语法正确\n");
         prompt.append("3. 准确理解用户意图\n");
-        prompt.append("4. 使用标准的MySQL语法\n\n");
+        prompt.append("4. 使用标准MySQL语法\n\n");
         prompt.append("正确的SQL:");
         
         return prompt.toString();

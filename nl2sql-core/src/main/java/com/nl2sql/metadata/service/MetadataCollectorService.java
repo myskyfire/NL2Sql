@@ -487,7 +487,7 @@ public class MetadataCollectorService {
                             
                         // 构建LLM提示词 - 提供完整表元数据
                         StringBuilder prompt = new StringBuilder();
-                        prompt.append("你是一个数据库专家和业务分析师。请根据以下完整的表结构信息，生成一段简洁的业务化表描述(50字以内)。\n\n");
+                        prompt.append("你是数据库专家和业务分析师。根据表结构信息，生成简洁的业务化表描述(50字以内)。\n\n");
                         prompt.append("=== 表基本信息 ===\n");
                         prompt.append("表名: ").append(tableName).append("\n");
                         prompt.append("当前描述: ").append(currentComment != null ? currentComment : "无").append("\n\n");
@@ -530,9 +530,9 @@ public class MetadataCollectorService {
                             prompt.append("\n");
                         }
                             
-                        prompt.append("\n=== 生成要求 ===\n");
-                        prompt.append("1. **识别核心业务指标**: 从字段中识别关键业务概念(如订单量、销售额、用户数、库存量等)\n");
-                        prompt.append("2. **说明表的业务用途**: 这张表在业务系统中扮演什么角色\n");
+                        prompt.append("\n要求:\n");
+                        prompt.append("1. **识别核心业务指标**: 从字段中识别关键业务概念(如订单量、销售额、用户数等)\n");
+                        prompt.append("2. **说明表的业务用途**: 这张表在业务系统中的角色\n");
                         prompt.append("3. **突出关联关系**: 如果有外键或关联字段,说明与其他表的关系\n");
                         prompt.append("4. **包含检索关键词**: 确保描述包含用户可能查询的业务术语\n");
                         prompt.append("5. **简洁专业**: 50字以内,便于向量检索匹配\n");
@@ -607,7 +607,7 @@ public class MetadataCollectorService {
                             try {
                                 // 构建LLM提示词
                                 StringBuilder prompt = new StringBuilder();
-                                prompt.append("你是一个数据库专家。请根据以下信息，为该字段生成一个简洁的中文业务注释(20字以内)。\n\n");
+                                prompt.append("你是数据库专家。根据以下信息，为该字段生成简洁的中文业务注释(20字以内)。\n\n");
                                 prompt.append("表名: ").append(tableName).append("\n");
                                 if (tableComment != null && !tableComment.trim().isEmpty()) {
                                     prompt.append("表说明: ").append(tableComment).append("\n");

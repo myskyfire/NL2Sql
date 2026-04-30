@@ -105,7 +105,7 @@ public class SQLResultSummarizer {
      */
     private String buildSummaryPrompt(List<Map<String, Object>> data, String question, String sql) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是数据分析助手，请根据查询结果总结关键发现。\n\n");
+        prompt.append("根据查询结果总结关键发现。\n\n");
         prompt.append("问题：").append(question).append("\n\n");
         prompt.append("SQL：\n```sql\n").append(sql).append("\n```\n\n");
         
@@ -119,10 +119,7 @@ public class SQLResultSummarizer {
             prompt.append("共").append(data.size()).append("条记录\n\n");
         }
         
-        prompt.append("请总结：\n");
-        prompt.append("1. 关键指标和趋势\n");
-        prompt.append("2. 异常值或显著变化\n");
-        prompt.append("3. 100 字以内，只返回总结\n\n");
+        prompt.append("要求：100字以内，只返回总结\n\n");
         prompt.append("总结：");
         
         return prompt.toString();

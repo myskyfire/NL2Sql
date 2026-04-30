@@ -113,7 +113,7 @@ public class ReportGeneratorTool {
                                      List<Map<String, Object>> data,
                                      Map<String, Object> statistics) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是数据分析师，请根据以下数据生成报告。\n\n");
+        prompt.append("根据数据生成报告。\n\n");
         
         prompt.append("问题：").append(userQuery).append("\n\n");
         prompt.append("SQL 查询：").append(sql).append("\n\n");
@@ -139,13 +139,7 @@ public class ReportGeneratorTool {
             prompt.append(data.get(i).toString()).append("\n");
         }
         
-        prompt.append("\n报告结构：\n");
-        prompt.append("1. 执行摘要（50 字以内）\n");
-        prompt.append("2. 关键发现（3-5 个，有数据支撑）\n");
-        prompt.append("3. 趋势分析（模式、异常值）\n");
-        prompt.append("4. 业务建议（2-3 条，可操作）\n\n");
-        
-        prompt.append("要求：专业易懂，避免术语，突出业务价值");
+        prompt.append("\n要求：专业易懂，突出业务价值");
         
         return prompt.toString();
     }
