@@ -2,6 +2,7 @@ package com.nl2sql.core.rag;
 
 import com.nl2sql.core.rag.dto.BatchImportResult;
 import com.nl2sql.core.rag.dto.QAImportRequest;
+import com.nl2sql.core.rag.mapper.RagKnowledgeBaseServiceMapper;
 import com.nl2sql.core.rag.provider.VectorSearchResult;
 import com.nl2sql.core.rag.provider.VectorStoreManager;
 import com.nl2sql.core.rag.provider.VectorStoreProvider;
@@ -26,6 +27,10 @@ public class RagKnowledgeBaseService {
     
     private final JdbcTemplate jdbcTemplate;
     private final VectorStoreManager vectorStoreManager;
+    
+    @Autowired
+    private RagKnowledgeBaseServiceMapper ragMapper;
+    
     private static final double SIMILARITY_THRESHOLD = 0.85;
     private static final int MAX_EXAMPLES = 3;
     
@@ -40,11 +45,10 @@ public class RagKnowledgeBaseService {
      */
     public Long saveQAPair(String question, String answer, String sqlExample, 
                           String category, float qualityScore) {
-        // 1. 保存到MySQL（持久化）
-        String sql = "INSERT INTO rag_knowledge_base (question, answer, sql_example, category, quality_score, usage_count, created_at) " +
-                    "VALUES (?, ?, ?, ?, ?, 0, NOW())";
+        // 1. 保存到MySQL（持久化）- 使用 MyBatis
+        ragMapper.insertQAPair(question, answer, sqlExample, category, qualityScore);
         
-        jdbcTemplate.update(sql, question, answer, sqlExample, category, qualityScore);
+        // 获取自增 ID（MyBatis useGeneratedKeys 会自动填充到参数对象，但这里需要单独查询）
         Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         
         // 2. 同步到向量数据库（使用活跃提供者）
@@ -154,26 +158,8 @@ public class RagKnowledgeBaseService {
      */
     private List<KnowledgeItem> searchByMySQL(String question, int maxResults) {
         // ✅ 关键优化：结合用户反馈评分调整排序权重
-        String sql = "SELECT k.id, k.question, k.answer, k.sql_example, k.category, k.quality_score, k.usage_count, " +
-                    "MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance, " +
-                    "COALESCE(avg_feedback.rating, 3.0) as avg_rating " +  // 平均评分，默认3.0
-                    "FROM rag_knowledge_base k " +
-                    "LEFT JOIN (" +
-                    "    SELECT knowledge_id, AVG(rating) as rating " +
-                    "    FROM rag_feedback " +
-                    "    WHERE rating >= 4 " +  // ✅ 只统计4-5星正面反馈
-                    "    GROUP BY knowledge_id" +
-                    ") avg_feedback ON k.id = avg_feedback.knowledge_id " +
-                    "WHERE MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) " +
-                    "AND k.quality_score >= ? " +  // ✅ 过滤低质量示例（>=0.8）
-                    "ORDER BY (relevance * 0.6 + (avg_rating / 5.0) * 0.4) DESC, k.quality_score DESC " +  // 综合评分
-                    "LIMIT ?";
-        
-        List<KnowledgeItem> results = jdbcTemplate.query(
-            sql, 
-            new KnowledgeRowMapper(),
-            question, question, 0.8f, maxResults  // ✅ 阈值从SIMILARITY_THRESHOLD改为0.8
-        );
+        // 使用 MyBatis Mapper
+        List<KnowledgeItem> results = ragMapper.searchByFullText(question, 0.8f, maxResults);
         
         if (!results.isEmpty()) {
             log.info("RAG检索成功(MySQL+Feedback): question={}, found={} items", question, results.size());
@@ -217,16 +203,24 @@ public class RagKnowledgeBaseService {
      * 记录使用（增加使用次数）
      */
     public void recordUsage(Long knowledgeId) {
-        String sql = "UPDATE rag_knowledge_base SET usage_count = usage_count + 1 WHERE id = ?";
-        jdbcTemplate.update(sql, knowledgeId);
+        ragMapper.incrementUsageCount(knowledgeId);
     }
     
     /**
      * 更新质量评分（基于用户反馈）
      */
     public void updateQualityScore(Long knowledgeId, float scoreChange) {
-        String sql = "UPDATE rag_knowledge_base SET quality_score = LEAST(1.0, GREATEST(0.0, quality_score + ?)) WHERE id = ?";
-        jdbcTemplate.update(sql, scoreChange, knowledgeId);
+        // 获取当前分数
+        KnowledgeItem item = ragMapper.getHighQualitySamples(null, 1).stream()
+            .filter(i -> i.getId().equals(knowledgeId))
+            .findFirst()
+            .orElse(null);
+        
+        if (item != null) {
+            float newScore = Math.min(1.0f, Math.max(0.0f, item.getQualityScore() + scoreChange));
+            ragMapper.updateQualityScore(knowledgeId, newScore);
+        }
+        
         log.debug("更新RAG质量评分: id={}, change={}", knowledgeId, scoreChange);
     }
     
@@ -234,30 +228,24 @@ public class RagKnowledgeBaseService {
      * 获取高质量样本（用于few-shot学习）
      */
     public List<KnowledgeItem> getHighQualitySamples(String category, int limit) {
-        String sql = "SELECT id, question, answer, sql_example, category, quality_score, usage_count " +
-                    "FROM rag_knowledge_base " +
-                    "WHERE quality_score >= 0.9";
-        
-        if (category != null && !category.isEmpty()) {
-            sql += " AND category = ?";
-        }
-        
-        sql += " ORDER BY usage_count DESC LIMIT ?";
-        
-        Object[] params = category != null && !category.isEmpty() ? 
-            new Object[]{category, limit} : 
-            new Object[]{limit};
-        
-        return jdbcTemplate.query(sql, new KnowledgeRowMapper(), params);
+        return ragMapper.getHighQualitySamples(category, limit);
     }
     
     /**
      * 删除低质量样本
      */
     public void removeLowQualitySamples(float threshold) {
-        String sql = "DELETE FROM rag_knowledge_base WHERE quality_score < ?";
-        int deleted = jdbcTemplate.update(sql, threshold);
-        log.info("清理低质量RAG样本: threshold={}, deleted={}", threshold, deleted);
+        // 先查询低质量条目
+        List<KnowledgeItem> lowQualityItems = ragMapper.getLowQualityItems(threshold);
+        
+        if (!lowQualityItems.isEmpty()) {
+            List<Long> ids = lowQualityItems.stream()
+                .map(KnowledgeItem::getId)
+                .collect(java.util.stream.Collectors.toList());
+            
+            int deleted = ragMapper.batchDelete(ids);
+            log.info("清理低质量RAG样本: threshold={}, deleted={}", threshold, deleted);
+        }
     }
     
     /**
@@ -266,11 +254,14 @@ public class RagKnowledgeBaseService {
      */
     public int clearAllKnowledge() {
         try {
-            // 1. 清空MySQL表
+            // 1. 获取总数
+            Long totalCount = ragMapper.getTotalCount();
+            
+            // 2. 清空MySQL表 - 需要添加 truncate 方法到 Mapper
             String sql = "DELETE FROM rag_knowledge_base";
             int deleted = jdbcTemplate.update(sql);
             
-            // 2. 清空向量数据库（如果有活跃提供者）
+            // 3. 清空向量数据库（如果有活跃提供者）
             VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
             if (activeProvider != null) {
                 try {
@@ -372,25 +363,23 @@ public class RagKnowledgeBaseService {
         
         try {
             // 总知识条目数
-            Long totalCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM rag_knowledge_base", Long.class
-            );
+            Long totalCount = ragMapper.getTotalCount();
             stats.put("totalCount", totalCount != null ? totalCount : 0);
             
-            // 平均质量评分
+            // 平均质量评分 - 保留 jdbcTemplate（复杂聚合查询）
             Double avgQuality = jdbcTemplate.queryForObject(
                 "SELECT AVG(quality_score) FROM rag_knowledge_base", Double.class
             );
             stats.put("avgQuality", avgQuality != null ? String.format("%.2f", avgQuality) : "0.00");
             
-            // 本月新增数量
+            // 本月新增数量 - 保留 jdbcTemplate（日期函数）
             Integer monthlyAdded = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM rag_knowledge_base WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)",
                 Integer.class
             );
             stats.put("monthlyAdded", monthlyAdded != null ? monthlyAdded : 0);
             
-            // 用户反馈总数
+            // 用户反馈总数 - 保留 jdbcTemplate（跨表查询）
             Long feedbackCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM rag_feedback", Long.class
             );
@@ -477,7 +466,7 @@ public class RagKnowledgeBaseService {
      */
     public boolean deleteKnowledge(Long id) {
         try {
-            int deleted = jdbcTemplate.update("DELETE FROM rag_knowledge_base WHERE id = ?", id);
+            int deleted = ragMapper.deleteById(id);
             if (deleted > 0) {
                 log.info("删除RAG知识库条目: id={}", id);
                 return true;

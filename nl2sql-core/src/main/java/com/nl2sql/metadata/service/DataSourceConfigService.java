@@ -1,8 +1,10 @@
 package com.nl2sql.metadata.service;
 
 import com.nl2sql.common.util.EncryptionUtil;
+import com.nl2sql.core.datasource.mapper.DataSourceMapper;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,9 @@ public class DataSourceConfigService {
     
     private final JdbcTemplate jdbcTemplate;
     
+    @Autowired
+    private DataSourceMapper dataSourceMapper;
+    
     public DataSourceConfigService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -26,24 +31,11 @@ public class DataSourceConfigService {
     public Long saveConfig(DataSourceConfig config) {
         // 加密密码
         String encryptedPassword = EncryptionUtil.encrypt(config.getPassword());
+        config.setPasswordEncrypted(encryptedPassword);
         
-        String sql = "INSERT INTO datasource_config (name, db_type, host, port, database_name, username, password_encrypted, description, is_active, created_by) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        dataSourceMapper.insertDataSource(config);
         
-        jdbcTemplate.update(sql, 
-            config.getName(),
-            config.getDbType(),
-            config.getHost(),
-            config.getPort(),
-            config.getDatabaseName(),
-            config.getUsername(),
-            encryptedPassword,
-            config.getDescription(),
-            config.getIsActive() != null ? config.getIsActive() : 1,
-            config.getCreatedBy()
-        );
-        
-        Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        Long id = config.getId();
         log.info("保存数据源配置成功: id={}, name={}", id, config.getName());
         
         return id;
@@ -82,8 +74,7 @@ public class DataSourceConfigService {
      * 根据ID获取配置（含解密密码）
      */
     public DataSourceConfig getConfigById(Long id) {
-        String sql = "SELECT * FROM datasource_config WHERE id = ?";
-        DataSourceConfig config = jdbcTemplate.queryForObject(sql, new DataSourceRowMapper(), id);
+        DataSourceConfig config = dataSourceMapper.selectById(id);
         
         if (config != null) {
             // 解密密码

@@ -59,4 +59,9 @@ public interface TablePermissionMapper {
      * 获取所有表的授权统计
      */
     List<Map<String, Object>> findAllTablePermissions();
+    
+    /**
+     * 查询用户授权的表列表（含用户信息）
+     */
+    List<Map<String, Object>> findUserTablePermissions(@Param("userId") Long userId);
 }

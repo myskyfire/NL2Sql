@@ -425,14 +425,8 @@ public class AuthService {
      */
     public List<TablePermission> getUserTablePermissions(Long userId) {
         try {
-            String sql = "SELECT tp.id, tp.user_id, u.username, u.real_name, " +
-                        "tp.table_name, tp.granted_by, tp.granted_at, tp.is_active " +
-                        "FROM table_permissions tp " +
-                        "JOIN users u ON tp.user_id = u.id " +
-                        "WHERE tp.user_id = ? " +
-                        "ORDER BY tp.granted_at DESC";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, userId);
+            // ✅ 使用Mapper查询
+            List<Map<String, Object>> rows = tablePermissionMapper.findUserTablePermissions(userId);
             List<TablePermission> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
