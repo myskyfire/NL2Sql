@@ -97,7 +97,7 @@ public class ContextSummarizerTool {
      */
     private String buildSummaryPrompt(List<Map<String, String>> history) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("请压缩以下对话历史，保留关键信息。\n\n");
+        prompt.append("压缩对话历史，保留关键信息。\n\n");
         
         prompt.append("对话历史：\n");
         int displayCount = Math.min(15, history.size());
@@ -110,10 +110,7 @@ public class ContextSummarizerTool {
             prompt.append("... (还有 ").append(history.size() - 15).append(" 条消息)\n");
         }
         
-        prompt.append("\n要求：\n");
-        prompt.append("1. 保留核心查询意图、重要数据发现、关键建议\n");
-        prompt.append("2. 删除寒暄、重复内容\n");
-        prompt.append("3. 简洁概括，200 字以内\n\n");
+        prompt.append("\n要求：保留核心查询意图、数据发现、建议；删除寒暄和重复；200字以内\n\n");
         
         prompt.append("摘要：");
         

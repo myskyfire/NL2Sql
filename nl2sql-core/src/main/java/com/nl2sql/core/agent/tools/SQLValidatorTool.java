@@ -270,18 +270,17 @@ public class SQLValidatorTool extends BaseToolAdapter {
             }
             
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句包含不存在的列名（大模型幻觉），请修正。\n\n" +
+                "MySQL SQL专家。以下SQL包含不存在的列名（幻觉），请修正。\n\n" +
                 "用户问题：%s\n\n" +
-                "数据库表结构：\n%s\n\n" +
+                "表结构：\n%s\n\n" +
                 "%s" +
                 "有问题的SQL:\n%s\n\n" +
-                "检测到的问题:\n%s\n\n" +
+                "问题:\n%s\n\n" +
                 "要求：\n" +
-                "1. 只输出修正后的SQL语句\n" +
-                "2. 不要包含```sql或其他标记\n" +
-                "3. **严格基于上述表结构中的列名**，不要臆造不存在的列\n" +
-                "4. 如果不确定列名，可以使用表中已有的其他相关字段\n" +
-                "5. 保持原有查询意图不变",
+                "1. 只输出修正后的SQL，无标记\n" +
+                "2. **严格基于上述表结构中的列名**，不要臆造\n" +
+                "3. 不确定则使用表中已有的相关字段\n" +
+                "4. 保持原有查询意图",
                 question, schemaInfo,
                 relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
                 sql, issueDesc.toString()
@@ -303,17 +302,16 @@ public class SQLValidatorTool extends BaseToolAdapter {
                                            String question, String schemaInfo, String relationshipInfo) {
         try {
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句存在语法错误，请修正。\n\n" +
+                "MySQL SQL专家。以下SQL存在语法错误，请修正。\n\n" +
                 "用户问题：%s\n\n" +
-                "数据库表结构：\n%s\n\n" +
+                "表结构：\n%s\n\n" +
                 "%s" +
                 "失败的SQL:\n%s\n\n" +
                 "错误信息:\n%s\n\n" +
                 "要求：\n" +
-                "1. 只输出修正后的SQL语句\n" +
-                "2. 不要包含```sql或其他标记\n" +
-                "3. 保持原有查询意图不变\n" +
-                "4. 仔细检查括号、关键字、字段名是否正确",
+                "1. 只输出修正后的SQL，无标记\n" +
+                "2. 保持原有查询意图\n" +
+                "3. 仔细检查括号、关键字、字段名",
                 question, schemaInfo,
                 relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
                 failedSql, errorMessage
@@ -335,19 +333,18 @@ public class SQLValidatorTool extends BaseToolAdapter {
                                                 String relationshipInfo, String issues) {
         try {
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句存在逻辑问题，请修正。\n\n" +
+                "MySQL SQL专家。以下SQL存在逻辑问题，请修正。\n\n" +
                 "用户问题：%s\n\n" +
-                "数据库表结构：\n%s\n\n" +
+                "表结构：\n%s\n\n" +
                 "%s" +
                 "有问题的SQL:\n%s\n\n" +
-                "检测到的问题:\n%s\n\n" +
+                "问题:\n%s\n\n" +
                 "要求：\n" +
-                "1. 只输出修正后的SQL语句\n" +
-                "2. 不要包含```sql或其他标记\n" +
-                "3. **重要：SELECT 中的非聚合字段必须出现在 GROUP BY 中**\n" +
+                "1. 只输出修正后的SQL，无标记\n" +
+                "2. **重要：SELECT非聚合字段必须出现在GROUP BY中**\n" +
                 "   - 错误：SELECT o.created_at ... GROUP BY DATE_FORMAT(o.created_at, ...)\n" +
                 "   - 正确：SELECT DATE_FORMAT(o.created_at, '%%Y-%%m-%%d') AS '订单日期' ... GROUP BY DATE_FORMAT(o.created_at, '%%Y-%%m-%%d')\n" +
-                "4. 确保 SELECT 和 GROUP BY 使用相同的表达式",
+                "3. 确保SELECT和GROUP BY使用相同表达式",
                 question, schemaInfo,
                 relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
                 sql, issues
