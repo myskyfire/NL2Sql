@@ -4,6 +4,7 @@ import com.nl2sql.core.datasource.DataSourceManager;
 import com.nl2sql.core.metadata.ValueMappingService;
 import com.nl2sql.auth.service.AuthService;  // ✅ 新增：权限服务
 import com.nl2sql.core.service.NL2SQLService;
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,9 @@ public class SQLExecutor {
     private final com.nl2sql.core.llm.ModelRouterService modelRouter;  // 模型路由服务
     private final com.nl2sql.core.cache.QueryCacheService queryCacheService;  // 查询结果缓存
     private final com.nl2sql.core.cache.MetadataCacheService metadataCacheService;  // 元数据缓存服务
+    
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
     
     @Autowired(required = false)
     private AuthService authService;  // ✅ 新增：权限服务（可选注入）
@@ -398,8 +402,7 @@ public class SQLExecutor {
         
         // 缓存未命中，查询数据库
         try {
-            String querySql = "SELECT column_name, column_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ?";
-            List<Map<String, Object>> metadataList = jdbcTemplate.queryForList(querySql, datasourceId, tableName);
+            List<Map<String, Object>> metadataList = metadataMapper.selectColumnNameAndComment(datasourceId, tableName);
             
             Map<String, String> columnNameMap = new HashMap<>();
             for (Map<String, Object> meta : metadataList) {

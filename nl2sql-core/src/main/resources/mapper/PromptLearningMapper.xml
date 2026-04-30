@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.core.rag.mapper.PromptLearningMapper">
+    
+    <!-- 插入 Prompt 版本 -->
+    <insert id="insertPromptVersion">
+        INSERT INTO prompt_versions (
+            version_name, prompt_type, prompt_content, description, created_by, created_at
+        ) VALUES (
+            #{versionName}, #{promptType}, #{promptContent}, #{description}, #{createdBy}, NOW()
+        )
+    </insert>
+    
+    <!-- 查询最后插入的 ID -->
+    <select id="selectLastInsertId" resultType="java.lang.Long">
+        SELECT LAST_INSERT_ID()
+    </select>
+    
+    <!-- 更新 Prompt 版本 -->
+    <update id="updatePromptVersion">
+        UPDATE prompt_versions 
+        SET prompt_content = #{promptContent}, 
+            description = #{description}, 
+            updated_at = NOW() 
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 查询 Prompt 版本 -->
+    <select id="selectPromptVersion" resultType="java.util.Map">
+        SELECT * FROM prompt_versions WHERE id = #{id}
+    </select>
+    
+    <!-- 更新版本状态 -->
+    <update id="updateVersionStatus">
+        UPDATE prompt_versions 
+        SET status = #{status}, 
+            is_default = #{isDefault}, 
+            activated_at = NOW() 
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 更新同类型的默认版本 -->
+    <update id="resetDefaultVersion">
+        UPDATE prompt_versions 
+        SET is_default = 0 
+        WHERE prompt_type = #{promptType}
+    </update>
+    
+    <!-- 查询默认 Prompt -->
+    <select id="selectDefaultPrompt" resultType="java.lang.String">
+        SELECT prompt_content 
+        FROM prompt_versions 
+        WHERE prompt_type = #{promptType} 
+          AND is_default = 1 
+        LIMIT 1
+    </select>
+    
+    <!-- 查询 A/B 测试 -->
+    <select id="selectABTests" resultType="java.util.Map">
+        SELECT * FROM prompt_ab_tests 
+        WHERE prompt_type = #{promptType} 
+          AND status = 'RUNNING' 
+        LIMIT 1
+    </select>
+    
+    <!-- 查询版本 ID -->
+    <select id="selectDefaultVersionId" resultType="java.lang.Long">
+        SELECT id 
+        FROM prompt_versions 
+        WHERE prompt_type = #{promptType} 
+          AND is_default = 1 
+        LIMIT 1
+    </select>
+    
+    <!-- 记录 A/B 测试曝光 -->
+    <insert id="insertABTestExposure">
+        INSERT INTO prompt_ab_test_exposures (
+            test_id, version_id, session_id, exposed_at
+        ) VALUES (
+            #{testId}, #{versionId}, #{sessionId}, NOW()
+        )
+    </insert>
+    
+    <!-- 记录优化建议 -->
+    <insert id="insertOptimizationSuggestion">
+        INSERT INTO prompt_optimization_suggestions (
+            prompt_id, suggestion_type, suggestion_content, improvement, created_at
+        ) VALUES (
+            #{promptId}, #{suggestionType}, #{suggestionContent}, #{improvement}, NOW()
+        )
+    </insert>
+    
+    <!-- 查询优化建议 -->
+    <select id="selectOptimizationSuggestions" resultType="java.util.Map">
+        SELECT * FROM prompt_optimization_suggestions 
+        WHERE prompt_id = #{promptId} 
+        ORDER BY created_at DESC
+    </select>
+    
+    <!-- 查询性能指标 -->
+    <select id="selectPerformanceMetrics" resultType="java.util.Map">
+        SELECT * FROM prompt_performance_metrics 
+        WHERE version_id = #{versionId} 
+        ORDER BY recorded_at DESC 
+        LIMIT 1
+    </select>
+    
+    <!-- 插入性能指标 -->
+    <insert id="insertPerformanceMetric">
+        INSERT INTO prompt_performance_metrics (
+            version_id, metric_name, metric_value, sample_size, recorded_at
+        ) VALUES (
+            #{versionId}, #{metricName}, #{metricValue}, #{sampleSize}, NOW()
+        )
+    </insert>
+    
+</mapper>

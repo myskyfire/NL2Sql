@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.web.mapper.AgentResponseProcessorMapper">
+    
+    <!-- 查询对话历史 -->
+    <select id="selectConversationHistory" resultType="java.util.Map">
+        SELECT * FROM conversation_history 
+        WHERE session_id = #{sessionId} 
+        ORDER BY created_at DESC 
+        LIMIT #{limit}
+    </select>
+    
+    <!-- 插入对话记录 -->
+    <insert id="insertConversation">
+        INSERT INTO conversation_history (session_id, query, response, created_at) 
+        VALUES (#{sessionId}, #{query}, #{response}, NOW())
+    </insert>
+    
+    <!-- 更新对话评分 -->
+    <update id="updateConversationRating">
+        UPDATE conversation_history 
+        SET rating = #{rating}, rated_at = NOW() 
+        WHERE session_id = #{sessionId}
+    </update>
+    
+    <!-- 根据数据源名称查询 ID -->
+    <select id="getDatasourceIdByName" resultType="java.util.Map">
+        SELECT id FROM datasource_config 
+        WHERE name = #{name} AND is_active = 1
+    </select>
+    
+</mapper>

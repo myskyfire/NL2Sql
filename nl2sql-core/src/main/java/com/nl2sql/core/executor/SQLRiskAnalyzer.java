@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
+@SuppressWarnings("unused") // JdbcTemplate 保留用于动态数据源访问（通过 DataSourceManager）
 public class SQLRiskAnalyzer {
     
     private final DataSourceManager dataSourceManager;

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.web.mapper.IndustryConceptMapper">
+    
+    <!-- 获取所有行业模板 -->
+    <select id="getTemplates" resultType="java.util.Map">
+        SELECT * FROM industry_template ORDER BY id
+    </select>
+    
+    <!-- 获取指定行业的概念列表 -->
+    <select id="getConcepts" resultType="java.util.Map">
+        SELECT * FROM industry_concept 
+        WHERE industry_code = #{industryCode}
+        <if test="type != null and type != ''">
+            AND concept_type = #{type}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        ORDER BY usage_count DESC, created_at DESC
+    </select>
+    
+    <!-- 获取单个概念详情 -->
+    <select id="getConcept" resultType="java.util.Map">
+        SELECT * FROM industry_concept WHERE id = #{id}
+    </select>
+    
+    <!-- 添加新概念 -->
+    <insert id="insertConcept">
+        INSERT INTO industry_concept 
+        (industry_code, concept_type, concept_key, aliases, description, 
+         examples, related_tables, related_columns, sql_patterns, created_at)
+        VALUES 
+        (#{industryCode}, #{conceptType}, #{conceptKey}, #{aliases}, #{description},
+         #{examples}, #{relatedTables}, #{relatedColumns}, #{sqlPatterns}, NOW())
+    </insert>
+    
+    <!-- 更新概念 -->
+    <update id="updateConcept">
+        UPDATE industry_concept 
+        SET concept_key = #{conceptKey},
+            aliases = #{aliases},
+            description = #{description},
+            examples = #{examples},
+            related_tables = #{relatedTables},
+            related_columns = #{relatedColumns},
+            sql_patterns = #{sqlPatterns},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 删除概念 -->
+    <delete id="deleteConcept">
+        DELETE FROM industry_concept WHERE id = #{id}
+    </delete>
+    
+    <!-- 更新概念状态 -->
+    <update id="updateConceptStatus">
+        UPDATE industry_concept 
+        SET status = #{status}, updated_at = NOW() 
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 增加使用次数 -->
+    <update id="incrementUsageCount">
+        UPDATE industry_concept 
+        SET usage_count = usage_count + 1 
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 根据行业代码获取 ID -->
+    <select id="getIndustryCodeById" resultType="java.lang.String">
+        SELECT industry_code FROM industry_concept WHERE id = #{id}
+    </select>
+    
+    <!-- 根据行业代码获取业务分类 -->
+    <select id="getBusinessCategoryByIndustryCode" resultType="java.lang.String">
+        SELECT business_category FROM industry_template WHERE industry_code = #{industryCode}
+    </select>
+    
+    <!-- 插入学习记录 -->
+    <insert id="insertLearningRecord">
+        INSERT INTO industry_learning_record 
+        (industry_code, concept_key, question, sql_text, created_at)
+        VALUES 
+        (#{industryCode}, #{conceptKey}, #{question}, #{sqlText}, NOW())
+    </insert>
+    
+    <!-- 获取学习记录 -->
+    <select id="getLearningRecords" resultType="java.util.Map">
+        SELECT * FROM industry_learning_record 
+        WHERE industry_code = #{industryCode}
+        ORDER BY created_at DESC
+    </select>
+    
+</mapper>

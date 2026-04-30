@@ -3,6 +3,7 @@ package com.nl2sql.core.agent.tools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.tool.BaseToolAdapter;
 import com.nl2sql.core.agent.tool.ToolContext;
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,8 +21,11 @@ import java.util.*;
 @Component
 public class GetTableMetadataTool extends BaseToolAdapter {
     
-    @Autowired
+    @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -92,18 +96,10 @@ public class GetTableMetadataTool extends BaseToolAdapter {
         log.info("[GetTableMetadataTool] 获取表元数据: {}", tableName);
         
         // 获取表注释
-        String tableComment = jdbcTemplate.queryForObject(
-            "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
-            String.class, datasourceId, tableName
-        );
+        String tableComment = metadataMapper.selectTableComment(datasourceId, tableName);
         
         // 获取字段列表
-        List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-            "SELECT column_name, data_type, column_comment, is_primary_key, ordinal_position " +
-            "FROM column_metadata WHERE datasource_id = ? AND table_name = ? " +
-            "ORDER BY ordinal_position",
-            datasourceId, tableName
-        );
+        List<Map<String, Object>> columns = metadataMapper.selectColumnList(datasourceId, tableName);
         
         if (columns.isEmpty()) {
             throw new IllegalArgumentException("表不存在或没有字段信息");

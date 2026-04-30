@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.web.mapper.TermSuggestionMapper">
+    
+    <!-- 查询术语动作映射 -->
+    <select id="selectTermActions" resultType="java.util.Map">
+        SELECT action, action_label, sql_template_id, priority
+        FROM term_action_mapping
+        WHERE term = #{term}
+          AND is_active = 1
+        ORDER BY priority DESC
+    </select>
+    
+    <!-- 查询术语建议（带行业过滤） -->
+    <select id="selectSuggestionsWithIndustry" resultType="java.util.Map">
+        SELECT
+            term,
+            term_type AS type,
+            usage_count
+        FROM term_suggestion
+        WHERE is_active = 1
+          AND term LIKE CONCAT('%', #{prefix}, '%')
+          AND industry_code = #{industry}
+        ORDER BY usage_count DESC
+        LIMIT #{limit}
+    </select>
+    
+    <!-- 查询术语建议（全行业） -->
+    <select id="selectSuggestionsAll" resultType="java.util.Map">
+        SELECT
+            term,
+            term_type AS type,
+            usage_count
+        FROM term_suggestion
+        WHERE is_active = 1
+          AND term LIKE CONCAT('%', #{prefix}, '%')
+        ORDER BY usage_count DESC
+        LIMIT #{limit}
+    </select>
+    
+    <!-- 根据数据源 ID 查询行业代码 -->
+    <select id="selectIndustryCodeByDatasource" resultType="java.lang.String">
+        SELECT industry_code
+        FROM datasource_industry_mapping
+        WHERE datasource_id = #{datasourceId}
+        ORDER BY priority
+        LIMIT 1
+    </select>
+    
+    <!-- 查询数据源的业务分类 -->
+    <select id="selectBusinessCategoryByDatasource" resultType="java.lang.String">
+        SELECT business_category
+        FROM datasource_config
+        WHERE id = #{datasourceId}
+    </select>
+    
+</mapper>

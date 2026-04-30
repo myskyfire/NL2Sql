@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.metadata.mapper.DdlExtractMapper">
+    
+    <!-- 查询所有表名 -->
+    <select id="selectAllTableNames" resultType="java.lang.String">
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = DATABASE() 
+          AND table_type = 'BASE TABLE'
+          AND table_name NOT LIKE 'sys_%' 
+          AND table_name NOT LIKE 'temp_%'
+    </select>
+    
+    <!-- 查询表的创建语句 -->
+    <select id="selectCreateTable" resultType="java.lang.String">
+        SHOW CREATE TABLE `${tableName}`
+    </select>
+    
+</mapper>

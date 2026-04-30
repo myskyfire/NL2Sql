@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.web.mapper.DatasourceSessionMapper">
+    
+    <!-- 统计活跃数据源数量 -->
+    <select id="countActiveDatasources" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM datasource_config WHERE is_active = 1
+    </select>
+    
+    <!-- 获取唯一活跃数据源 ID -->
+    <select id="getSingleActiveDatasource" resultType="java.lang.Long">
+        SELECT id FROM datasource_config WHERE is_active = 1 LIMIT 1
+    </select>
+    
+    <!-- 获取所有活跃数据源列表 -->
+    <select id="selectActiveDatasources" resultType="java.util.Map">
+        SELECT id, name, db_type, host, port, database_name, username, is_active, created_at, updated_at
+        FROM datasource_config
+        WHERE is_active = 1
+        ORDER BY updated_at DESC
+    </select>
+    
+    <!-- 获取数据源数据库名称 -->
+    <select id="getDatabaseNameById" resultType="java.lang.String">
+        SELECT database_name FROM datasource_config WHERE id = #{datasourceId}
+    </select>
+    
+    <!-- 检查数据源是否存在 -->
+    <select id="checkDatasourceExists" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM datasource_config WHERE id = #{datasourceId}
+    </select>
+    
+    <!-- 获取数据源配置 -->
+    <select id="getDatasourceConfig" resultType="java.util.Map">
+        SELECT * FROM datasource_config WHERE id = #{datasourceId}
+    </select>
+    
+    <!-- 获取会话关联的数据源 -->
+    <select id="getDatasourceBySessionId" resultType="java.lang.Long">
+        SELECT datasource_id FROM session_datasource_mapping WHERE session_id = #{sessionId}
+        LIMIT 1
+    </select>
+    
+    <!-- 保存会话数据源关联 -->
+    <insert id="saveSessionDatasource">
+        INSERT INTO session_datasource_mapping (session_id, datasource_id, created_at)
+        VALUES (#{sessionId}, #{datasourceId}, NOW())
+        ON DUPLICATE KEY UPDATE datasource_id = #{datasourceId}, updated_at = NOW()
+    </insert>
+    
+    <!-- 更新会话数据源 -->
+    <update id="updateSessionDatasource">
+        UPDATE session_datasource_mapping
+        SET datasource_id = #{datasourceId}, updated_at = NOW()
+        WHERE session_id = #{sessionId}
+    </update>
+    
+    <!-- 检查表是否存在 -->
+    <select id="checkTableExists" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM information_schema.tables 
+        WHERE table_schema = #{schemaName} AND table_name = #{tableName}
+    </select>
+    
+</mapper>

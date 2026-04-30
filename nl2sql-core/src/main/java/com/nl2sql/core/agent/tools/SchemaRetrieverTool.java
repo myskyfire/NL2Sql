@@ -5,6 +5,7 @@ import com.nl2sql.core.agent.tool.BaseToolAdapter;
 import com.nl2sql.core.agent.tool.ToolContext;
 import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.retriever.VectorRetriever;
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,8 +22,11 @@ import java.util.*;
 @Component
 public class SchemaRetrieverTool extends BaseToolAdapter {
     
-    @Autowired
+    @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
     
     @Autowired
     private VectorRetriever vectorRetriever;
@@ -111,10 +115,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
         for (String tableName : tables) {
             try {
                 // 查询表注释
-                String tableComment = jdbcTemplate.queryForObject(
-                    "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
-                    String.class, datasourceId, tableName
-                );
+                String tableComment = metadataMapper.selectTableComment(datasourceId, tableName);
                 
                 schemaInfo.append(String.format("\n### 表: %s", tableName));
                 if (tableComment != null && !tableComment.isEmpty()) {
@@ -123,11 +124,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
                 schemaInfo.append("\n");
                 
                 // 查询字段信息
-                List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                    "SELECT column_name, data_type, column_comment, is_nullable, column_key FROM column_metadata " +
-                    "WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position",
-                    datasourceId, tableName
-                );
+                List<Map<String, Object>> columns = metadataMapper.selectColumnListFull(datasourceId, tableName);
                 
                 if (!columns.isEmpty()) {
                     schemaInfo.append("字段:\n");

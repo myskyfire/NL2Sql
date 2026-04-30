@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.core.rag.mapper.SQLFeedbackServiceMapper">
+    
+    <!-- insertFeedback -->
+    <insert id="insertFeedback">
+        INSERT INTO sql_feedback (query_id, sql_text, feedback_type, feedback_content, user_id) VALUES (#{queryId}, #{sqlText}, #{feedbackType}, #{feedbackContent}, #{userId})
+    </insert>
+
+    <!-- selectFeedbackByQuery -->
+    <select id="selectFeedbackByQuery" resultType="java.util.Map">
+        SELECT * FROM sql_feedback WHERE query_id = #{queryId}
+    </select>
+
+</mapper>

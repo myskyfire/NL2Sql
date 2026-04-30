@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.core.rag.mapper.RagKnowledgeBaseServiceMapper">
+
+    <!-- ==================== 基础 CRUD ==================== -->
+
+    <insert id="insertQAPair" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO rag_knowledge_base (question, answer, sql_example, category, quality_score, usage_count, created_at)
+        VALUES (#{question}, #{answer}, #{sqlExample}, #{category}, #{qualityScore}, 0, NOW())
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM rag_knowledge_base WHERE id = #{id}
+    </delete>
+
+    <!-- ==================== 查询方法 ==================== -->
+
+    <!-- MySQL全文检索（降级方案） -->
+    <select id="searchByFullText" resultType="com.nl2sql.core.rag.RagKnowledgeBaseService$KnowledgeItem">
+        SELECT k.id, k.question, k.answer, k.sql_example, k.category, k.quality_score, k.usage_count,
+               MATCH(k.question) AGAINST(#{question} IN NATURAL LANGUAGE MODE) as relevance,
+               COALESCE(avg_feedback.rating, 3.0) as avg_rating
+        FROM rag_knowledge_base k
+        LEFT JOIN (
+            SELECT knowledge_id, AVG(rating) as rating
+            FROM rag_feedback
+            WHERE rating >= 4
+            GROUP BY knowledge_id
+        ) avg_feedback ON k.id = avg_feedback.knowledge_id
+        WHERE MATCH(k.question) AGAINST(#{question} IN NATURAL LANGUAGE MODE)
+          AND k.quality_score >= #{threshold}
+        ORDER BY (relevance * 0.6 + (avg_rating / 5.0) * 0.4) DESC, k.quality_score DESC
+        LIMIT #{maxResults}
+    </select>
+
+    <!-- 获取高质量样本 -->
+    <select id="getHighQualitySamples" resultType="com.nl2sql.core.rag.RagKnowledgeBaseService$KnowledgeItem">
+        SELECT id, question, answer, sql_example, category, quality_score, usage_count, created_at
+        FROM rag_knowledge_base
+        WHERE quality_score >= 0.9
+        <if test="category != null and category != ''">
+            AND category = #{category}
+        </if>
+        ORDER BY usage_count DESC, quality_score DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 按分类统计 -->
+    <select id="getCategoryStatistics" resultType="java.util.HashMap">
+        SELECT category, COUNT(*) as count
+        FROM rag_knowledge_base
+        GROUP BY category
+    </select>
+
+    <!-- 最近添加的条目 -->
+    <select id="getRecentAdded" resultType="com.nl2sql.core.rag.RagKnowledgeBaseService$KnowledgeItem">
+        SELECT id, question, answer, sql_example, category, quality_score, usage_count, created_at
+        FROM rag_knowledge_base
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 低质量条目 -->
+    <select id="getLowQualityItems" resultType="com.nl2sql.core.rag.RagKnowledgeBaseService$KnowledgeItem">
+        SELECT id, question, answer, sql_example, category, quality_score, usage_count, created_at
+        FROM rag_knowledge_base
+        WHERE quality_score &lt; #{threshold}
+        ORDER BY quality_score ASC
+    </select>
+
+    <!-- 总数统计 -->
+    <select id="getTotalCount" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM rag_knowledge_base
+    </select>
+
+    <!-- ==================== 更新方法 ==================== -->
+
+    <!-- 增加使用次数 -->
+    <update id="incrementUsageCount">
+        UPDATE rag_knowledge_base SET usage_count = usage_count + 1 WHERE id = #{id}
+    </update>
+
+    <!-- 更新质量分数 -->
+    <update id="updateQualityScore">
+        UPDATE rag_knowledge_base SET quality_score = #{score} WHERE id = #{id}
+    </update>
+
+    <!-- 批量更新分类 -->
+    <update id="batchUpdateCategory">
+        UPDATE rag_knowledge_base SET category = #{category}
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 批量删除 -->
+    <delete id="batchDelete">
+        DELETE FROM rag_knowledge_base
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+</mapper>

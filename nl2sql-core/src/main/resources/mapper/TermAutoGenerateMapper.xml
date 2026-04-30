@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.metadata.mapper.TermAutoGenerateMapper">
+    
+    <!-- 插入同义词 -->
+    <insert id="insertSynonym">
+        INSERT INTO term_suggestion (term, term_type, industry_code, usage_count, description, is_active) 
+        VALUES (#{term}, 'synonym', 'ecommerce', 5, #{description}, 1) 
+        ON DUPLICATE KEY UPDATE usage_count = usage_count + VALUES(usage_count)
+    </insert>
+    
+    <!-- 查询所有表 -->
+    <select id="selectAllTables" resultType="java.util.Map">
+        SELECT table_name, table_comment 
+        FROM information_schema.tables 
+        WHERE table_schema = DATABASE() 
+          AND table_type = 'BASE TABLE'
+    </select>
+    
+    <!-- 查询表的字段 -->
+    <select id="selectColumns" resultType="java.util.Map">
+        SELECT column_name, data_type, column_comment 
+        FROM information_schema.columns 
+        WHERE table_schema = DATABASE() 
+          AND table_name = #{tableName}
+        ORDER BY ordinal_position
+    </select>
+    
+</mapper>

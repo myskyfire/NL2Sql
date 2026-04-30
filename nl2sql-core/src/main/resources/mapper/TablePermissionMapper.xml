@@ -84,4 +84,14 @@
         ORDER BY tp.database_name, tp.table_name
     </select>
     
+    <!-- 查询用户授权的表列表（含用户信息） -->
+    <select id="findUserTablePermissions" resultType="java.util.HashMap">
+        SELECT tp.id, tp.user_id, u.username, u.real_name,
+               tp.table_name, tp.granted_by, tp.granted_at, tp.is_active
+        FROM table_permissions tp
+        JOIN users u ON tp.user_id = u.id
+        WHERE tp.user_id = #{userId}
+        ORDER BY tp.granted_at DESC
+    </select>
+    
 </mapper>
