@@ -82,6 +82,11 @@ public interface IndustryConceptAdminMapper {
     List<Map<String, Object>> selectConceptRelations(@Param("industryCode") String industryCode);
     
     /**
+     * 查询所有已审核的概念及其别名
+     */
+    List<Map<String, Object>> selectAllApprovedConceptsWithAliases();
+    
+    /**
      * 查询数据源的业务类别
      */
     String selectBusinessCategoryByDatasourceId(@Param("datasourceId") Long datasourceId);

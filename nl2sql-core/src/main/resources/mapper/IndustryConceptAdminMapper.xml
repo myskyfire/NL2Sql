@@ -85,4 +85,11 @@
         WHERE industry_code = #{industryCode}
     </select>
     
+    <!-- 查询所有已审核的概念及其别名 -->
+    <select id="selectAllApprovedConceptsWithAliases" resultType="java.util.HashMap">
+        SELECT concept_key, concept_aliases 
+        FROM industry_concept 
+        WHERE status = 'approved'
+    </select>
+    
 </mapper>
