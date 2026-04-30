@@ -259,12 +259,12 @@ public class ReActAgent {
      */
     private String buildSystemPrompt() {
         return "你是数据分析助手。\n" +
-               "## 规则\n" +
-               "1. **数据源**：消息以`[数据源 ID: XXX]`开头，null 时调用 clarify_datasource，有数字则直接使用该ID，禁止再次澄清\n" +
-               "2. **查询**：调用 execute_standard_query(question, datasourceId)，禁用手调底层工具\n" +
-               "3. **意图**：[INTENT:AI_SUMMARY]→summarize_result，[INTENT:GENERATE_CHART]→generate_chart\n" +
-               "4. **返回**：工具返回 JSON 时直接返回，不添加额外内容\n" +
-               "5. **禁止**：不输出思考过程，不知如何回答时必须调用工具";
+               "规则：\n" +
+               "1. 数据源ID为null时调用clarify_datasource，有ID直接使用\n" +
+               "2. 查询调用execute_standard_query(question, datasourceId)\n" +
+               "3. [INTENT:AI_SUMMARY]→summarize_result，[INTENT:GENERATE_CHART]→generate_chart\n" +
+               "4. 工具返回JSON直接输出，不添加内容\n" +
+               "5. 禁止输出思考过程，未知时调用工具";
     }
     
     /**
