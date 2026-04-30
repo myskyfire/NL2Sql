@@ -81,7 +81,7 @@ public class LLMService {
             
         } catch (Exception e) {
             log.error("[LLMService] SQL生成失败", e);
-            return "LLM调用失败: " + e.getMessage();
+            throw new RuntimeException("SQL生成失败: " + e.getMessage(), e);
         }
     }
     
@@ -179,12 +179,16 @@ public class LLMService {
         try {
             log.debug("[LLMService] 调用原生 Tool Calling，工具数量: {}", tools != null ? tools.size() : 0);
             
-            // ✅ 使用推理模型（qwen3:8b）- Tool Calling需要强推理能力
+            // ✅ 使用当前活跃的 Provider（支持 Ollama、阿里云等）
+            if (activeProvider instanceof com.nl2sql.core.llm.provider.OpenAICompatibleProvider) {
+                return activeProvider.generateWithTools(messages, temperature, tools);
+            }
+            
             if (ollamaReasoningProvider != null) {
                 return ollamaReasoningProvider.generateWithTools(messages, temperature, tools);
             }
             
-            // 降级：如果 Ollama Provider 不支持，抛出异常
+            // 降级：如果所有 Provider 都不支持，抛出异常
             throw new UnsupportedOperationException("当前 Provider 不支持原生 Tool Calling");
             
         } catch (Exception e) {

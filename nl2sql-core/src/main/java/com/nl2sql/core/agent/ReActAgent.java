@@ -116,7 +116,7 @@ public class ReActAgent {
                 // 调试：打印完整响应
                 log.info("[ReActAgent] LLM 完整响应: {}", objectMapper.writeValueAsString(llmResponse));
                 
-                // 解析响应
+                // 解析响应（统一格式：所有 Provider 都返回 {message: {...}}）
                 Map<String, Object> message = (Map<String, Object>) llmResponse.get("message");
                 if (message == null) {
                     log.error("[ReActAgent] LLM 响应格式错误");
@@ -246,7 +246,7 @@ public class ReActAgent {
                 
             } catch (Exception e) {
                 log.error("[ReActAgent] 执行失败", e);
-                return "执行错误: " + e.getMessage();
+                throw new RuntimeException("ReAct Agent 执行失败: " + e.getMessage(), e);
             }
         }
         

@@ -2,6 +2,7 @@ package com.nl2sql.core.rag;
 
 import com.nl2sql.core.rag.dto.BatchImportResult;
 import com.nl2sql.core.rag.dto.QAImportRequest;
+import com.nl2sql.core.rag.dto.RagQAPairDTO;
 import com.nl2sql.core.rag.mapper.RagKnowledgeBaseServiceMapper;
 import com.nl2sql.core.rag.provider.VectorSearchResult;
 import com.nl2sql.core.rag.provider.VectorStoreManager;
@@ -46,10 +47,17 @@ public class RagKnowledgeBaseService {
     public Long saveQAPair(String question, String answer, String sqlExample, 
                           String category, float qualityScore) {
         // 1. 保存到MySQL（持久化）- 使用 MyBatis
-        ragMapper.insertQAPair(question, answer, sqlExample, category, qualityScore);
+        RagQAPairDTO qaPair = new RagQAPairDTO();
+        qaPair.setQuestion(question);
+        qaPair.setAnswer(answer);
+        qaPair.setSqlExample(sqlExample);
+        qaPair.setCategory(category);
+        qaPair.setQualityScore(qualityScore);
         
-        // 获取自增 ID（MyBatis useGeneratedKeys 会自动填充到参数对象，但这里需要单独查询）
-        Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        ragMapper.insertQAPair(qaPair);
+        
+        // MyBatis useGeneratedKeys 会自动填充 ID 到对象
+        Long id = qaPair.getId();
         
         // 2. 同步到向量数据库（使用活跃提供者）
         VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();

@@ -23,7 +23,10 @@ public interface RagFeedbackMapper {
     /**
      * 检查是否有相同问题的低分反馈
      */
-    LowRatingExampleService.LowRatingExample checkExactMatchLowRating(@Param("question") String question);
+    LowRatingExampleService.LowRatingExample checkExactMatchLowRating(
+        @Param("question") String question,
+        @Param("generatedSql") String generatedSql
+    );
     
     /**
      * 更新知识库质量评分（降级相似示例）

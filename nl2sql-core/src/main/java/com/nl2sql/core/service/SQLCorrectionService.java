@@ -292,6 +292,15 @@ public class SQLCorrectionService {
             String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
             correctedSql = cleanSQL(correctedSql);
             
+            // ✅ 关键校验：检查是否为 LLM 错误信息
+            if (correctedSql.contains("LLM调用失败") || 
+                correctedSql.contains("API调用失败") || 
+                correctedSql.contains("request timed out") ||
+                correctedSql.contains("timeout")) {
+                log.error("[SQLCorrection] LLM 返回错误信息，非有效 SQL: {}", correctedSql);
+                return failedSql; // 返回原 SQL，避免死循环
+            }
+            
             log.info("[SQLCorrection] 修正后SQL: {}", correctedSql);
             return correctedSql;
             
@@ -330,6 +339,15 @@ public class SQLCorrectionService {
             
             String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
             correctedSql = cleanSQL(correctedSql);
+            
+            // ✅ 关键校验：检查是否为 LLM 错误信息
+            if (correctedSql.contains("LLM调用失败") || 
+                correctedSql.contains("API调用失败") || 
+                correctedSql.contains("request timed out") ||
+                correctedSql.contains("timeout")) {
+                log.error("[SQLCorrection] LLM 返回错误信息，非有效 SQL: {}", correctedSql);
+                return sql; // 返回原 SQL
+            }
             
             log.info("[SQLCorrection] 聚合/JOIN修正后SQL: {}", correctedSql);
             return correctedSql;

@@ -162,6 +162,93 @@ public class OpenAICompatibleProvider implements LLMProvider {
         return config;
     }
     
+    @Override
+    public Map<String, Object> generateWithTools(List<Map<String, Object>> messages, double temperature, List<Map<String, Object>> tools) {
+        // ✅ 重试机制：最多2次，超时时间逐级增加（60s → 90s）
+        int maxRetries = 2;
+        int[] timeouts = {60, 90};
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                log.info("[OpenAICompatibleProvider] 第{}/{}次尝试，超时={}秒", attempt, maxRetries, timeouts[attempt - 1]);
+                
+                Map<String, Object> requestBody = new HashMap<>();
+                requestBody.put("model", modelName);
+                requestBody.put("messages", messages);
+                requestBody.put("temperature", temperature);
+                
+                // ✅ 禁用 thinking/reasoning 模式，强制直接返回 tool_calls
+                requestBody.put("enable_thinking", false);
+                
+                // 添加工具定义
+                if (tools != null && !tools.isEmpty()) {
+                    requestBody.put("tools", tools);
+                    log.debug("[OpenAICompatibleProvider] 启用 Tool Calling，工具数量: {}", tools.size());
+                }
+                
+                String jsonBody = objectMapper.writeValueAsString(requestBody);
+                
+                HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/chat/completions"))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(timeouts[attempt - 1]))
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+                
+                if (!apiKey.isEmpty()) {
+                    builder.header("Authorization", "Bearer " + apiKey);
+                }
+                
+                HttpResponse<String> response = httpClient.send(builder.build(), 
+                    HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() != 200) {
+                    throw new RuntimeException("API返回错误: " + response.body());
+                }
+                
+                // 解析完整响应（包含 tool_calls）
+                Map<String, Object> responseMap = objectMapper.readValue(response.body(), Map.class);
+                
+                // ✅ 将 OpenAI 格式转换为统一格式：{choices: [{message: {...}}]} → {message: {...}}
+                List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
+                if (choices != null && !choices.isEmpty()) {
+                    Map<String, Object> firstChoice = choices.get(0);
+                    Map<String, Object> message = (Map<String, Object>) firstChoice.get("message");
+                    
+                    // 构建统一格式响应
+                    Map<String, Object> unifiedResponse = new HashMap<>();
+                    unifiedResponse.put("message", message);
+                    
+                    // 保留其他有用字段
+                    if (responseMap.containsKey("usage")) {
+                        unifiedResponse.put("usage", responseMap.get("usage"));
+                    }
+                    if (responseMap.containsKey("model")) {
+                        unifiedResponse.put("model", responseMap.get("model"));
+                    }
+                    
+                    log.info("[OpenAICompatibleProvider] ✅ 第{}次尝试成功", attempt);
+                    return unifiedResponse;
+                }
+                
+                throw new RuntimeException("响应中未找到 choices");
+                
+            } catch (java.net.http.HttpTimeoutException e) {
+                log.warn("[OpenAICompatibleProvider] 第{}次尝试超时: {}", attempt, e.getMessage());
+                if (attempt == maxRetries) {
+                    log.error("[OpenAICompatibleProvider] ❌ 所有重试均失败");
+                    throw new RuntimeException("LLM调用超时，已重试" + maxRetries + "次", e);
+                }
+                // 继续下一次重试
+            } catch (Exception e) {
+                log.error("[OpenAICompatibleProvider] Tool Calling 失败", e);
+                throw new RuntimeException("Tool Calling 失败: " + e.getMessage(), e);
+            }
+        }
+        
+        // 理论上不会到达这里
+        throw new RuntimeException("LLM调用失败");
+    }
+    
     /**
      * 从OpenAI兼容响应中提取内容
      */

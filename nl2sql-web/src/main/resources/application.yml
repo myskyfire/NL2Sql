@@ -12,6 +12,8 @@ server:
 
 # 本地元数据存储库配置（唯一数据源）
 spring:
+  profiles:
+    active: local  # ✅ 激活本地配置（application-local.yml）
   http:
     encoding:
       charset: UTF-8
@@ -56,11 +58,12 @@ spring:
 llm:
   # 活跃的提供者名称（根据环境切换）
   # 开发: ollama
-  # 生产: vllm | tgi | tensorrt | llamacpp
-  active-provider: ollama
+  # 生产: vllm | tgi | tensorrt | llamacpp | aliyun
+  active-provider: aliyun
   
   # 提供者优先级列表（用于自动故障转移）
   provider-priority:
+    - aliyun
     - ollama
     - vllm
     - tgi
@@ -69,9 +72,17 @@ llm:
     - chatglm
     - qwen
   
+  # ========== 阿里云通义千问配置（生产 - API调用）==========
+  aliyun:
+    enabled: true
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-plus
+    api-key: ${ALIYUN_API_KEY}
+    timeout: 60
+  
   # ========== Ollama配置（开发环境）==========
   ollama:
-    enabled: true
+    enabled: false
     base-url: http://localhost:11434
     code-model: qwen2.5-coder:7b-instruct-q4_0
     nlp-model: qwen3:8b

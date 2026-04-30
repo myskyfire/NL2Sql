@@ -142,6 +142,16 @@ public class SQLExecutor {
             }
         }
         
+        // ✅ 关键校验：检查是否为 LLM 错误信息（避免死循环）
+        if (sql.contains("LLM调用失败") || 
+            sql.contains("API调用失败") || 
+            sql.contains("request timed out")) {
+            result.setError("SQL生成失败：LLM服务异常，请稍后重试");
+            result.setExecutionTime(0);
+            log.error("[SQL拦截] 检测到 LLM 错误信息: {}", sql);
+            return result;
+        }
+        
         // 最终安全检查：确保只执行查询操作
         String upperSQL = sql.trim().toUpperCase();
         if (!upperSQL.startsWith("SELECT") && !upperSQL.startsWith("SHOW") && 

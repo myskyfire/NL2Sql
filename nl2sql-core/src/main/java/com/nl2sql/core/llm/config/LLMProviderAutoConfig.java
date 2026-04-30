@@ -68,6 +68,11 @@ public class LLMProviderAutoConfig {
      */
     private LlamaCppConfig llamacpp = new LlamaCppConfig();
     
+    /**
+     * 阿里云通义千问配置（生产环境 - API调用）
+     */
+    private AliyunConfig aliyun = new AliyunConfig();
+    
     @Data
     public static class OllamaConfig {
         private boolean enabled = true;
@@ -128,6 +133,15 @@ public class LLMProviderAutoConfig {
         private String model = "/models/qwen3-8b-q4_k_m.gguf";
         private String apiKey = "";
         private int timeout = 60;
+    }
+    
+    @Data
+    public static class AliyunConfig {
+        private boolean enabled = false;
+        private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+        private String model = "qwen-plus";  // 默认值，可在 application-local.yml 中覆盖
+        private String apiKey = "${ALIYUN_API_KEY}";
+        private int timeout = 60;  // 默认 60 秒，配合重试机制
     }
     
     @PostConstruct
@@ -257,6 +271,22 @@ public class LLMProviderAutoConfig {
             llamacpp.getModel(),
             llamacpp.getApiKey(),
             llamacpp.getTimeout()
+        );
+    }
+    
+    /**
+     * 注册阿里云通义千问提供者（生产环境 - API调用）
+     */
+    @Bean
+    @ConditionalOnProperty(name = "llm.aliyun.enabled", havingValue = "true")
+    public OpenAICompatibleProvider aliyunProvider() {
+        log.info("[LLM配置] 注册阿里云提供者: model={}, url={}", aliyun.getModel(), aliyun.getBaseUrl());
+        return new OpenAICompatibleProvider(
+            "aliyun",
+            aliyun.getBaseUrl(),
+            aliyun.getModel(),
+            resolveApiKey(aliyun.getApiKey()),
+            aliyun.getTimeout()
         );
     }
     

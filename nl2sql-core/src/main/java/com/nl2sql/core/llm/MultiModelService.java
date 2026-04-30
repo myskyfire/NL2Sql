@@ -52,7 +52,7 @@ public class MultiModelService {
             
             if (response == null || response.trim().isEmpty()) {
                 log.warn("[LLM调用] LLM返回空响应");
-                return "SELECT 1 as error -- LLM返回空响应";
+                throw new RuntimeException("LLM返回空响应");
             }
             
             // 4. 记录使用
@@ -65,7 +65,7 @@ public class MultiModelService {
             return response.trim();
         } catch (Exception e) {
             log.error("[LLM调用] SQL生成异常", e);
-            return "SELECT 1 as error -- SQL生成异常: " + e.getMessage();
+            throw new RuntimeException("SQL生成异常: " + e.getMessage(), e);
         }
     }
     
@@ -93,7 +93,7 @@ public class MultiModelService {
             
             if (response == null || response.trim().isEmpty()) {
                 log.warn("[LLM调用-推理模型] LLM返回空响应");
-                return "SELECT 1 as error -- LLM返回空响应";
+                throw new RuntimeException("LLM返回空响应");
             }
             
             // 4. 记录使用
@@ -115,12 +115,7 @@ public class MultiModelService {
      * 普通SQL生成（无RAG）
      */
     public String generateSQL(String prompt) {
-        try {
-            return llmService.generateSQL(prompt);
-        } catch (Exception e) {
-            log.error("[LLM调用] SQL生成失败", e);
-            return "SELECT 1 as error -- " + e.getMessage();
-        }
+        return llmService.generateSQL(prompt);
     }
     
     /**

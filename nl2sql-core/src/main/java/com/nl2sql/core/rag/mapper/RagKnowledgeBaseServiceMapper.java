@@ -1,6 +1,7 @@
 package com.nl2sql.core.rag.mapper;
 
 import com.nl2sql.core.rag.RagKnowledgeBaseService;
+import com.nl2sql.core.rag.dto.RagQAPairDTO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -14,13 +15,9 @@ import java.util.Map;
 public interface RagKnowledgeBaseServiceMapper {
     
     /**
-     * 插入问答对
+     * 插入问答对（返回自增 ID）
      */
-    void insertQAPair(@Param("question") String question,
-                     @Param("answer") String answer,
-                     @Param("sqlExample") String sqlExample,
-                     @Param("category") String category,
-                     @Param("qualityScore") float qualityScore);
+    void insertQAPair(RagQAPairDTO qaPair);
     
     /**
      * 删除指定ID
