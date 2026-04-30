@@ -190,7 +190,7 @@ public class FeedbackLearningService {
             int affectedRows = 0;
             if (ragFeedbackMapper != null) {
                 // 使用MyBatis Mapper
-                affectedRows = ragFeedbackMapper.markNegativeExample(categoriesStr, feedbackId);
+                affectedRows = ragFeedbackMapper.markNegativeExample(feedbackId, categoriesStr);
             } else {
                 // 降级到JdbcTemplate
                 String updateSql = "UPDATE rag_feedback SET feedback_text = CONCAT(IFNULL(feedback_text, ''), '|ERROR_CATEGORIES:', ?) " +

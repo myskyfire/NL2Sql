@@ -65,7 +65,7 @@ public class SQLExecutionLogService {
                     execLog.getUsername(),
                     execLog.getSqlText(),
                     execLog.getExecutionTimeMs(),
-                    execLog.getRowCount(),
+                    execLog.getRowCount() != null ? execLog.getRowCount().longValue() : 0L,
                     execLog.isSlowQuery() ? 1 : 0,
                     execLog.getStatus(),
                     execLog.getErrorMessage(),
