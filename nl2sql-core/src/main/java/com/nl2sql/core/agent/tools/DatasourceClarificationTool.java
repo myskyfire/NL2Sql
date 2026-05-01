@@ -118,6 +118,7 @@ public class DatasourceClarificationTool {
                 "- 用户/会员类 → 包含'用户/user/customer'的数据源\n" +
                 "- 地区/地理类 → 通常与订单/销售数据关联\n\n" +
                 "任务：分析意图和业务领域，匹配数据源。无法确定则返回null并标记need_table_info=true。\n\n" +
+                "⚠️ **重要**：输出严格JSON格式，reason字段使用英文引号，不要使用中文引号。\n" +
                 "输出JSON：{\"matched_datasource_id\": ID或null, \"confidence\": \"high/medium/low\", \"need_table_info\": true/false, \"reason\": \"原因\"}",
                 userQuery,
                 datasourceInfo.toString()
@@ -222,6 +223,7 @@ public class DatasourceClarificationTool {
                 "用户问题：%s\n\n" +
                 "可用数据源（含表）：\n%s\n\n" +
                 "任务：分析用户问题涉及的表，找到最匹配的数据源。无法确定则返回null。\n\n" +
+                "⚠️ **重要**：输出严格JSON格式，reason字段使用英文引号，不要使用中文引号。\n" +
                 "输出JSON：{\"matched_datasource_id\": ID或null, \"confidence\": \"high/medium/low\", \"reason\": \"原因\"}",
                 userQuery,
                 detailedInfo.toString()
@@ -269,7 +271,7 @@ public class DatasourceClarificationTool {
                 }
             }
             
-            // ✅ P0优化：修复LLM返回JSON中的中文引号问题
+            // ✅ 兜底：修复LLM可能返回的中文引号（Prompt已约束，此处理为保险）
             cleaned = cleaned.replace("“", "\"").replace("”", "\"");
             
             return objectMapper.readValue(cleaned, Map.class);
