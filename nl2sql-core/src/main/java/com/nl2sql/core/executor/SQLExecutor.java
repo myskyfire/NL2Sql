@@ -42,6 +42,9 @@ public class SQLExecutor {
     @Autowired(required = false)
     private AuthService authService;  // ✅ 新增：权限服务（可选注入）
     
+    @Autowired(required = false)
+    private com.nl2sql.metadata.service.TableQueryStatsService tableQueryStatsService;  // ✅ 新增：查询统计服务
+    
     @Value("${sql.execution.query-timeout:30}")
     private int queryTimeout;
     
@@ -322,6 +325,20 @@ public class SQLExecutor {
                     log.debug("[✅ 缓存写入] SQL查询结果已缓存: 行数={}", result.getRowCount());
                 } catch (Exception e) {
                     log.warn("[缓存写入失败] 不影响查询结果: {}", e.getMessage());
+                }
+            }
+            
+            // ✅ 新增：记录查询统计（用于元数据增强决策）
+            if (tableQueryStatsService != null && datasourceId != null && result.getError() == null) {
+                try {
+                    String tableName = extractTableName(sql);
+                    if (tableName != null) {
+                        // 默认评分为5分（成功执行），实际评分会在用户反馈时更新
+                        tableQueryStatsService.recordQuery(datasourceId, tableName, 5);
+                        log.debug("[查询统计] 记录查询: datasourceId={}, table={}", datasourceId, tableName);
+                    }
+                } catch (Exception e) {
+                    log.warn("[查询统计] 记录失败，不影响主流程: {}", e.getMessage());
                 }
             }
             

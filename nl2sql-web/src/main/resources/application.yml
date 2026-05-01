@@ -198,6 +198,15 @@ sql:
     max-rows: 100
     table-stats-cache-hours: 12
 
+# ✅ 元数据增强配置
+metadata:
+  enhancement:
+    enabled: true  # 是否启用自动增强
+    auto-infer: true  # 是否启用规则推断（零成本）
+    feedback-triggered: true  # 是否响应低分反馈触发增强
+    batch-schedule: "0 0 2 * * SUN"  # 批量增强 cron 表达式（每周日凌晨2点）
+    coverage-threshold: 0.5  # 覆盖率阈值（<50% 才增强）
+
 # 表选择配置
 table-selection:
   # 自动选择数据源：当LLM唯一确定且confidence=high时，跳过前端确认

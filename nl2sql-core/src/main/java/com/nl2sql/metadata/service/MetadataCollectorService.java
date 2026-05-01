@@ -66,17 +66,9 @@ public class MetadataCollectorService {
                 // 3. 保存表元数据
                 saveTableMetadata(tables);
                 
-                // ✅ 新增：异步增强表描述和列描述（不阻塞主流程）
+                // ✅ 新增：异步增强表描述（不阻塞主流程）
                 enhanceTableDescriptionsAsync(datasourceId);
-                // 延迟30秒后启动列增强，确保表增强已完成
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(30000); // 等待30秒
-                        enhanceColumnDescriptionsAsync(datasourceId);
-                    } catch (InterruptedException e) {
-                        log.warn("[元数据增强] 列增强延迟启动被中断", e);
-                    }
-                }, "column-enhance-delay-thread").start();
+                // ❌ 已移除：列增强改为按需触发（反馈驱动 + 定时批量）
                 
                 // 4. 采集字段和外键
                 int totalColumns = 0;
@@ -244,7 +236,18 @@ public class MetadataCollectorService {
             
             // 使用SQL查询获取正确的注释
             String columnComment = getColumnComment(conn, tableName, rs.getString("COLUMN_NAME"));
+            
+            // ✅ 新增：如果无注释，尝试自动推断（零成本）
+            String commentSource = "MANUAL";
+            if (columnComment == null || columnComment.trim().isEmpty()) {
+                columnComment = inferColumnComment(rs.getString("COLUMN_NAME"), rs.getString("TYPE_NAME"));
+                if (columnComment != null) {
+                    commentSource = "INFERRED";  // 标记为规则推断
+                }
+            }
+            
             column.setColumnComment(columnComment);
+            column.setCommentSource(commentSource);
             
             column.setOrdinalPosition(rs.getInt("ORDINAL_POSITION"));
             
@@ -356,8 +359,8 @@ public class MetadataCollectorService {
      * 保存字段元数据（使用 INSERT IGNORE 避免重复键冲突）
      */
     private void saveColumnMetadata(List<ColumnMetadata> columns) {
-        String sql = "INSERT IGNORE INTO column_metadata (datasource_id, table_name, table_comment, column_name, data_type, column_size, decimal_digits, is_nullable, column_default, column_comment, is_primary_key, ordinal_position, character_set_name) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT IGNORE INTO column_metadata (datasource_id, table_name, table_comment, column_name, data_type, column_size, decimal_digits, is_nullable, column_default, column_comment, is_primary_key, ordinal_position, character_set_name, comment_source) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         for (ColumnMetadata column : columns) {
             localJdbcTemplate.update(sql,
@@ -373,7 +376,8 @@ public class MetadataCollectorService {
                 column.getColumnComment(),
                 column.getIsPrimaryKey() != null ? column.getIsPrimaryKey() : 0,
                 column.getOrdinalPosition(),
-                column.getCharacterSetName()
+                column.getCharacterSetName(),
+                column.getCommentSource() != null ? column.getCommentSource() : "MANUAL"
             );
         }
     }
@@ -697,6 +701,292 @@ public class MetadataCollectorService {
     private void updateColumnComment(Long datasourceId, String tableName, String columnName, String comment) {
         String sql = "UPDATE column_metadata SET column_comment = ? WHERE datasource_id = ? AND table_name = ? AND column_name = ?";
         localJdbcTemplate.update(sql, comment, datasourceId, tableName, columnName);
+    }
+    
+    /**
+     * ✅ 新增：基于规则推断字段注释（零成本）
+     */
+    private String inferColumnComment(String columnName, String dataType) {
+        if (columnName == null || columnName.isEmpty()) {
+            return null;
+        }
+        
+        String lowerName = columnName.toLowerCase();
+        
+        // 常见字段名映射（可扩展）
+        Map<String, String> patterns = Map.ofEntries(
+            // === 通用字段 ===
+            Map.entry("id", "主键ID"),
+            Map.entry("uuid", "唯一标识"),
+            Map.entry("code", "编码"),
+            Map.entry("no", "编号"),
+            Map.entry("number", "号码"),
+            Map.entry("name", "名称"),
+            Map.entry("title", "标题"),
+            Map.entry("type", "类型"),
+            Map.entry("status", "状态"),
+            Map.entry("state", "状态"),
+            Map.entry("remark", "备注"),
+            Map.entry("description", "描述"),
+            Map.entry("desc", "描述"),
+            Map.entry("note", "说明"),
+            Map.entry("content", "内容"),
+            Map.entry("sort", "排序"),
+            Map.entry("order", "顺序"),
+            Map.entry("level", "级别"),
+            Map.entry("priority", "优先级"),
+            Map.entry("category", "分类"),
+            Map.entry("group", "分组"),
+            Map.entry("tag", "标签"),
+            
+            // === 时间字段 ===
+            Map.entry("created_at", "创建时间"),
+            Map.entry("create_time", "创建时间"),
+            Map.entry("created_on", "创建日期"),
+            Map.entry("updated_at", "更新时间"),
+            Map.entry("update_time", "更新时间"),
+            Map.entry("modified_at", "修改时间"),
+            Map.entry("deleted_at", "删除时间"),
+            Map.entry("expired_at", "过期时间"),
+            Map.entry("start_time", "开始时间"),
+            Map.entry("end_time", "结束时间"),
+            Map.entry("begin_date", "开始日期"),
+            Map.entry("end_date", "结束日期"),
+            
+            // === 人员字段 ===
+            Map.entry("created_by", "创建人"),
+            Map.entry("creator", "创建人"),
+            Map.entry("updated_by", "更新人"),
+            Map.entry("modifier", "修改人"),
+            Map.entry("deleted_by", "删除人"),
+            Map.entry("owner", "所有者"),
+            Map.entry("assignee", "负责人"),
+            Map.entry("operator", "操作人"),
+            
+            // === 电商领域 ===
+            Map.entry("user_id", "用户ID"),
+            Map.entry("customer_id", "客户ID"),
+            Map.entry("member_id", "会员ID"),
+            Map.entry("order_id", "订单ID"),
+            Map.entry("order_no", "订单号"),
+            Map.entry("order_sn", "订单流水号"),
+            Map.entry("product_id", "商品ID"),
+            Map.entry("sku_id", "SKU ID"),
+            Map.entry("spu_id", "SPU ID"),
+            Map.entry("category_id", "分类ID"),
+            Map.entry("brand_id", "品牌ID"),
+            Map.entry("shop_id", "店铺ID"),
+            Map.entry("cart_id", "购物车ID"),
+            Map.entry("coupon_id", "优惠券ID"),
+            Map.entry("amount", "金额"),
+            Map.entry("price", "价格"),
+            Map.entry("original_price", "原价"),
+            Map.entry("sale_price", "售价"),
+            Map.entry("discount", "折扣"),
+            Map.entry("quantity", "数量"),
+            Map.entry("stock", "库存"),
+            Map.entry("sales", "销量"),
+            Map.entry("weight", "重量"),
+            Map.entry("volume", "体积"),
+            
+            // === 金融领域 ===
+            Map.entry("account_id", "账户ID"),
+            Map.entry("card_no", "卡号"),
+            Map.entry("balance", "余额"),
+            Map.entry("principal", "本金"),
+            Map.entry("interest", "利息"),
+            Map.entry("fee", "手续费"),
+            Map.entry("tax", "税费"),
+            Map.entry("income", "收入"),
+            Map.entry("expense", "支出"),
+            Map.entry("profit", "利润"),
+            Map.entry("loss", "亏损"),
+            Map.entry("asset", "资产"),
+            Map.entry("liability", "负债"),
+            Map.entry("equity", "权益"),
+            Map.entry("transaction_id", "交易ID"),
+            Map.entry("payment_id", "支付ID"),
+            Map.entry("refund_id", "退款ID"),
+            
+            // === 联系信息 ===
+            Map.entry("phone", "手机号"),
+            Map.entry("mobile", "手机号"),
+            Map.entry("telephone", "电话"),
+            Map.entry("email", "邮箱"),
+            Map.entry("mail", "邮箱"),
+            Map.entry("address", "地址"),
+            Map.entry("location", "位置"),
+            Map.entry("city", "城市"),
+            Map.entry("province", "省份"),
+            Map.entry("country", "国家"),
+            Map.entry("zipcode", "邮编"),
+            Map.entry("postal_code", "邮政编码"),
+            
+            // === 网络相关 ===
+            Map.entry("ip", "IP地址"),
+            Map.entry("url", "链接地址"),
+            Map.entry("link", "链接"),
+            Map.entry("domain", "域名"),
+            Map.entry("host", "主机"),
+            Map.entry("port", "端口"),
+            Map.entry("protocol", "协议"),
+            Map.entry("path", "路径"),
+            
+            // === 其他 ===
+            Map.entry("version", "版本号"),
+            Map.entry("config", "配置"),
+            Map.entry("setting", "设置"),
+            Map.entry("option", "选项"),
+            Map.entry("value", "值"),
+            Map.entry("key", "键"),
+            Map.entry("flag", "标志"),
+            Map.entry("is_deleted", "是否删除"),
+            Map.entry("is_active", "是否激活"),
+            Map.entry("is_enabled", "是否启用"),
+            Map.entry("is_valid", "是否有效")
+        );
+        
+        // 精确匹配
+        if (patterns.containsKey(lowerName)) {
+            return patterns.get(lowerName);
+        }
+        
+        // 模糊匹配（包含关系）
+        for (Map.Entry<String, String> entry : patterns.entrySet()) {
+            if (lowerName.contains(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        
+        return null; // 无法推断
+    }
+    
+    /**
+     * ✅ 新增：按需增强指定表的字段注释（反馈驱动）
+     */
+    public void enhanceColumnDescriptionsForTable(Long datasourceId, String tableName) {
+        new Thread(() -> {
+            try {
+                log.info("[按需增强] 开始增强表 {}.{} 的字段注释", datasourceId, tableName);
+                
+                // 1. 检查是否需要增强（覆盖率 < 50%）
+                if (!shouldEnhanceTable(datasourceId, tableName)) {
+                    log.info("[按需增强] 表 {}.{} 注释覆盖率已达标，跳过", datasourceId, tableName);
+                    return;
+                }
+                
+                // 2. 获取需要增强的字段列表
+                String colSql = "SELECT column_name, data_type, column_size, is_nullable, column_default, column_comment, is_primary_key " +
+                               "FROM column_metadata WHERE datasource_id = ? AND table_name = ? AND (column_comment IS NULL OR column_comment = '') ORDER BY ordinal_position";
+                List<Map<String, Object>> columns = localJdbcTemplate.queryForList(colSql, datasourceId, tableName);
+                
+                if (columns.isEmpty()) {
+                    log.info("[按需增强] 表 {}.{} 所有字段已有注释", datasourceId, tableName);
+                    return;
+                }
+                
+                log.info("[按需增强] 表 {}.{} 共 {} 个字段需要增强", datasourceId, tableName, columns.size());
+                
+                // 3. 批量构建 Prompt（一次调用处理所有字段）
+                StringBuilder prompt = new StringBuilder();
+                prompt.append("你是数据库专家。为以下字段生成简洁的中文业务注释（每字段20字以内）。\n\n");
+                prompt.append("表名: ").append(tableName).append("\n\n");
+                prompt.append("字段列表:\n");
+                
+                for (Map<String, Object> col : columns) {
+                    prompt.append("- ").append(col.get("column_name"))
+                          .append(" (").append(col.get("data_type"));
+                    
+                    if ("1".equals(String.valueOf(col.get("is_primary_key")))) {
+                        prompt.append(", 主键");
+                    }
+                    if ("0".equals(String.valueOf(col.get("is_nullable")))) {
+                        prompt.append(", 非空");
+                    }
+                    prompt.append(")\n");
+                }
+                
+                prompt.append("\n要求:\n");
+                prompt.append("1. 根据字段名推测业务含义\n");
+                prompt.append("2. 简洁准确，20字以内\n");
+                prompt.append("3. 返回 JSON 格式：{\"columnName\": \"comment\"}\n");
+                prompt.append("4. 只返回 JSON，不要其他内容\n\n");
+                prompt.append("生成的 JSON:");
+                
+                // 4. 调用 LLM
+                String response = callLLM(prompt.toString());
+                if (response == null || response.isEmpty()) {
+                    log.warn("[按需增强] LLM 返回为空");
+                    return;
+                }
+                
+                // 5. 解析并更新
+                Map<String, String> comments = parseJsonResponse(response);
+                int updatedCount = 0;
+                for (Map.Entry<String, String> entry : comments.entrySet()) {
+                    String columnName = entry.getKey();
+                    String comment = entry.getValue();
+                    
+                    if (comment != null && comment.length() > 2 && comment.length() <= 20) {
+                        updateColumnCommentWithSource(datasourceId, tableName, columnName, comment, "LLM");
+                        updatedCount++;
+                    }
+                }
+                
+                log.info("[按需增强] 表 {}.{} 完成，更新 {} 个字段", datasourceId, tableName, updatedCount);
+                
+            } catch (Exception e) {
+                log.error("[按需增强] 异常", e);
+            }
+        }, "on-demand-enhance-thread").start();
+    }
+    
+    /**
+     * 检查表是否需要增强
+     */
+    private boolean shouldEnhanceTable(Long datasourceId, String tableName) {
+        String countSql = "SELECT COUNT(*) as total, " +
+                         "SUM(CASE WHEN column_comment IS NOT NULL AND column_comment != '' THEN 1 ELSE 0 END) as commented " +
+                         "FROM column_metadata WHERE datasource_id = ? AND table_name = ?";
+        
+        Map<String, Object> result = localJdbcTemplate.queryForMap(countSql, datasourceId, tableName);
+        int total = ((Number) result.get("total")).intValue();
+        int commented = ((Number) result.get("commented")).intValue();
+        
+        if (total == 0) {
+            return false;
+        }
+        
+        double coverageRate = (double) commented / total;
+        log.debug("[按需增强] 表 {}.{} 注释覆盖率: {:.2f}%", datasourceId, tableName, coverageRate * 100);
+        
+        return coverageRate < 0.5; // 覆盖率 < 50% 才增强
+    }
+    
+    /**
+     * 解析 LLM 返回的 JSON
+     */
+    private Map<String, String> parseJsonResponse(String json) {
+        try {
+            // 清理 Markdown 格式
+            json = json.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            
+            // 使用 Jackson 解析
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
+        } catch (Exception e) {
+            log.error("[按需增强] JSON 解析失败: {}", json, e);
+            return Map.of();
+        }
+    }
+    
+    /**
+     * 更新字段注释并记录来源
+     */
+    private void updateColumnCommentWithSource(Long datasourceId, String tableName, String columnName, String comment, String source) {
+        String sql = "UPDATE column_metadata SET column_comment = ?, comment_source = ?, enhanced_at = NOW() " +
+                    "WHERE datasource_id = ? AND table_name = ? AND column_name = ?";
+        localJdbcTemplate.update(sql, comment, source, datasourceId, tableName, columnName);
     }
     
     /**

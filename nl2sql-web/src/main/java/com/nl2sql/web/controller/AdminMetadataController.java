@@ -221,6 +221,31 @@ public class AdminMetadataController {
     }
     
     /**
+     * ✅ 新增：按需增强指定表的字段注释（反馈驱动优化）
+     */
+    @PostMapping("/metadata/enhance-table/{datasourceId}/{tableName}")
+    public Result<Map<String, Object>> enhanceTableColumns(
+            @PathVariable Long datasourceId,
+            @PathVariable String tableName) {
+        try {
+            log.info("[按需增强] 手动触发表 {}.{} 的字段注释增强", datasourceId, tableName);
+            
+            // 调用按需增强方法
+            metadataCollectorService.enhanceColumnDescriptionsForTable(datasourceId, tableName);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "STARTED");
+            response.put("message", String.format("表 %s.%s 的增强任务已启动，将在后台异步执行", datasourceId, tableName));
+            response.put("note", "仅当注释覆盖率 < 50% 时才会实际执行增强");
+            
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[按需增强] 启动失败", e);
+            return Result.error("增强失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 查询已同步的元数据（所有数据源）
      */
     @GetMapping("/metadata/list")

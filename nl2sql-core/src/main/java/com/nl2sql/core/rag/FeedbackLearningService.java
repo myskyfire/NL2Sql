@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,9 @@ public class FeedbackLearningService {
     @Autowired(required = false)
     private RagFeedbackMapper ragFeedbackMapper;
     
+    @Autowired(required = false)
+    private com.nl2sql.metadata.service.MetadataCollectorService metadataCollectorService;
+    
     /**
      * 处理低分反馈，触发Agent学习修正
      * 
@@ -65,10 +69,14 @@ public class FeedbackLearningService {
             
             // ✅ 新增：从L3语义索引中移除低分查询，避免污染缓存
             if (metadataCacheService != null) {
-                metadataCacheService.removeFromSemanticIndex(null, question); // datasourceId暂时传null，需要从feedback表查询
+                metadataCacheService.removeFromSemanticIndex(null, question); // datasourceId暂时传null，需要从 feedback表查询
                 log.info("[反馈学习] 已从L3语义索引移除: query='{}'", question);
             }
-            
+                        
+            // ✅ 新增：触发元数据增强（反馈驱动）
+            Long datasourceId = extractDatasourceId(feedbackId);
+            triggerMetadataEnhancementIfNeeded(question, generatedSql, datasourceId);
+                        
             // 4. ✅ 已禁用：不再调用LLM重新生成SQL，只记录用户反馈
             // autoCorrectAndSave(question, generatedSql, feedbackText, errorCategories);
             
@@ -438,5 +446,75 @@ public class FeedbackLearningService {
                            .replaceAll("\\d+", "%");
         
         return pattern;
+    }
+    
+    /**
+     * ✅ 新增：从反馈中提取数据源 ID
+     */
+    private Long extractDatasourceId(Long feedbackId) {
+        try {
+            String sql = "SELECT datasource_id FROM rag_feedback WHERE id = ?";
+            return jdbcTemplate.queryForObject(sql, Long.class, feedbackId);
+        } catch (Exception e) {
+            log.warn("[反馈增强] 无法提取数据源 ID: feedbackId={}", feedbackId, e);
+            return null;
+        }
+    }
+    
+    /**
+     * ✅ 新增：触发元数据增强（异步，不阻塞主流程）
+     */
+    private void triggerMetadataEnhancementIfNeeded(String question, String generatedSql, Long datasourceId) {
+        if (datasourceId == null || metadataCollectorService == null) {
+            log.debug("[反馈增强] 数据源ID为空或元数据服务未启用");
+            return;
+        }
+        
+        try {
+            // 1. 从 SQL 中提取表名
+            List<String> tables = extractTablesFromSql(generatedSql);
+            
+            if (tables.isEmpty()) {
+                log.debug("[反馈增强] 未从 SQL 中提取到表名");
+                return;
+            }
+            
+            // 2. 检查并触发增强
+            for (String tableName : tables) {
+                // 异步调用，不阻塞主流程
+                metadataCollectorService.enhanceColumnDescriptionsForTable(datasourceId, tableName);
+                log.info("[反馈增强] 已触发表 {} 的元数据增强", tableName);
+            }
+        } catch (Exception e) {
+            log.warn("[反馈增强] 触发失败", e);
+            // 不阻塞主流程
+        }
+    }
+    
+    /**
+     * ✅ 新增：从 SQL 中提取表名（简化版）
+     */
+    private List<String> extractTablesFromSql(String sql) {
+        if (sql == null || sql.isEmpty()) {
+            return List.of();
+        }
+        
+        Set<String> tables = new HashSet<>();
+        
+        // 匹配 FROM 子句
+        Pattern fromPattern = Pattern.compile("\\bFROM\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+        Matcher fromMatcher = fromPattern.matcher(sql);
+        while (fromMatcher.find()) {
+            tables.add(fromMatcher.group(1));
+        }
+        
+        // 匹配 JOIN 子句
+        Pattern joinPattern = Pattern.compile("\\bJOIN\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+        Matcher joinMatcher = joinPattern.matcher(sql);
+        while (joinMatcher.find()) {
+            tables.add(joinMatcher.group(1));
+        }
+        
+        return new ArrayList<>(tables);
     }
 }
