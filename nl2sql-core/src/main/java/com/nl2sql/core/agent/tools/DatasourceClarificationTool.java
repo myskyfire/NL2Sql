@@ -269,9 +269,13 @@ public class DatasourceClarificationTool {
                 }
             }
             
+            // ✅ P0优化：修复LLM返回JSON中的中文引号问题
+            cleaned = cleaned.replace("“", "\"").replace("”", "\"");
+            
             return objectMapper.readValue(cleaned, Map.class);
         } catch (Exception e) {
             log.warn("[DatasourceClarification] 解析LLM响应失败: {}", e.getMessage());
+            log.debug("[DatasourceClarification] 原始响应: {}", response);
             return null;
         }
     }
