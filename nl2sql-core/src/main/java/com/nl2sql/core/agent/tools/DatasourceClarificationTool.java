@@ -118,7 +118,7 @@ public class DatasourceClarificationTool {
                 "- 用户/会员类 → 包含'用户/user/customer'的数据源\n" +
                 "- 地区/地理类 → 通常与订单/销售数据关联\n\n" +
                 "任务：分析意图和业务领域，匹配数据源。无法确定则返回null并标记need_table_info=true。\n\n" +
-                "输出JSON格式：{\"matched_datasource_id\": 1, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"match by business category\"}",
+                "输出标准JSON格式，包含字段：matched_datasource_id, confidence, need_table_info, reason",
                 userQuery,
                 datasourceInfo.toString()
             );
@@ -222,7 +222,7 @@ public class DatasourceClarificationTool {
                 "用户问题：%s\n\n" +
                 "可用数据源（含表）：\n%s\n\n" +
                 "任务：分析用户问题涉及的表，找到最匹配的数据源。无法确定则返回null。\n\n" +
-                "输出JSON格式：{\"matched_datasource_id\": 1, \"confidence\": \"high\", \"reason\": "table schema matches user query"}",
+                "输出标准JSON格式，包含字段：matched_datasource_id, confidence, reason",
                 userQuery,
                 detailedInfo.toString()
             );
