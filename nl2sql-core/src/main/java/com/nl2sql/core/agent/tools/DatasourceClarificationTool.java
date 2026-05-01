@@ -113,29 +113,32 @@ public class DatasourceClarificationTool {
                     datasourceInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
                 }
                 
-                // ✅ 查询该数据源的核心表（限制为前3个表，平衡Token与准确率）
+                // ✅ 查询该数据源的所有表（仅表名+注释，控制Token）
                 try {
                     List<Map<String, Object>> tables = jdbcTemplate.queryForList(
                         "SELECT table_name, table_comment FROM information_schema.tables " +
                         "WHERE table_schema = ? AND table_type = 'BASE TABLE' " +
-                        "ORDER BY table_name LIMIT 3",
+                        "ORDER BY table_name",
                         dbName
                     );
                     
                     if (!tables.isEmpty()) {
-                        datasourceInfo.append("- 核心表:\n");
+                        datasourceInfo.append("- 表列表:\n");
                         for (Map<String, Object> table : tables) {
                             String tableName = String.valueOf(table.get("table_name"));
                             String tableComment = table.get("table_comment") != null ? 
-                                String.valueOf(table.get("table_comment")) : "无说明";
-                            datasourceInfo.append(String.format("  - %s: %s\n", tableName, tableComment));
+                                String.valueOf(table.get("table_comment")) : "";
+                            // 仅展示表名+简短注释，控制Token
+                            String shortComment = tableComment.length() > 20 ? 
+                                tableComment.substring(0, 20) + "..." : tableComment;
+                            datasourceInfo.append(String.format("  - %s: %s\n", tableName, shortComment));
                         }
                     } else {
-                        datasourceInfo.append("- 核心表: 无表或无法访问\n");
+                        datasourceInfo.append("- 表列表: 无表或无法访问\n");
                     }
                 } catch (Exception e) {
                     log.warn("[DatasourceClarification] 查询数据源{}的表结构失败: {}", dsId, e.getMessage());
-                    datasourceInfo.append("- 核心表: 查询失败\n");
+                    datasourceInfo.append("- 表列表: 查询失败\n");
                 }
             }
             
