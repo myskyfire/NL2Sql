@@ -113,13 +113,14 @@ public class DatasourceClarificationTool {
                     datasourceInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
                 }
                 
-                // ✅ 查询该数据源的核心表（限制为前3个表，避免Token过多）
+                // ✅ 查询该数据源的核心表（动态数量：单数据源5个，多数据源3个）
+                int tableLimit = datasources.size() == 1 ? 5 : 3;
                 try {
                     List<Map<String, Object>> tables = jdbcTemplate.queryForList(
                         "SELECT table_name, table_comment FROM information_schema.tables " +
                         "WHERE table_schema = ? AND table_type = 'BASE TABLE' " +
-                        "ORDER BY table_name LIMIT 3",
-                        dbName
+                        "ORDER BY table_name LIMIT ?",
+                        dbName, tableLimit
                     );
                     
                     if (!tables.isEmpty()) {
