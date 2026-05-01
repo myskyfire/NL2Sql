@@ -93,69 +93,83 @@ public class DatasourceClarificationTool {
      */
     private Map<String, Object> llmIntelligentMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
-            // ✅ 第一层：构建数据源基本信息
+            // ✅ P1优化：合并两层为单层，qwen3.5-plus可直接从精简表结构做出准确判断
             StringBuilder datasourceInfo = new StringBuilder();
+            
             for (Map<String, Object> ds : datasources) {
+                Long dsId = ((Number) ds.get("id")).longValue();
+                String dbName = String.valueOf(ds.get("database_name"));
+                
                 datasourceInfo.append(String.format(
-                    "- ID: %d, 名称: %s, 数据库: %s, 类型: %s, 说明: %s, 业务类别: %s\n",
+                    "\n### 数据源 [%d] %s\n",
                     ds.get("id"),
-                    ds.get("name"),
-                    ds.get("database_name"),
-                    ds.get("db_type"),
-                    ds.get("description") != null ? ds.get("description") : "无",
-                    ds.get("business_category") != null ? ds.get("business_category") : "无"
+                    ds.get("name")
                 ));
+                datasourceInfo.append(String.format("- 数据库: %s\n", dbName));
+                if (ds.get("description") != null) {
+                    datasourceInfo.append(String.format("- 说明: %s\n", ds.get("description")));
+                }
+                if (ds.get("business_category") != null) {
+                    datasourceInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
+                }
+                
+                // ✅ 查询该数据源的核心表（限制为前3个表，避免Token过多）
+                try {
+                    List<Map<String, Object>> tables = jdbcTemplate.queryForList(
+                        "SELECT table_name, table_comment FROM information_schema.tables " +
+                        "WHERE table_schema = ? AND table_type = 'BASE TABLE' " +
+                        "ORDER BY table_name LIMIT 3",
+                        dbName
+                    );
+                    
+                    if (!tables.isEmpty()) {
+                        datasourceInfo.append("- 核心表:\n");
+                        for (Map<String, Object> table : tables) {
+                            String tableName = String.valueOf(table.get("table_name"));
+                            String tableComment = table.get("table_comment") != null ? 
+                                String.valueOf(table.get("table_comment")) : "无说明";
+                            datasourceInfo.append(String.format("  - %s: %s\n", tableName, tableComment));
+                        }
+                    } else {
+                        datasourceInfo.append("- 核心表: 无表或无法访问\n");
+                    }
+                } catch (Exception e) {
+                    log.warn("[DatasourceClarification] 查询数据源{}的表结构失败: {}", dsId, e.getMessage());
+                    datasourceInfo.append("- 核心表: 查询失败\n");
+                }
             }
             
-            // ✅ 第一层Prompt：基于数据源基本信息进行初步匹配
-            String firstLayerPrompt = String.format(
-                "你是数据源选择助手。根据用户问题和数据源列表，判断使用哪个数据源。\n\n" +
+            // ✅ 单层Prompt：直接提供精简表结构进行匹配
+            String prompt = String.format(
+                "你是数据源选择专家。根据用户问题和表结构，匹配最相关的数据源。\n\n" +
                 "用户问题：%s\n\n" +
-                "可用数据源：\n%s\n\n" +
-                "业务领域映射：\n" +
-                "- 销售/订单/交易类 → 包含'订单/交易/trade/order'的数据源\n" +
-                "- 财务/会计类 → 包含'财务/会计/finance/accounting'的数据源\n" +
-                "- 用户/会员类 → 包含'用户/user/customer'的数据源\n" +
-                "- 地区/地理类 → 通常与订单/销售数据关联\n\n" +
-                "任务：分析意图和业务领域，匹配数据源。无法确定则返回null并标记need_table_info=true。\n\n" +
-                "输出标准JSON格式，包含字段：matched_datasource_id, confidence, need_table_info, reason",
+                "可用数据源（含核心表）：\n%s\n\n" +
+                "任务：分析用户问题涉及的表，找到最匹配的数据源。无法确定则返回null。\n\n" +
+                "输出标准JSON格式，包含字段：matched_datasource_id, confidence, reason",
                 userQuery,
                 datasourceInfo.toString()
             );
             
-            log.info("[DatasourceClarification] 第一层：调用LLM进行数据源初步匹配");
-            String firstResponse = llmService.generateSQL(firstLayerPrompt);
-            log.info("[DatasourceClarification] 第一层LLM响应: {}", firstResponse);
+            log.info("[DatasourceClarification] 调用LLM进行数据源匹配");
+            String response = llmService.generateSQL(prompt);
+            log.info("[DatasourceClarification] LLM响应: {}", response);
             
-            // 解析第一层响应
-            Map<String, Object> firstResult = parseLlmResponse(firstResponse);
+            // 解析响应
+            Map<String, Object> result = parseLlmResponse(response);
             
-            if (firstResult == null) {
-                log.info("[DatasourceClarification] 第一层解析失败，进入第二层");
-                return secondLayerMatch(userQuery, datasources);
-            }
-            
-            Integer matchedId = (Integer) firstResult.get("matched_datasource_id");
-            Boolean needTableInfo = (Boolean) firstResult.getOrDefault("need_table_info", false);
-            String confidence = (String) firstResult.get("confidence");
-
-            // 情况1：LLM明确匹配到唯一数据源且不需要表信息
-            if (matchedId != null && !needTableInfo) {
-                for (Map<String, Object> ds : datasources) {
-                    if (((Number) ds.get("id")).intValue() == matchedId && "high".equalsIgnoreCase(confidence)) {
-                        log.info("[DatasourceClarification] 第一层匹配成功: {}", ds.get("name"));
-                        return ds;
+            if (result != null && result.containsKey("matched_datasource_id")) {
+                Integer matchedId = (Integer) result.get("matched_datasource_id");
+                if (matchedId != null && "high".equalsIgnoreCase((String) result.get("confidence"))) {
+                    for (Map<String, Object> ds : datasources) {
+                        if (((Number) ds.get("id")).intValue() == matchedId) {
+                            log.info("[DatasourceClarification] 匹配成功: {}", ds.get("name"));
+                            return ds;
+                        }
                     }
                 }
             }
             
-            // 情况2：需要查看表结构才能确定，进入第二层
-            if (needTableInfo || matchedId == null) {
-                log.info("[DatasourceClarification] 需要表结构信息，进入第二层匹配");
-                return secondLayerMatch(userQuery, datasources);
-            }
-            
-            log.info("[DatasourceClarification] LLM未能确定数据源");
+            log.info("[DatasourceClarification] 未能确定数据源");
             return null;
             
         } catch (Exception e) {
@@ -163,97 +177,7 @@ public class DatasourceClarificationTool {
             return null; // LLM失败时返回null，降级为列出所有选项
         }
     }
-    
-    /**
-     * ✅ 第二层匹配：包含表结构信息
-     */
-    private Map<String, Object> secondLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
-        try {
-            // 构建包含表结构的详细信息
-            StringBuilder detailedInfo = new StringBuilder();
-            
-            for (Map<String, Object> ds : datasources) {
-                Long dsId = ((Number) ds.get("id")).longValue();
-                String dbName = String.valueOf(ds.get("database_name"));
-                
-                detailedInfo.append(String.format(
-                    "\n### 数据源 [%d] %s\n",
-                    ds.get("id"),
-                    ds.get("name")
-                ));
-                detailedInfo.append(String.format("- 数据库: %s\n", dbName));
-                detailedInfo.append(String.format("- 类型: %s\n", ds.get("db_type")));
-                if (ds.get("description") != null) {
-                    detailedInfo.append(String.format("- 说明: %s\n", ds.get("description")));
-                }
-                if (ds.get("business_category") != null) {
-                    detailedInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
-                }
-                
-                // ✅ 查询该数据源的核心表（限制为前10个表，避免Token爆炸）
-                try {
-                    List<Map<String, Object>> tables = jdbcTemplate.queryForList(
-                        "SELECT table_name, table_comment FROM information_schema.tables " +
-                        "WHERE table_schema = ? AND table_type = 'BASE TABLE' " +
-                        "ORDER BY table_name LIMIT 10",
-                        dbName
-                    );
-                    
-                    if (!tables.isEmpty()) {
-                        detailedInfo.append("- 核心表:\n");
-                        for (Map<String, Object> table : tables) {
-                            String tableName = String.valueOf(table.get("table_name"));
-                            String tableComment = table.get("table_comment") != null ? 
-                                String.valueOf(table.get("table_comment")) : "无说明";
-                            detailedInfo.append(String.format("  - %s: %s\n", tableName, tableComment));
-                        }
-                    } else {
-                        detailedInfo.append("- 核心表: 无表或无法访问\n");
-                    }
-                } catch (Exception e) {
-                    log.warn("[DatasourceClarification] 查询数据源{}的表结构失败: {}", dsId, e.getMessage());
-                    detailedInfo.append("- 核心表: 查询失败\n");
-                }
-            }
-            
-            // ✅ 第二层Prompt：基于详细表结构信息进行精确匹配
-            String secondLayerPrompt = String.format(
-                "你是数据源选择专家。根据用户问题和表结构，匹配最相关的数据源。\n\n" +
-                "用户问题：%s\n\n" +
-                "可用数据源（含表）：\n%s\n\n" +
-                "任务：分析用户问题涉及的表，找到最匹配的数据源。无法确定则返回null。\n\n" +
-                "输出标准JSON格式，包含字段：matched_datasource_id, confidence, reason",
-                userQuery,
-                detailedInfo.toString()
-            );
-            
-            log.info("[DatasourceClarification] 第二层：调用LLM进行精确匹配");
-            String secondResponse = llmService.generateSQL(secondLayerPrompt);
-            log.info("[DatasourceClarification] 第二层LLM响应: {}", secondResponse);
-            
-            // 解析第二层响应
-            Map<String, Object> secondResult = parseLlmResponse(secondResponse);
-            
-            if (secondResult != null && secondResult.containsKey("matched_datasource_id")) {
-                Integer matchedId = (Integer) secondResult.get("matched_datasource_id");
-                if (matchedId != null) {
-                    for (Map<String, Object> ds : datasources) {
-                        if (((Number) ds.get("id")).intValue() == matchedId && "high".equalsIgnoreCase((String) secondResult.get("confidence"))) {
-                            log.info("[DatasourceClarification] 第二层匹配成功: {}", ds.get("name"));
-                            return ds;
-                        }
-                    }
-                }
-            }
-            
-            log.info("[DatasourceClarification] 第二层仍未能确定数据源");
-            return null;
-            
-        } catch (Exception e) {
-            log.error("[DatasourceClarification] 第二层匹配失败", e);
-            return null;
-        }
-    }
+
     
     /**
      * 解析LLM返回的JSON
