@@ -89,9 +89,28 @@ public class DatasourceClarificationTool {
     }
     
     /**
-     * 使用LLM智能匹配数据源（分层传递策略）
+     * 使用LLM智能匹配数据源（动态分层策略）
      */
     private Map<String, Object> llmIntelligentMatch(String userQuery, List<Map<String, Object>> datasources) {
+        try {
+            // ✅ 动态分层：数据源>5个时先筛选候选集
+            if (datasources.size() > 5) {
+                log.info("[DatasourceClarification] 数据源数量={}，启用双层策略", datasources.size());
+                return twoLayerMatch(userQuery, datasources);
+            } else {
+                log.info("[DatasourceClarification] 数据源数量={}，使用单层策略", datasources.size());
+                return singleLayerMatch(userQuery, datasources);
+            }
+        } catch (Exception e) {
+            log.error("[DatasourceClarification] LLM匹配失败", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 单层策略：直接展示所有表（适用于≤5个数据源）
+     */
+    private Map<String, Object> singleLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
             // ✅ P1优化：合并两层为单层，qwen3.5-plus可直接从精简表结构做出准确判断
             StringBuilder datasourceInfo = new StringBuilder();
@@ -176,8 +195,72 @@ public class DatasourceClarificationTool {
             return null;
             
         } catch (Exception e) {
-            log.error("[DatasourceClarification] LLM匹配失败", e);
-            return null; // LLM失败时返回null，降级为列出所有选项
+            log.error("[DatasourceClarification] 单层匹配失败", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 双层策略：第一层筛选候选集，第二层精确匹配（适用于>5个数据源）
+     */
+    private Map<String, Object> twoLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
+        try {
+            // 第一层：基于数据源基本信息筛选候选集（~2-3个）
+            StringBuilder basicInfo = new StringBuilder();
+            for (Map<String, Object> ds : datasources) {
+                basicInfo.append(String.format(
+                    "- ID: %d, 名称: %s, 数据库: %s, 说明: %s, 业务类别: %s\n",
+                    ds.get("id"),
+                    ds.get("name"),
+                    ds.get("database_name"),
+                    ds.get("description") != null ? ds.get("description") : "无",
+                    ds.get("business_category") != null ? ds.get("business_category") : "无"
+                ));
+            }
+            
+            String firstPrompt = String.format(
+                "你是数据源选择助手。根据用户问题和数据源列表，筛选最相关的2-3个候选数据源。\n\n" +
+                "用户问题：%s\n\n" +
+                "可用数据源：\n%s\n\n" +
+                "任务：分析意图和业务领域，返回候选数据源ID列表。\n\n" +
+                "输出标准JSON格式，包含字段：candidate_ids（整数数组）, reason",
+                userQuery,
+                basicInfo.toString()
+            );
+            
+            log.info("[DatasourceClarification] 第一层：筛选候选集");
+            String firstResponse = llmService.generateSQL(firstPrompt);
+            log.info("[DatasourceClarification] 第一层LLM响应: {}", firstResponse);
+            
+            Map<String, Object> firstResult = parseLlmResponse(firstResponse);
+            if (firstResult == null || !firstResult.containsKey("candidate_ids")) {
+                log.warn("[DatasourceClarification] 第一层解析失败，降级为单层策略");
+                return singleLayerMatch(userQuery, datasources);
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Integer> candidateIds = (List<Integer>) firstResult.get("candidate_ids");
+            if (candidateIds == null || candidateIds.isEmpty()) {
+                log.warn("[DatasourceClarification] 第一层未找到候选集，降级为单层策略");
+                return singleLayerMatch(userQuery, datasources);
+            }
+            
+            // 过滤出候选数据源
+            List<Map<String, Object>> candidates = new ArrayList<>();
+            for (Map<String, Object> ds : datasources) {
+                if (candidateIds.contains(((Number) ds.get("id")).intValue())) {
+                    candidates.add(ds);
+                }
+            }
+            
+            log.info("[DatasourceClarification] 第一层筛选结果: {} 个候选数据源", candidates.size());
+            
+            // 第二层：展示候选集的完整表列表，精确匹配
+            return singleLayerMatch(userQuery, candidates);
+            
+        } catch (Exception e) {
+            log.error("[DatasourceClarification] 双层匹配失败，降级为单层策略", e);
+            return singleLayerMatch(userQuery, datasources);
         }
     }
 
