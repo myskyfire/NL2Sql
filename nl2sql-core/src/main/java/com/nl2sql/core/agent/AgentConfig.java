@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent;
 
+import com.nl2sql.core.agent.routing.SkillRouter;
 import com.nl2sql.core.agent.skills.GroovySkillExecutor;
 import com.nl2sql.core.agent.skills.SkillContext;
 import com.nl2sql.core.agent.skills.SkillsMetadataLoader;
@@ -137,11 +138,11 @@ public class AgentConfig {
      * 3. 最多迭代10次，防止无限循环
      */
     @Bean
-    public ReActAgent reActAgent() {
-        log.info("初始化 NL2SQL ReAct Agent（原生 Tool Calling）...");
+    public ReActAgent reActAgent(SkillRouter skillRouter) {  // ✅ P1-1: 注入 SkillRouter
+        log.info("初始化 NL2SQL ReAct Agent（原生 Tool Calling + 显式路由）...");
         
-        // ✅ 使用 LLMService 而非 ChatModel
-        ReActAgent agent = new ReActAgent(llmService);
+        // ✅ 使用 LLMService 而非 ChatModel，并注入 SkillRouter
+        ReActAgent agent = new ReActAgent(llmService, skillRouter);
         
         // 注入 Skills 元数据加载器（如果存在）
         if (skillsMetadataLoader != null) {

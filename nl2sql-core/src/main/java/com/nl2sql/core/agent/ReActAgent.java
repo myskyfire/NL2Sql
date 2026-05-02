@@ -2,11 +2,16 @@ package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.intent.IntentClassifier;
+import com.nl2sql.core.agent.routing.RoutingResult;
+import com.nl2sql.core.agent.routing.RoutingStrategy;
+import com.nl2sql.core.agent.routing.SkillRouter;
+import com.nl2sql.core.agent.skills.SkillResult;
 import com.nl2sql.core.agent.tool.ToolVisibility;
 import com.nl2sql.core.llm.LLMService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * ReAct Agent - 基于 Ollama 原生 Tool Calling 的推理-行动循环
@@ -25,16 +30,21 @@ public class ReActAgent {
     private final LLMService llmService;
     private final Map<String, ToolExecutor> tools;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final IntentClassifier intentClassifier;  // ✅ 新增：意图分类器
+    private final IntentClassifier intentClassifier;  // ✅ P0: 意图分类器
+    private final SkillRouter skillRouter;  // ✅ P1-1: 技能路由器
     
     // ✅ P1优化：降低最大迭代次数，qwen3.5-plus通常2-3次即可完成
     private static final int MAX_ITERATIONS = 5;
     
-    public ReActAgent(LLMService llmService) {
+    /**
+     * ✅ P1-1: 构造函数注入 SkillRouter
+     */
+    public ReActAgent(LLMService llmService, SkillRouter skillRouter) {
         this.llmService = llmService;
         this.tools = new HashMap<>();
-        this.intentClassifier = new IntentClassifier();  // ✅ 初始化意图分类器
-        log.info("[ReActAgent] 初始化完成，使用原生 Tool Calling + 意图识别层");
+        this.intentClassifier = new IntentClassifier();
+        this.skillRouter = skillRouter;
+        log.info("[ReActAgent] 初始化完成，使用原生 Tool Calling + 意图识别层 + 显式路由");
     }
     
     /**
