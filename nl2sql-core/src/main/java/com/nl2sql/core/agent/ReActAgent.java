@@ -73,7 +73,7 @@ public class ReActAgent {
     
     /**
      * 执行 ReAct 循环（使用原生 Tool Calling）
-     * ✅ P0优化：集成意图识别层，根据意图路由到对应 Skill
+     * ✅ P1-1: 集成显式意图路由层，根据意图直接路由或缩小 LLM 决策范围
      * ✅ 优化：userId/username从UserContext获取，避免层层传参
      * @return JSON字符串（工具结果）或自然语言（LLM回答）
      */
@@ -86,15 +86,109 @@ public class ReActAgent {
         log.info("[ReActAgent] 开始执行，用户消息: {}, datasourceId={}, userId={}, 历史消息数={}", 
             userMessage, datasourceId, userId, historyMessages != null ? historyMessages.size() : 0);
         
-        // ✅ P0-1: 意图识别（在调用 LLM 之前）
-        IntentClassifier.IntentClassification intent = intentClassifier.classify(userMessage);
-        log.info("[ReActAgent] 意图识别结果: type={}, confidence={}, reason={}", 
-            intent.getType(), intent.getConfidence(), intent.getReason());
+        // ✅ P1-1: 意图识别 + 路由
+        RoutingResult routing = skillRouter.route(userMessage, datasourceId);
+        log.info("[ReActAgent] 路由结果: strategy={}, skills={}, reason={}", 
+            routing.getStrategy(), routing.getRecommendedSkills(), routing.getReason());
         
-        // ✅ 根据意图进行预处理（可选：未来可以在此处直接路由，跳过 LLM）
-        // 目前仅记录日志，实际路由仍由 LLM 决策
-        // TODO: P1 阶段实现显式路由逻辑
+        // 根据路由策略执行
+        switch (routing.getStrategy()) {
+            case DIRECT:
+                // 直接调用推荐的 Skill，跳过 LLM
+                return executeDirectSkill(routing.getRecommendedSkills().get(0), 
+                                         datasourceId, userId, username, userMessage);
+            
+            case LLM_ASSISTED:
+                // LLM 辅助决策：只传递推荐的 Skills
+                List<Map<String, Object>> allToolsDef = ToolDefinitionConverter.convertToOpenAITools(tools, true);
+                List<Map<String, Object>> filteredTools = filterToolsByNames(
+                    routing.getRecommendedSkills(), allToolsDef
+                );
+                log.info("[ReActAgent] LLM 辅助决策，过滤后工具数: {} -> {}", 
+                    allToolsDef.size(), filteredTools.size());
+                return executeWithFilteredTools(userMessage, datasourceId, userId, username, 
+                                               historyMessages, filteredTools);
+            
+            case FALLBACK:
+            default:
+                // 降级：完整 ReAct 流程
+                log.info("[ReActAgent] 降级到完整 ReAct 流程");
+                return executeFullReAct(userMessage, datasourceId, userId, username, historyMessages);
+        }
+    }
+    
+    /**
+     * ✅ P1-1: 直接调用 Skill（跳过 LLM）
+     */
+    private String executeDirectSkill(String skillName, Long datasourceId, 
+                                     Long userId, String username, String userMessage) {
+        log.info("[ReActAgent] 直接调用 Skill: {}", skillName);
         
+        ToolExecutor executor = tools.get(skillName);
+        if (executor == null) {
+            log.error("[ReActAgent] 未找到 Skill: {}", skillName);
+            return SkillResult.error("SKILL_NOT_FOUND", "未找到 Skill: " + skillName).toJson();
+        }
+        
+        try {
+            // 构造参数
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("question", userMessage);
+            if (datasourceId != null) {
+                arguments.put("datasourceId", datasourceId);
+            }
+            
+            String result = executor.execute(arguments, datasourceId, userId, username, userMessage);
+            log.info("[ReActAgent] Skill 执行成功: {}", skillName);
+            return result;
+        } catch (Exception e) {
+            log.error("[ReActAgent] Skill 执行失败: {}", skillName, e);
+            return SkillResult.error("SKILL_EXECUTION_ERROR", e.getMessage()).toJson();
+        }
+    }
+    
+    /**
+     * ✅ P1-1: 根据名称过滤工具定义
+     */
+    private List<Map<String, Object>> filterToolsByNames(List<String> skillNames, 
+                                                          List<Map<String, Object>> allTools) {
+        return allTools.stream()
+            .filter(tool -> {
+                String toolName = (String) ((Map<String, Object>) tool.get("function")).get("name");
+                return skillNames.contains(toolName);
+            })
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * ✅ P1-1: 使用过滤后的工具列表执行 ReAct 循环
+     */
+    private String executeWithFilteredTools(String userMessage, Long datasourceId,
+                                           Long userId, String username,
+                                           List<Map<String, Object>> historyMessages,
+                                           List<Map<String, Object>> filteredTools) {
+        // 复用 executeFullReAct 的逻辑，但使用 filteredTools
+        return executeReActLoop(userMessage, datasourceId, userId, username, historyMessages, filteredTools);
+    }
+    
+    /**
+     * ✅ P1-1: 完整 ReAct 流程（降级场景）
+     */
+    private String executeFullReAct(String userMessage, Long datasourceId,
+                                   Long userId, String username,
+                                   List<Map<String, Object>> historyMessages) {
+        // 使用所有 tools（包括 INTERNAL）
+        List<Map<String, Object>> allTools = ToolDefinitionConverter.convertToOpenAITools(tools, true);
+        return executeReActLoop(userMessage, datasourceId, userId, username, historyMessages, allTools);
+    }
+    
+    /**
+     * ✅ P1-1: ReAct 循环核心逻辑（抽取公共部分）
+     */
+    private String executeReActLoop(String userMessage, Long datasourceId,
+                                   Long userId, String username,
+                                   List<Map<String, Object>> historyMessages,
+                                   List<Map<String, Object>> toolsDef) {
         // 1. 构建消息列表
         List<Map<String, Object>> messages = new ArrayList<>();
         
@@ -125,8 +219,6 @@ public class ReActAgent {
         userMsg.put("content", enrichedMessage);
         messages.add(userMsg);
         
-        // 2. 构建工具定义（OpenAI 格式）
-        List<Map<String, Object>> toolsDef = ToolDefinitionConverter.convertToOpenAITools(tools);
         log.info("[ReActAgent] 工具数量: {}", toolsDef.size());
         
         // 3. 执行 ReAct 循环
