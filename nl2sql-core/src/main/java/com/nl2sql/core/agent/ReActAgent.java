@@ -2,6 +2,7 @@ package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.intent.IntentClassifier;
+import com.nl2sql.core.agent.tool.ToolVisibility;
 import com.nl2sql.core.llm.LLMService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -303,6 +304,14 @@ public class ReActAgent {
         default String getDescription() {
             return "工具描述";
         }
+        
+        /**
+         * ✅ P1-2: 获取工具可见性
+         * 默认返回 PUBLIC，子类可覆写
+         */
+        default ToolVisibility getVisibility() {
+            return ToolVisibility.PUBLIC;
+        }
     }
     
     /**
@@ -311,10 +320,18 @@ public class ReActAgent {
     static class ToolExecutorWithDescription implements ToolExecutor {
         private final ToolExecutor delegate;
         private final String description;
+        private final ToolVisibility visibility;
         
         public ToolExecutorWithDescription(ToolExecutor delegate, String description) {
             this.delegate = delegate;
             this.description = description;
+            this.visibility = ToolVisibility.PUBLIC;  // 默认公开
+        }
+        
+        public ToolExecutorWithDescription(ToolExecutor delegate, String description, ToolVisibility visibility) {
+            this.delegate = delegate;
+            this.description = description;
+            this.visibility = visibility;
         }
         
         @Override
@@ -325,6 +342,11 @@ public class ReActAgent {
         @Override
         public String getDescription() {
             return description;
+        }
+        
+        @Override
+        public ToolVisibility getVisibility() {
+            return visibility;
         }
     }
 }

@@ -1,0 +1,38 @@
+feat(P1-1): 创建显式意图路由层核心组件
+
+P1-1阶段第一部分：创建路由层核心组件（未集成到ReActAgent）
+
+1. 新增文件
+   - RoutingStrategy.java - 路由策略枚举（DIRECT/LLM_ASSISTED/FALLBACK）
+   - RoutingResult.java - 路由结果类（含工厂方法）
+   - SkillRouter.java - 技能路由器（完整实现）
+
+2. 路由规则配置
+   - QUERY → execute_standard_query (DIRECT)
+   - SUMMARY → summarize_result (DIRECT)
+   - CHART → generate_chart (DIRECT)
+   - CLARIFY → clarify_datasource (DIRECT)
+   - UNKNOWN → 所有Skills (LLM_ASSISTED)
+
+3. 路由策略
+   - 高置信度(>=0.8) → DIRECT直接调用
+   - 中等置信度(0.5-0.8) → LLM_ASSISTED辅助决策
+   - 低置信度(<0.5) → FALLBACK降级到完整ReAct
+
+4. 技术细节
+   - 使用jakarta.annotation.PostConstruct（Spring Boot 3）
+   - 依赖IntentClassifier进行意图分类
+   - 提供getAllSkills()方法供FALLBACK场景使用
+
+影响范围：
+- 新增3个文件，共293行代码
+- 编译通过，无破坏性变更
+
+下一步：
+- 需要将SkillRouter集成到ReActAgent（待实施）
+- 需要修改AgentConfig注入SkillRouter（待实施）
+
+预期效果：
+- 直接路由场景响应时间 < 100ms（跳过LLM）
+- LLM辅助场景Token消耗降低50-70%
+- 提升工具选择准确率至95%+
