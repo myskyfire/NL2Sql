@@ -1,6 +1,7 @@
 package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.agent.intent.IntentClassifier;
 import com.nl2sql.core.llm.LLMService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -23,6 +24,7 @@ public class ReActAgent {
     private final LLMService llmService;
     private final Map<String, ToolExecutor> tools;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final IntentClassifier intentClassifier;  // ✅ 新增：意图分类器
     
     // ✅ P1优化：降低最大迭代次数，qwen3.5-plus通常2-3次即可完成
     private static final int MAX_ITERATIONS = 5;
@@ -30,7 +32,8 @@ public class ReActAgent {
     public ReActAgent(LLMService llmService) {
         this.llmService = llmService;
         this.tools = new HashMap<>();
-        log.info("[ReActAgent] 初始化完成，使用原生 Tool Calling");
+        this.intentClassifier = new IntentClassifier();  // ✅ 初始化意图分类器
+        log.info("[ReActAgent] 初始化完成，使用原生 Tool Calling + 意图识别层");
     }
     
     /**
@@ -59,6 +62,7 @@ public class ReActAgent {
     
     /**
      * 执行 ReAct 循环（使用原生 Tool Calling）
+     * ✅ P0优化：集成意图识别层，根据意图路由到对应 Skill
      * ✅ 优化：userId/username从UserContext获取，避免层层传参
      * @return JSON字符串（工具结果）或自然语言（LLM回答）
      */
@@ -70,6 +74,15 @@ public class ReActAgent {
         
         log.info("[ReActAgent] 开始执行，用户消息: {}, datasourceId={}, userId={}, 历史消息数={}", 
             userMessage, datasourceId, userId, historyMessages != null ? historyMessages.size() : 0);
+        
+        // ✅ P0-1: 意图识别（在调用 LLM 之前）
+        IntentClassifier.IntentClassification intent = intentClassifier.classify(userMessage);
+        log.info("[ReActAgent] 意图识别结果: type={}, confidence={}, reason={}", 
+            intent.getType(), intent.getConfidence(), intent.getReason());
+        
+        // ✅ 根据意图进行预处理（可选：未来可以在此处直接路由，跳过 LLM）
+        // 目前仅记录日志，实际路由仍由 LLM 决策
+        // TODO: P1 阶段实现显式路由逻辑
         
         // 1. 构建消息列表
         List<Map<String, Object>> messages = new ArrayList<>();
@@ -268,7 +281,7 @@ public class ReActAgent {
     }
     
     /**
-     * ✅ 检查是否是统一Tool响应格式（包含success和type字段）
+     * ✅ P0-2: 检查是否是统一Skill响应格式（使用 SkillResult 类）
      */
     private boolean isUnifiedToolResponse(String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -281,9 +294,12 @@ public class ReActAgent {
         }
         
         try {
-            Map<String, Object> json = objectMapper.readValue(trimmed, Map.class);
-            // ✅ 统一格式必须同时包含success和type字段
-            return json.containsKey("success") && json.containsKey("type");
+            // ✅ 尝试解析为 SkillResult
+            com.nl2sql.core.agent.skills.SkillResult result = 
+                com.nl2sql.core.agent.skills.SkillResult.fromJson(trimmed);
+            
+            // ✅ 统一格式必须包含 success 和 type 字段
+            return result != null && result.getType() != null;
         } catch (Exception e) {
             return false;
         }
