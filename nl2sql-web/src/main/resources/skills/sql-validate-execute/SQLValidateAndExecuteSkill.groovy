@@ -1,10 +1,12 @@
 import com.nl2sql.core.agent.skills.SkillContext
 import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
 
 /**
  * SQL验证与执行 Skill - 演示完整的 Tool 调用链
  * 
  * ✅ 这是真正的 Skill：只负责流程编排，不直接操作数据库
+ * ✅ P0优化：使用 SkillResult 统一响应格式
  * 
  * 流程：
  * 1. 调用 validate_sql Tool 验证SQL语法和安全性
@@ -19,10 +21,14 @@ def execute(SkillContext context) {
     Long datasourceId = context.getParameter("datasourceId")
     
     if (!sql || !datasourceId) {
-        return [
-            status: "error",
-            message: "缺少必需参数: sql 和 datasourceId"
-        ]
+        return JsonOutput.toJson([
+            success: false,
+            type: "error",
+            error: [
+                errorCode: "MISSING_PARAMS",
+                errorMessage: "缺少必需参数: sql 和 datasourceId"
+            ]
+        ])
     }
     
     println "[SQLValidateAndExecuteSkill] SQL: ${sql}"
@@ -45,14 +51,20 @@ def execute(SkillContext context) {
         
         if (!validateResult.valid) {
             log.warn("SQL验证失败: {}", validateResult.error)
-            return [
-                status: "validation_failed",
-                message: "SQL验证失败",
-                error: validateResult.error,
-                riskLevel: validateResult.riskLevel,
-                suggestions: validateResult.suggestions,
-                datasourceId: datasourceId
-            ]
+            return JsonOutput.toJson([
+                success: false,
+                type: "error",
+                error: [
+                    errorCode: "SQL_VALIDATION_FAILED",
+                    errorMessage: "SQL验证失败",
+                    suggestion: validateResult.suggestions,
+                    context: [
+                        riskLevel: validateResult.riskLevel,
+                        error: validateResult.error,
+                        datasourceId: datasourceId
+                    ]
+                ]
+            ])
         }
         
         log.info("✅ SQL验证通过，风险等级: {}", validateResult.riskLevel)
@@ -70,43 +82,58 @@ def execute(SkillContext context) {
         
         if (!executeResult.success) {
             log.error("SQL执行失败: {}", executeResult.error)
-            return [
-                status: "execution_failed",
-                message: "SQL执行失败",
-                error: executeResult.error,
-                sql: sql,
-                datasourceId: datasourceId
-            ]
+            return JsonOutput.toJson([
+                success: false,
+                type: "error",
+                error: [
+                    errorCode: "SQL_EXECUTION_FAILED",
+                    errorMessage: "SQL执行失败",
+                    context: [
+                        sql: sql,
+                        error: executeResult.error,
+                        datasourceId: datasourceId
+                    ]
+                ]
+            ])
         }
         
         log.info("✅ 查询成功，返回 {} 行数据", executeResult.rowCount)
         
-        // 5. 返回完整结果
-        return [
-            status: "success",
-            validation: [
-                valid: validateResult.valid,
-                riskLevel: validateResult.riskLevel,
-                warnings: validateResult.warnings
+        // 5. 返回完整结果（SkillResult 统一格式）
+        return JsonOutput.toJson([
+            success: true,
+            type: "query_result",
+            data: [
+                validation: [
+                    valid: validateResult.valid,
+                    riskLevel: validateResult.riskLevel,
+                    warnings: validateResult.warnings
+                ],
+                execution: [
+                    rowCount: executeResult.rowCount,
+                    columns: executeResult.columns,
+                    data: executeResult.data,
+                    executionTime: executeResult.executionTime
+                ],
+                sql: sql
             ],
-            execution: [
-                rowCount: executeResult.rowCount,
-                columns: executeResult.columns,
-                data: executeResult.data,
-                executionTime: executeResult.executionTime
-            ],
-            sql: sql,
-            datasourceId: datasourceId
-        ]
+            metadata: [
+                datasourceId: datasourceId
+            ]
+        ])
         
     } catch (Exception e) {
         log.error("[SQLValidateAndExecuteSkill] 执行失败: {}", e.message)
         e.printStackTrace()
         
-        return [
-            status: "error",
-            message: "执行失败: ${e.message}",
-            datasourceId: datasourceId
-        ]
+        return JsonOutput.toJson([
+            success: false,
+            type: "error",
+            error: [
+                errorCode: "SKILL_EXECUTION_ERROR",
+                errorMessage: "执行失败: ${e.message}",
+                context: [datasourceId: datasourceId]
+            ]
+        ])
     }
 }

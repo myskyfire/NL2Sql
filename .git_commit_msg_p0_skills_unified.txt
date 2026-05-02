@@ -1,0 +1,36 @@
+feat(P0): 统一所有Skills使用SkillResult响应格式
+
+P0级别架构优化 - 彻底统一响应格式：
+
+1. 更新Groovy Skills使用统一格式
+   - SimpleDataQuerySkill.groovy: 改用JsonOutput.toJson()返回SkillResult格式
+   - SQLValidateAndExecuteSkill.groovy: 改用JsonOutput.toJson()返回SkillResult格式
+   - SQLPerformanceAnalysisSkill.groovy: 改用JsonOutput.toJson()返回SkillResult格式
+   - StandardQuerySkill.groovy: 保持Map返回（已有success+type字段，Groovy自动序列化）
+   - ReportWithInsightsSkill.groovy: 保持Map返回（已有success+type字段，Groovy自动序列化）
+
+2. 移除ReActAgent中的旧格式兼容逻辑
+   - 删除convertLegacyClarificationFormat()方法（27行）
+   - 删除clarify_datasource的旧格式检测与转换逻辑（12行）
+   - 简化澄清响应解析，仅支持新格式
+
+3. 统一响应格式规范
+   - 成功响应: {success: true, type: "query_result", data: {...}, metadata: {...}}
+   - 错误响应: {success: false, type: "error", error: {errorCode, errorMessage, context}}
+   - 澄清响应: {success: true, type: "clarification", clarification: {...}}
+
+技术细节：
+- Groovy Skills使用groovy.json.JsonOutput.toJson()显式序列化
+- Java层使用SkillResult.fromJson()统一解析
+- 消除status/success混用、多种错误格式等不一致问题
+
+影响范围：
+- 修改3个Groovy文件（simple-data-query, sql-validate-execute, sql-performance-analysis）
+- 修改1个Java文件（ReActAgent.java，删除39行兼容代码）
+- 编译通过，无破坏性变更
+
+架构收益：
+- ✅ 统一的响应格式，便于前端解析
+- ✅ 消除Agent层的无意义兼容逻辑
+- ✅ 提升代码可维护性和可读性
+- ✅ 为后续监控和日志分析奠定基础

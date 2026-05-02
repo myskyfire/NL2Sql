@@ -179,13 +179,6 @@ public class ReActAgent {
                             try {
                                 Map<String, Object> clarificationResult = objectMapper.readValue(observation, Map.class);
                                 
-                                // ✅ 兼容旧格式：没有type字段但有status字段
-                                if (!clarificationResult.containsKey("type") && clarificationResult.containsKey("status")) {
-                                    log.warn("[ReActAgent] 检测到旧格式响应，自动转换");
-                                    observation = convertLegacyClarificationFormat(clarificationResult);
-                                    clarificationResult = objectMapper.readValue(observation, Map.class);
-                                }
-                                
                                 // ✅ 新格式：从clarification嵌套对象中获取
                                 Boolean autoExecuted = null;
                                 Long recommendedDsId = null;
@@ -195,11 +188,6 @@ public class ReActAgent {
                                     autoExecuted = (Boolean) clarification.get("autoExecuted");
                                     recommendedDsId = clarification.get("recommendedDatasourceId") != null ?
                                         ((Number) clarification.get("recommendedDatasourceId")).longValue() : null;
-                                } else {
-                                    // 兼容旧格式：直接在顶层
-                                    autoExecuted = (Boolean) clarificationResult.get("autoExecuted");
-                                    recommendedDsId = clarificationResult.get("recommendedDatasourceId") != null ?
-                                        ((Number) clarificationResult.get("recommendedDatasourceId")).longValue() : null;
                                 }
                                 
                                 if (Boolean.TRUE.equals(autoExecuted) && recommendedDsId != null) {
@@ -302,33 +290,6 @@ public class ReActAgent {
             return result != null && result.getType() != null;
         } catch (Exception e) {
             return false;
-        }
-    }
-    
-    /**
-     * ✅ 兼容旧格式响应转换
-     */
-    private String convertLegacyClarificationFormat(Map<String, Object> legacy) {
-        try {
-            Map<String, Object> converted = new HashMap<>();
-            converted.put("success", true);
-            converted.put("type", "clarification");
-            
-            Map<String, Object> clarification = new HashMap<>();
-            clarification.put("clarificationType", legacy.get("clarificationType"));
-            clarification.put("message", legacy.get("message"));
-            clarification.put("autoExecuted", legacy.get("autoExecuted"));
-            if (legacy.containsKey("recommendedDatasourceId")) {
-                clarification.put("recommendedDatasourceId", legacy.get("recommendedDatasourceId"));
-            }
-            
-            converted.put("clarification", clarification);
-            converted.put("metadata", Map.of("converted", true, "originalFormat", "legacy"));
-            
-            return objectMapper.writeValueAsString(converted);
-        } catch (Exception e) {
-            log.error("[ReActAgent] 旧格式转换失败", e);
-            return legacy.toString();
         }
     }
     

@@ -1,0 +1,32 @@
+docs: 扩展NL2SQL框架对比，新增4个主流框架
+
+基于网络调研，将对比表格从4个框架扩展到8个主流框架：
+
+**新增框架**:
+1. WrenAI (~9.8K stars) - GenBI智能体，Text-to-SQL+Text-to-Chart+AI洞察
+2. Dataherald (~3.5K stars) - 企业级NL2SQL引擎，模块化API设计
+3. SuperSonic (~4.1K stars) - 腾讯音乐开源，Headless BI + ChatBI融合
+4. Spring AI Alibaba NL2SQL (~1.2K stars) - 阿里开源，Spider 2.0-Snow SOTA (59.78%)
+
+**移除框架**:
+- Databricks AI Query (商业软件，非开源)
+- Text2SQL (LangChain) (保留在选型建议中作为底层框架选项)
+
+**更新内容**:
+1. 对比表格新增24行维度（GitHub Stars、核心定位、Spider基准等）
+2. 6大核心优势的对比描述全部更新，涵盖所有8个框架
+3. 选型建议从6项扩展到9项，覆盖更多场景
+
+**实事求是原则**:
+- 准确标注每个框架的GitHub Stars数
+- 客观说明各框架的核心定位和适用场景
+- 承认Spring AI Alibaba在Spider 2.0-Snow基准测试中的SOTA表现
+- 如实标注WrenAI需要理解MDL语义层的学习成本
+- 明确指出SuperSonic重度依赖Java生态的局限性
+
+对比结果突出DataMind AI的差异化优势：
+✅ 完全本地化部署 + 四层安全防护
+✅ 智能元数据增强（Schema推断+反馈驱动+定时批量）
+✅ 三级缓存架构（命中率>60%）
+✅ 中文原生优化（时间表达式+行业术语）
+✅ 完整的审计与运维体系

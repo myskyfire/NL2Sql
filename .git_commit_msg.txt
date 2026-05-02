@@ -1,0 +1,6 @@
+chore: 清理废弃Mapper文件与更新.gitignore
+
+- 删除废弃的DataSourceConfigMapper.java（已迁移到datasource包）
+- 删除废弃的DataSourceManagerMapper.java（已迁移到datasource包）
+- 删除废弃的TableRelationshipMapper.java（已迁移）
+- 更新.gitignore忽略规则
