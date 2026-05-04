@@ -1,6 +1,7 @@
 package com.nl2sql.metadata.service;
 
 import com.nl2sql.core.llm.MultiModelService;
+import com.nl2sql.core.mapper.MetadataCollectorMapper;
 import com.nl2sql.metadata.entity.ColumnMetadata;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.entity.TableMetadata;
@@ -28,6 +29,9 @@ public class MetadataCollectorService {
     
     @Autowired(required = false)
     private MultiModelService multiModelService;
+    
+    @Autowired
+    private MetadataCollectorMapper metadataCollectorMapper;
     
     public MetadataCollectorService(JdbcTemplate jdbcTemplate, DataSourceConfigService dataSourceConfigService) {
         this.localJdbcTemplate = jdbcTemplate;
@@ -342,10 +346,8 @@ public class MetadataCollectorService {
      * 保存表元数据（使用 INSERT IGNORE 避免重复键冲突）
      */
     private void saveTableMetadata(List<TableMetadata> tables) {
-        String sql = "INSERT IGNORE INTO table_metadata (datasource_id, table_name, table_comment, table_type, schema_name) VALUES (?, ?, ?, ?, ?)";
-        
         for (TableMetadata table : tables) {
-            localJdbcTemplate.update(sql,
+            metadataCollectorMapper.insertTableMetadata(
                 table.getDatasourceId(),
                 table.getTableName(),
                 table.getTableComment(),
@@ -359,11 +361,8 @@ public class MetadataCollectorService {
      * 保存字段元数据（使用 INSERT IGNORE 避免重复键冲突）
      */
     private void saveColumnMetadata(List<ColumnMetadata> columns) {
-        String sql = "INSERT IGNORE INTO column_metadata (datasource_id, table_name, table_comment, column_name, data_type, column_size, decimal_digits, is_nullable, column_default, column_comment, is_primary_key, ordinal_position, character_set_name, comment_source) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
         for (ColumnMetadata column : columns) {
-            localJdbcTemplate.update(sql,
+            metadataCollectorMapper.insertColumnMetadata(
                 column.getDatasourceId(),
                 column.getTableName(),
                 column.getTableComment(),
@@ -386,8 +385,8 @@ public class MetadataCollectorService {
      * 清空旧元数据
      */
     private void clearOldMetadata(Long datasourceId) {
-        localJdbcTemplate.update("DELETE FROM column_metadata WHERE datasource_id = ?", datasourceId);
-        localJdbcTemplate.update("DELETE FROM table_metadata WHERE datasource_id = ?", datasourceId);
+        metadataCollectorMapper.clearColumnMetadata(datasourceId);
+        metadataCollectorMapper.clearTableMetadata(datasourceId);
         log.info("已清空数据源 {} 的旧元数据", datasourceId);
     }
     
@@ -395,10 +394,7 @@ public class MetadataCollectorService {
      * 保存同步日志
      */
     private void saveSyncLog(SyncResult result) {
-        String sql = "INSERT INTO metadata_sync_log (datasource_id, sync_status, table_count, column_count, foreign_key_count, error_message, started_at, completed_at, duration_seconds, created_by) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
-        localJdbcTemplate.update(sql,
+        metadataCollectorMapper.insertSyncLog(
             result.getDatasourceId(),
             result.getStatus(),
             result.getTableCount(),
@@ -464,9 +460,8 @@ public class MetadataCollectorService {
             try {
                 log.info("[元数据增强] 开始为数据源 {} 执行表描述增强", datasourceId);
                     
-                // 获取所有表
-                String sql = "SELECT table_name, table_comment FROM table_metadata WHERE datasource_id = ?";
-                List<Map<String, Object>> tables = localJdbcTemplate.queryForList(sql, datasourceId);
+                // ✅ 使用Mapper获取所有表
+                List<Map<String, Object>> tables = metadataCollectorMapper.getTableMetadata(datasourceId);
                     
                 if (tables.isEmpty()) {
                     log.warn("[元数据增强] 数据源 {} 没有表元数据", datasourceId);
@@ -480,10 +475,16 @@ public class MetadataCollectorService {
                         String tableName = (String) table.get("table_name");
                         String currentComment = (String) table.get("table_comment");
                             
-                        // 获取字段信息(包含完整元数据)
-                        String colSql = "SELECT column_name, data_type, column_size, is_nullable, column_default, column_comment, is_primary_key, ordinal_position " +
-                                       "FROM column_metadata WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position";
-                        List<Map<String, Object>> columns = localJdbcTemplate.queryForList(colSql, datasourceId, tableName);
+                        // ✅ 使用Mapper获取字段信息
+                        List<Map<String, Object>> columns = metadataCollectorMapper.getColumnMetadata(datasourceId);
+                        // 过滤出当前表的字段
+                        columns = columns.stream()
+                            .filter(col -> tableName.equals(col.get("table_name")))
+                            .sorted((a, b) -> Integer.compare(
+                                ((Number) a.get("ordinal_position")).intValue(),
+                                ((Number) b.get("ordinal_position")).intValue()
+                            ))
+                            .collect(java.util.stream.Collectors.toList());
                             
                         if (columns.isEmpty()) {
                             continue;
@@ -545,9 +546,13 @@ public class MetadataCollectorService {
                             
                         // 调用LLM生成描述
                         String enhancedDesc = callLLM(prompt.toString());
+                        
+                        // ✅ 修复：LLM返回null或内容过短时跳过更新
                         if (enhancedDesc != null && enhancedDesc.length() > 10) {
                             updateTableComment(datasourceId, tableName, enhancedDesc);
                             log.info("[元数据增强] 表 {} 描述已更新: {}", tableName, enhancedDesc);
+                        } else {
+                            log.warn("[元数据增强] 表 {} LLM返回无效内容，跳过更新", tableName);
                         }
                             
                     } catch (Exception e) {
@@ -572,9 +577,8 @@ public class MetadataCollectorService {
             try {
                 log.info("[列元数据增强] 开始为数据源 {} 执行字段描述增强", datasourceId);
                     
-                // 获取所有表
-                String tableSql = "SELECT table_name, table_comment FROM table_metadata WHERE datasource_id = ?";
-                List<Map<String, Object>> tables = localJdbcTemplate.queryForList(tableSql, datasourceId);
+                // ✅ 使用Mapper获取所有表
+                List<Map<String, Object>> tables = metadataCollectorMapper.getTableMetadata(datasourceId);
                     
                 if (tables.isEmpty()) {
                     log.warn("[列元数据增强] 数据源 {} 没有表元数据", datasourceId);
@@ -588,10 +592,12 @@ public class MetadataCollectorService {
                     String tableComment = (String) table.get("table_comment");
                         
                     try {
-                        // 获取字段信息
-                        String colSql = "SELECT column_name, data_type, column_size, is_nullable, column_default, column_comment, is_primary_key " +
-                                       "FROM column_metadata WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position";
-                        List<Map<String, Object>> columns = localJdbcTemplate.queryForList(colSql, datasourceId, tableName);
+                        // ✅ 使用Mapper获取字段信息
+                        List<Map<String, Object>> columns = metadataCollectorMapper.getColumnMetadata(datasourceId);
+                        // 过滤出当前表的字段
+                        columns = columns.stream()
+                            .filter(col -> tableName.equals(col.get("table_name")))
+                            .collect(java.util.stream.Collectors.toList());
                             
                         if (columns.isEmpty()) {
                             continue;
@@ -603,8 +609,23 @@ public class MetadataCollectorService {
                             String currentComment = (String) col.get("column_comment");
                             String dataType = (String) col.get("data_type");
                                 
-                            // 如果已有注释且不为空，跳过（保留手动修改）
+                            // ✅ 优化1：跳过已有优质注释的字段
                             if (currentComment != null && !currentComment.trim().isEmpty() && !currentComment.equals("无说明")) {
+                                continue;
+                            }
+                            
+                            // ✅ 优化2：跳过常见技术字段（无需业务解释）
+                            if (shouldSkipColumn(columnName)) {
+                                log.debug("[列元数据增强] {}.{} 为技术字段，跳过", tableName, columnName);
+                                continue;
+                            }
+                            
+                            // ✅ 优化3：尝试规则推断（零成本）
+                            String inferredComment = inferColumnComment(columnName, dataType);
+                            if (inferredComment != null) {
+                                updateColumnCommentWithSource(datasourceId, tableName, columnName, inferredComment, "INFERRED");
+                                totalEnhanced++;
+                                log.debug("[列元数据增强] {}.{} 规则推断: {}", tableName, columnName, inferredComment);
                                 continue;
                             }
                                 
@@ -641,10 +662,14 @@ public class MetadataCollectorService {
                                     
                                 // 调用LLM
                                 String enhancedComment = callLLM(prompt.toString());
+                                
+                                // ✅ 修复：LLM返回null或长度不符合要求时跳过
                                 if (enhancedComment != null && enhancedComment.length() > 2 && enhancedComment.length() <= 20) {
                                     updateColumnComment(datasourceId, tableName, columnName, enhancedComment);
                                     totalEnhanced++;
                                     log.debug("[列元数据增强] {}.{} → {}", tableName, columnName, enhancedComment);
+                                } else {
+                                    log.debug("[列元数据增强] {}.{} LLM返回无效内容，跳过", tableName, columnName);
                                 }
                                     
                                 // 避免频繁调用LLM
@@ -691,16 +716,52 @@ public class MetadataCollectorService {
      * 更新表注释
      */
     private void updateTableComment(Long datasourceId, String tableName, String comment) {
-        String sql = "UPDATE table_metadata SET table_comment = ? WHERE datasource_id = ? AND table_name = ?";
-        localJdbcTemplate.update(sql, comment, datasourceId, tableName);
+        metadataCollectorMapper.updateTableComment(datasourceId, tableName, comment);
     }
     
     /**
      * 更新字段注释
      */
     private void updateColumnComment(Long datasourceId, String tableName, String columnName, String comment) {
-        String sql = "UPDATE column_metadata SET column_comment = ? WHERE datasource_id = ? AND table_name = ? AND column_name = ?";
-        localJdbcTemplate.update(sql, comment, datasourceId, tableName, columnName);
+        metadataCollectorMapper.updateColumnComment(datasourceId, tableName, columnName, comment);
+    }
+    
+    /**
+     * ✅ 新增：判断是否跳过字段增强（技术字段无需LLM）
+     */
+    private boolean shouldSkipColumn(String columnName) {
+        if (columnName == null || columnName.isEmpty()) {
+            return false;
+        }
+        
+        String lowerName = columnName.toLowerCase();
+        
+        // 1. 纯ID类字段（已有注释说明是主键/外键）
+        if (lowerName.matches("^(id|uuid|guid)$")) {
+            return true;
+        }
+        
+        // 2. 时间戳字段（命名规范清晰）
+        if (lowerName.matches("^(created_at|create_time|updated_at|update_time|modified_at|deleted_at)$")) {
+            return true;
+        }
+        
+        // 3. 多语言后缀字段（如name_en, name_zh）
+        if (lowerName.matches(".*_(en|zh|cn|us|jp|kr)$")) {
+            return true;
+        }
+        
+        // 4. 布尔标志位（is_/has_/can_开头）
+        if (lowerName.matches("^(is_|has_|can_|should_|must_).*")) {
+            return true;
+        }
+        
+        // 5. 版本号、排序号等技术字段
+        if (lowerName.matches("^(version|sort_order|display_order|row_num)$")) {
+            return true;
+        }
+        
+        return false;
     }
     
     /**
@@ -875,10 +936,8 @@ public class MetadataCollectorService {
                     return;
                 }
                 
-                // 2. 获取需要增强的字段列表
-                String colSql = "SELECT column_name, data_type, column_size, is_nullable, column_default, column_comment, is_primary_key " +
-                               "FROM column_metadata WHERE datasource_id = ? AND table_name = ? AND (column_comment IS NULL OR column_comment = '') ORDER BY ordinal_position";
-                List<Map<String, Object>> columns = localJdbcTemplate.queryForList(colSql, datasourceId, tableName);
+                // 2. ✅ 使用Mapper查询需要增强的字段列表
+                List<Map<String, Object>> columns = metadataCollectorMapper.getColumnsWithoutComment(datasourceId, tableName);
                 
                 if (columns.isEmpty()) {
                     log.info("[按需增强] 表 {}.{} 所有字段已有注释", datasourceId, tableName);
@@ -945,11 +1004,8 @@ public class MetadataCollectorService {
      * 检查表是否需要增强
      */
     private boolean shouldEnhanceTable(Long datasourceId, String tableName) {
-        String countSql = "SELECT COUNT(*) as total, " +
-                         "SUM(CASE WHEN column_comment IS NOT NULL AND column_comment != '' THEN 1 ELSE 0 END) as commented " +
-                         "FROM column_metadata WHERE datasource_id = ? AND table_name = ?";
-        
-        Map<String, Object> result = localJdbcTemplate.queryForMap(countSql, datasourceId, tableName);
+        // ✅ 使用Mapper统计注释覆盖率
+        Map<String, Object> result = metadataCollectorMapper.getColumnCommentStats(datasourceId, tableName);
         int total = ((Number) result.get("total")).intValue();
         int commented = ((Number) result.get("commented")).intValue();
         
@@ -984,9 +1040,7 @@ public class MetadataCollectorService {
      * 更新字段注释并记录来源
      */
     private void updateColumnCommentWithSource(Long datasourceId, String tableName, String columnName, String comment, String source) {
-        String sql = "UPDATE column_metadata SET column_comment = ?, comment_source = ?, enhanced_at = NOW() " +
-                    "WHERE datasource_id = ? AND table_name = ? AND column_name = ?";
-        localJdbcTemplate.update(sql, comment, source, datasourceId, tableName, columnName);
+        metadataCollectorMapper.updateColumnCommentWithSource(datasourceId, tableName, columnName, comment, source);
     }
     
     /**

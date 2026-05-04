@@ -433,7 +433,89 @@
         </div>
     </div>
     
-    <!-- 创建/编辑模态框 - 通过postMessage通知父窗口显示 -->
+    <!-- ✅ 创建/编辑模态框 - 在 iframe 内部显示 -->
+    <div id="relationshipModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;">
+        <div style="background:white;border-radius:12px;max-width:800px;width:90%;max-height:90vh;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+            <div id="relationshipModalContent"></div>
+        </div>
+    </div>
+    
+    <!-- ✅ 自动推断结果模态框 - 在 iframe 内部显示 -->
+    <div id="autoDetectModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;justify-content:center;align-items:center;">
+        <div style="background:white;border-radius:12px;max-width:1000px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+            <div style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                <h2 style="font-size:18px;color:#333;margin:0;">🤖 自动推断结果</h2>
+                <button onclick="hideAutoDetectModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+            </div>
+            <div style="padding:24px;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f8f9fa;">
+                            <th style="padding:12px;text-align:left;border-bottom:2px solid #dee2e6;">源表。字段</th>
+                            <th style="padding:12px;text-align:center;border-bottom:2px solid #dee2e6;">→</th>
+                            <th style="padding:12px;text-align:left;border-bottom:2px solid #dee2e6;">目标表。字段</th>
+                            <th style="padding:12px;text-align:left;border-bottom:2px solid #dee2e6;">描述</th>
+                            <th style="padding:12px;text-align:center;border-bottom:2px solid #dee2e6;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="autoDetectBody">
+                        <tr><td colspan="5" style="text-align:center;padding:20px;color:#999;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="padding:16px 24px;border-top:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                <div style="color:#666;">
+                    <span id="autoDetectTotalCount">共 0 条</span>
+                    <span id="conflictCount" style="display:none;margin-left:12px;color:#dc3545;">⚠️ 冲突 0 条</span>
+                </div>
+                <div style="display:flex;gap:12px;">
+                    <button onclick="hideAutoDetectModal()" style="padding:10px 20px;background:#f5f5f5;color:#333;border:none;border-radius:6px;cursor:pointer;">取消</button>
+                    <button onclick="saveAutoDetectedRelationships()" style="padding:10px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;">全部保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ✅ 隐藏的表单模板（用于克隆） -->
+    <div id="relationshipFormTemplate" style="display:none;">
+        <form id="relationshipForm">
+            <input type="hidden" id="editId" value="">
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">源表：</label>
+                <select id="sourceTable" onchange="loadSourceColumns()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    <option value="">请选择表</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">源字段：</label>
+                <select id="sourceColumn" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    <option value="">请选择字段</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">目标表：</label>
+                <select id="targetTable" onchange="loadTargetColumns()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    <option value="">请选择表</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">目标字段：</label>
+                <select id="targetColumn" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    <option value="">请选择字段</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">关联描述：</label>
+                <textarea id="description" rows="3" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;resize:vertical;background:#f9f9f9;color:#666;" placeholder="选择字段后自动生成" readonly></textarea>
+            </div>
+        </form>
+    </div>
+    
+    <h2 id="modalTitle" style="display:none;">创建关联关系</h2>
     
     <!-- SQL解析模态框 - 通过postMessage通知父窗口显示 -->
     
@@ -559,11 +641,11 @@
                         
             tbody.innerHTML = relationships.map(rel => `
                 <tr>
-                    <td><strong>${rel.source_table}</strong></td>
-                    <td>${rel.source_column}</td>
+                    <td><strong>${rel.sourceTable}</strong></td>
+                    <td>${rel.sourceColumn}</td>
                     <td class="arrow">→</td>
-                    <td><strong>${rel.target_table}</strong></td>
-                    <td>${rel.target_column}</td>
+                    <td><strong>${rel.targetTable}</strong></td>
+                    <td>${rel.targetColumn}</td>
                     <td>${rel.description || '-'}</td>
                     <td>${rel.is_active ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-warning">禁用</span>'}</td>
                     <td class="actions">
@@ -574,20 +656,183 @@
             `).join('');
         }
         
-        // 打开创建模态框
+        // ✅ 打开创建模态框 - 先在 iframe 内部显示模态框，再加载表列表
         async function openCreateModal() {
-            document.getElementById('modalTitle').textContent = '新增关联关系';
-            document.getElementById('editId').value = '';
-            document.getElementById('relationshipForm').reset();
+            // ✅ 检查是否已选择数据源
+            if (!currentDatasourceId) {
+                alert('请先在页面顶部选择数据源');
+                return;
+            }
             
-            // 加载表列表
+            // 先显示模态框
+            await showRelationshipModalInIframe('create');
+            
+            // 等待模态框显示后再加载表列表（使用页面顶部已选择的数据源）
             await loadTables();
+        }
+        
+        // ✅ 在 iframe 内部显示创建/编辑模态框
+        async function showRelationshipModalInIframe(modalType) {
+            // ✅ 检查是否已选择数据源
+            if (!currentDatasourceId) {
+                alert('请先在页面顶部选择数据源');
+                return;
+            }
             
-            // ✅ 通过postMessage通知父窗口显示模态框
-            window.parent.postMessage({
-                type: 'SHOW_MODAL',
-                modalType: 'create'
-            }, '*');
+            const overlay = document.getElementById('relationshipModalOverlay');
+            const contentDiv = document.getElementById('relationshipModalContent');
+            const formTemplate = document.getElementById('relationshipFormTemplate');
+            
+            if (!formTemplate) {
+                console.error('表单模板未找到');
+                return;
+            }
+            
+            // 从模板克隆表单
+            const form = formTemplate.querySelector('#relationshipForm').cloneNode(true);
+            form.style.display = 'block';
+            
+            const title = modalType === 'create' ? '创建关联关系' : '编辑关联关系';
+            
+            const modalHTML = `
+                <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                    <h2 style="font-size:18px;color:#333;margin:0;">${title}</h2>
+                    <button onclick="hideRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+                </div>
+                <div class="modal-body" style="padding:24px;">
+                </div>
+                <div class="modal-footer" style="padding:16px 24px;border-top:1px solid #e0e0e0;display:flex;justify-content:flex-end;gap:12px;">
+                    <button onclick="hideRelationshipModal()" style="padding:10px 20px;background:#f5f5f5;color:#333;border:none;border-radius:6px;cursor:pointer;">取消</button>
+                    <button onclick="saveRelationship()" style="padding:10px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;">保存</button>
+                </div>
+            `;
+            
+            contentDiv.innerHTML = modalHTML;
+            
+            // 将表单添加到 modal-body
+            const modalBody = contentDiv.querySelector('.modal-body');
+            modalBody.appendChild(form);
+            
+            overlay.style.display = 'flex';
+        }
+        
+        // ✅ 隐藏模态框
+        function hideRelationshipModal() {
+            const overlay = document.getElementById('relationshipModalOverlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+        }
+        
+        // ✅ 显示 SQL 解析模态框
+        function showSQLParseModalInIframe(sqlValue) {
+            const overlay = document.getElementById('relationshipModalOverlay');
+            const content = document.getElementById('relationshipModalContent');
+            
+            const modalHTML = `
+                <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+                    <h2 style="font-size:18px;color:#333;margin:0;">从 SQL 提取关联关系</h2>
+                    <button onclick="hideRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+                </div>
+                <div class="modal-body" style="padding:24px;">
+                    <div style="margin-bottom:16px;">
+                        <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">请输入 SQL 语句：</label>
+                        <textarea id="sqlParseInput" style="width:100%;min-height:150px;padding:12px;border:1px solid #ddd;border-radius:6px;font-family:monospace;font-size:13px;resize:vertical;">${sqlValue}</textarea>
+                    </div>
+                    <div id="sqlParseResult" style="display:none;"></div>
+                </div>
+                <div class="modal-footer" style="padding:16px 24px;border-top:1px solid #e0e0e0;display:flex;justify-content:flex-end;gap:12px;">
+                    <button onclick="hideRelationshipModal()" style="padding:10px 20px;background:#f5f5f5;color:#333;border:none;border-radius:6px;cursor:pointer;">取消</button>
+                    <button onclick="parseSQLAndShowResult()" style="padding:10px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;">解析 SQL</button>
+                </div>
+            `;
+            
+            content.innerHTML = modalHTML;
+            overlay.style.display = 'flex';
+        }
+        
+        // ✅ 解析 SQL 并显示结果
+        async function parseSQLAndShowResult() {
+            const sql = document.getElementById('sqlParseInput').value;
+            if (!sql || !sql.trim()) {
+                alert('请输入 SQL 语句');
+                return;
+            }
+            
+            showLoadingMask('正在解析 SQL...');
+            
+            try {
+                const response = await fetch('/api/relationships/parse-sql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        datasourceId: currentDatasourceId,
+                        sql: sql
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const resultDiv = document.getElementById('sqlParseResult');
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `
+                        <div style="background:#f8f9fa;padding:16px;border-radius:6px;margin-top:16px;">
+                            <h3 style="margin:0 0 12px 0;font-size:16px;color:#333;">解析结果：</h3>
+                            <pre style="background:white;padding:12px;border-radius:4px;overflow-x:auto;font-size:12px;color:#333;">${JSON.stringify(result, null, 2)}</pre>
+                            <div style="margin-top:12px;display:flex;gap:12px;">
+                                <button onclick="saveParsedRelationships(${JSON.stringify(result).replace(/"/g, '&quot;')})" style="padding:8px 16px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:6px;cursor:pointer;">保存关联关系</button>
+                                <button onclick="hideRelationshipModal()" style="padding:8px 16px;background:#f5f5f5;color:#333;border:none;border-radius:6px;cursor:pointer;">关闭</button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    alert('解析失败：' + (result.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error('解析 SQL 失败:', error);
+                alert('解析失败：' + error.message);
+            } finally {
+                hideLoadingMask();
+            }
+        }
+        
+        // ✅ 保存解析后的关联关系
+        async function saveParsedRelationships(relationships) {
+            if (!relationships || relationships.length === 0) {
+                alert('没有可保存的关联关系');
+                return;
+            }
+            
+            showLoadingMask('正在保存关联关系...');
+            
+            try {
+                for (const rel of relationships) {
+                    await fetch('/api/relationships', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            datasourceId: currentDatasourceId,
+                            ...rel
+                        })
+                    });
+                }
+                
+                alert('保存成功！');
+                hideRelationshipModal();
+                loadRelationships(); // 刷新列表
+            } catch (error) {
+                console.error('保存失败:', error);
+                alert('保存失败：' + error.message);
+            } finally {
+                hideLoadingMask();
+            }
         }
         
         // 编辑关联关系
@@ -601,25 +846,14 @@
                 const rel = result.data.find(r => r.id === id);
                 if (!rel) return;
                 
-                document.getElementById('modalTitle').textContent = '编辑关联关系';
                 document.getElementById('editId').value = rel.id;
                 
-                await loadTables();
-                
-                document.getElementById('sourceTable').value = rel.source_table;
-                await loadSourceColumns();
-                document.getElementById('sourceColumn').value = rel.source_column;
-                
-                document.getElementById('targetTable').value = rel.target_table;
-                await loadTargetColumns();
-                document.getElementById('targetColumn').value = rel.target_column;
-                
-                document.getElementById('description').value = rel.description || '';
-                
-                // ✅ 通过postMessage通知父窗口显示模态框
+                // ✅ 修复：不立即调用 loadTables() 和设置值，而是通过 postMessage 通知父页面
+                // 父页面会在显示模态框后调用 loadTablesInIframe() 并设置值
                 window.parent.postMessage({
                     type: 'SHOW_MODAL',
-                    modalType: 'edit'
+                    modalType: 'edit',
+                    relationshipData: rel  // 传递给父页面
                 }, '*');
             } catch (error) {
                 console.error('加载关联关系详情失败:', error);
@@ -628,10 +862,11 @@
         
         // 关闭模态框
         function closeModal() {
-            // ✅ 通过postMessage通知父窗口关闭模态框
-            window.parent.postMessage({
-                type: 'CLOSE_MODAL'
-            }, '*');
+            // ✅ 直接在 iframe 内部隐藏模态框
+            const overlay = document.getElementById('relationshipModalOverlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
         }
         
         // 加载表列表
@@ -648,27 +883,30 @@
                     const sourceSelect = document.getElementById('sourceTable');
                     const targetSelect = document.getElementById('targetTable');
                     
-                    // 保存当前选中值
+                    if (!sourceSelect || !targetSelect) {
+                        console.warn('[loadTables] 模态框元素未找到，1秒后重试...');
+                        setTimeout(() => loadTables(), 1000);
+                        return;
+                    }
+                    
                     const currentSource = sourceSelect.value;
                     const currentTarget = targetSelect.value;
                     
-                    // 清空并重新填充
                     sourceSelect.innerHTML = '<option value="">请选择表</option>';
                     targetSelect.innerHTML = '<option value="">请选择表</option>';
                     
                     result.data.forEach(table => {
                         const option1 = document.createElement('option');
                         option1.value = table.table_name;
-                        option1.textContent = `${table.table_name}${table.table_comment ? ' - ' + table.table_comment : ''}`;
+                        option1.textContent = table.table_name + (table.table_comment ? ' - ' + table.table_comment : '');
                         sourceSelect.appendChild(option1);
                         
                         const option2 = document.createElement('option');
                         option2.value = table.table_name;
-                        option2.textContent = `${table.table_name}${table.table_comment ? ' - ' + table.table_comment : ''}`;
+                        option2.textContent = table.table_name + (table.table_comment ? ' - ' + table.table_comment : '');
                         targetSelect.appendChild(option2);
                     });
                     
-                    // 恢复选中值
                     sourceSelect.value = currentSource;
                     targetSelect.value = currentTarget;
                 }
@@ -683,7 +921,10 @@
             if (!tableName) return;
             
             await loadColumns(tableName, 'sourceColumn');
-            autoGenerateDescription(); // 自动生成描述
+            
+            // ✅ 添加 onchange 事件监听器，当用户选择字段时自动生成描述
+            const sourceColumnSelect = document.getElementById('sourceColumn');
+            sourceColumnSelect.onchange = autoGenerateDescription;
         }
         
         // 加载目标表字段
@@ -692,7 +933,10 @@
             if (!tableName) return;
             
             await loadColumns(tableName, 'targetColumn');
-            autoGenerateDescription(); // 自动生成描述
+            
+            // ✅ 添加 onchange 事件监听器，当用户选择字段时自动生成描述
+            const targetColumnSelect = document.getElementById('targetColumn');
+            targetColumnSelect.onchange = autoGenerateDescription;
         }
         
         // 加载字段列表
@@ -726,11 +970,15 @@
             const targetTable = document.getElementById('targetTable').value;
             const targetColumn = document.getElementById('targetColumn').value;
             
+            console.log('[autoGenerateDescription]', { sourceTable, sourceColumn, targetTable, targetColumn });
+            
             // 只有当所有字段都选择后才生成
             if (sourceTable && sourceColumn && targetTable && targetColumn) {
                 // 获取表注释（如果有）
                 const sourceTableObj = allTables.find(t => t.table_name === sourceTable);
                 const targetTableObj = allTables.find(t => t.table_name === targetTable);
+                
+                console.log('[autoGenerateDescription] 表对象', { sourceTableObj, targetTableObj });
                 
                 const sourceTableComment = sourceTableObj && sourceTableObj.table_comment ? sourceTableObj.table_comment : sourceTable;
                 const targetTableComment = targetTableObj && targetTableObj.table_comment ? targetTableObj.table_comment : targetTable;
@@ -738,21 +986,53 @@
                 // 标准格式：{源表名}通过{源字段}关联{目标表名}
                 const description = `${sourceTableComment}通过${sourceColumn}关联${targetTableComment}`;
                 
+                console.log('[autoGenerateDescription] 生成的描述:', description);
                 document.getElementById('description').value = description;
             } else {
                 document.getElementById('description').value = '';
             }
         }
         
+        // ✅ 防重检查：检查是否已存在相同的关联关系（包括双向）
+        async function checkDuplicateRelationship(data) {
+            try {
+                const response = await fetch(`/api/relationships/check-duplicate?datasourceId=${data.datasourceId}&sourceTable=${data.sourceTable}&sourceColumn=${data.sourceColumn}&targetTable=${data.targetTable}&targetColumn=${data.targetColumn}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    if (result.data.exists) {
+                        const direction = result.data.reverseDirection ? '反向' : '相同';
+                        alert(`关联关系已存在（${direction}）：${result.data.existingRelationship}`);
+                        return true; // 存在重复
+                    }
+                    return false; // 不存在重复
+                }
+                return false;
+            } catch (error) {
+                console.error('防重检查失败:', error);
+                return false; // 检查失败，允许保存
+            }
+        }
+        
         // 保存关联关系
         async function saveRelationship() {
             const editId = document.getElementById('editId').value;
+            
+            // ✅ 使用页面顶部已选择的数据源
+            if (!currentDatasourceId) {
+                alert('数据源未选择，请刷新页面后重试');
+                return;
+            }
+            
             const data = {
                 datasourceId: parseInt(currentDatasourceId),
                 sourceTable: document.getElementById('sourceTable').value,
                 sourceColumn: document.getElementById('sourceColumn').value,
                 targetTable: document.getElementById('targetTable').value,
                 targetColumn: document.getElementById('targetColumn').value,
+                relationshipType: 'MANY_TO_ONE', // ✅ 默认关联类型：多对一（最常见）
                 description: document.getElementById('description').value
             };
             
@@ -760,6 +1040,12 @@
             if (!data.sourceTable || !data.sourceColumn || !data.targetTable || !data.targetColumn) {
                 alert('请填写所有必填字段');
                 return;
+            }
+            
+            // ✅ 防重检查：检查是否已存在相同的关联关系（包括双向）
+            const isDuplicate = await checkDuplicateRelationship(data);
+            if (isDuplicate) {
+                return; // 已存在，不再保存
             }
             
             try {
@@ -873,43 +1159,24 @@
                 console.log('[AutoDetect] Array.isArray(result.data):', Array.isArray(result.data));
                 
                 if (result.code === 200) {
-                    // ✅ 修复：严格提取 relationships 数组
+                    // ✅ 修复：支持数组格式和对象格式
                     let relationships;
                     
-                    console.log('[AutoDetect] 开始提取 relationships');
-                    
-                    if (Array.isArray(result.data) && result.data.length > 0) {
-                        // 数组格式：result.data = [{data: {relationships: [...]}}]
-                        console.log('[AutoDetect] 检测到数组格式，提取 result.data[0].data.relationships');
-                        const firstItem = result.data[0];
-                        
-                        if (firstItem && firstItem.data && firstItem.data.relationships) {
-                            relationships = firstItem.data.relationships;
-                        } else {
-                            console.error('[AutoDetect] 数组元素结构异常:', firstItem);
-                            alert('推断结果格式错误');
-                            return;
-                        }
-                    } else if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+                    if (Array.isArray(result.data)) {
+                        // 数组格式：result.data = [{sourceTable, targetTable, ...}]
+                        relationships = result.data;
+                    } else if (result.data && result.data.relationships) {
                         // 对象格式：{data: {relationships: [...]}}
-                        console.log('[AutoDetect] 检测到对象格式，提取 result.data.relationships');
                         relationships = result.data.relationships;
                     } else {
-                        console.error('[AutoDetect] 数据格式异常:', result.data);
                         alert('推断结果格式错误');
                         return;
                     }
                     
-                    console.log('[AutoDetect] relationships:', relationships);
-                    console.log('[AutoDetect] Array.isArray(relationships):', Array.isArray(relationships));
-                    
                     if (!Array.isArray(relationships)) {
-                        alert('推断结果格式错误：relationships不是数组');
-                        console.error('relationships:', relationships);
+                        alert('推断结果格式错误');
                         return;
                     }
-                    
-                    console.log('[AutoDetect] relationships.length:', relationships.length);
                     
                     // ✅ 显示推断结果预览弹框
                     showAutoDetectResults(relationships);
@@ -923,20 +1190,16 @@
             }
         }
         
-        // 打开SQL解析模态框
+        // ✅ 打开 SQL 解析模态框 - 在 iframe 内部显示
         function openSQLParseModal() {
             if (!currentDatasourceId) {
                 alert('请先选择数据源');
                 return;
             }
-            document.getElementById('parseResults').style.display = 'none';
-            document.getElementById('sqlInput').value = '';
             
-            // ✅ 通过postMessage通知父窗口显示模态框
-            window.parent.postMessage({
-                type: 'SHOW_MODAL',
-                modalType: 'sqlParse'
-            }, '*');
+            const sqlInput = document.getElementById('sqlInput');
+            const sqlValue = sqlInput ? sqlInput.value : '';
+            showSQLParseModalInIframe(sqlValue);
         }
         
         // 关闭SQL解析模态框
@@ -1112,6 +1375,7 @@
                     sourceColumn: rel.sourceColumn,
                     targetTable: rel.targetTable,
                     targetColumn: rel.targetColumn,
+                    relationshipType: 'MANY_TO_ONE', // ✅ 默认关联类型：多对一
                     description: rel.description
                 }));
                 
@@ -1172,15 +1436,29 @@
             
             console.log('[showAutoDetectResults] 已保存到 window.autoDetectedRelationships, conflicts:', conflicts.length);
             
+            // ✅ 在 iframe 内部显示模态框
+            showAutoDetectModal();
+            
+            // 渲染表格
             renderAutoDetectTable();
             
-            // ✅ 通过postMessage通知父窗口显示模态框
-            window.parent.postMessage({
-                type: 'SHOW_MODAL',
-                modalType: 'autoDetect'
-            }, '*');
-            
             console.log('[showAutoDetectResults] 完成');
+        }
+        
+        // ✅ 显示自动推断模态框
+        function showAutoDetectModal() {
+            const overlay = document.getElementById('autoDetectModalOverlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+            }
+        }
+        
+        // ✅ 隐藏自动推断模态框
+        function hideAutoDetectModal() {
+            const overlay = document.getElementById('autoDetectModalOverlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
         }
         
         // 渲染自动推断表格（支持冲突高亮）
@@ -1204,12 +1482,12 @@
             }
             
             const html = relationships.map((rel, index) => {
-                const key = `${rel.source_table}.${rel.source_column}->${rel.target_table}.${rel.target_column}`;
+                const key = `${rel.sourceTable}.${rel.sourceColumn}->${rel.targetTable}.${rel.targetColumn}`;
                 const conflict = conflictMap[key];
                 const isConflict = !!conflict;
                 
                 let rowClass = isConflict ? 'conflict-row' : '';
-                let sourceCell = `<strong>${rel.source_table}</strong>.${rel.source_column}`;
+                let sourceCell = `<strong>${rel.sourceTable}</strong>.${rel.sourceColumn}`;
                 let descriptionCell = rel.description || '-';
                 let actionCell = `<button class="btn btn-small btn-danger" onclick="removeAutoDetectItem(${index})">删除</button>`;
                 
@@ -1217,7 +1495,7 @@
                 if (isConflict) {
                     sourceCell = `
                         <span class="conflict-badge">⚠️ 冲突</span>
-                        <strong>${rel.source_table}</strong>.${rel.source_column}
+                        <strong>${rel.sourceTable}</strong>.${rel.sourceColumn}
                     `;
                     
                     descriptionCell = `
@@ -1246,7 +1524,7 @@
                     <tr class="${rowClass}">
                         <td style="padding: 8px;">${sourceCell}</td>
                         <td style="padding: 8px; text-align: center; color: #667eea;">→</td>
-                        <td style="padding: 8px;"><strong>${rel.target_table}</strong>.${rel.target_column}</td>
+                        <td style="padding: 8px;"><strong>${rel.targetTable}</strong>.${rel.targetColumn}</td>
                         <td style="padding: 8px; font-size: 13px; color: #666;">${descriptionCell}</td>
                         <td style="padding: 8px; text-align: center;">${actionCell}</td>
                     </tr>
@@ -1262,7 +1540,7 @@
         function chooseConflictRule(index) {
             const conflicts = window.autoDetectConflicts || [];
             const rel = window.autoDetectedRelationships[index];
-            const key = `${rel.source_table}.${rel.source_column}->${rel.target_table}.${rel.target_column}`;
+            const key = `${rel.sourceTable}.${rel.sourceColumn}->${rel.targetTable}.${rel.targetColumn}`;
             
             const conflict = conflicts.find(c => c.key === key);
             if (conflict && conflict.ruleBased) {
@@ -1276,7 +1554,7 @@
         function chooseConflictLLM(index) {
             const conflicts = window.autoDetectConflicts || [];
             const rel = window.autoDetectedRelationships[index];
-            const key = `${rel.source_table}.${rel.source_column}->${rel.target_table}.${rel.target_column}`;
+            const key = `${rel.sourceTable}.${rel.sourceColumn}->${rel.targetTable}.${rel.targetColumn}`;
             
             const conflict = conflicts.find(c => c.key === key);
             if (conflict && conflict.llmBased) {
@@ -1296,7 +1574,28 @@
                 text += `（⚠️ ${conflictCount} 条冲突待确认）`;
             }
             
-            document.getElementById('totalCount').textContent = text;
+            // ✅ 更新主页面的计数
+            const totalCountEl = document.getElementById('totalCount');
+            if (totalCountEl) {
+                totalCountEl.textContent = text;
+            }
+            
+            // ✅ 更新自动推断模态框的计数
+            const autoDetectTotalEl = document.getElementById('autoDetectTotalCount');
+            if (autoDetectTotalEl) {
+                autoDetectTotalEl.textContent = `共 ${count} 条`;
+            }
+            
+            // ✅ 更新冲突计数
+            const conflictCountEl = document.getElementById('conflictCount');
+            if (conflictCountEl) {
+                if (conflictCount > 0) {
+                    conflictCountEl.style.display = 'inline';
+                    conflictCountEl.textContent = `⚠️ 冲突 ${conflictCount} 条`;
+                } else {
+                    conflictCountEl.style.display = 'none';
+                }
+            }
         }
         
         // ✅ 删除单行
@@ -1309,11 +1608,13 @@
         
         // 关闭自动推断模态框
         function closeAutoDetectModal() {
-            // ✅ 通过postMessage通知父窗口关闭模态框
-            window.parent.postMessage({
-                type: 'CLOSE_MODAL'
-            }, '*');
+            // ✅ 直接在 iframe 内部隐藏模态框
+            const overlay = document.getElementById('autoDetectModalOverlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
             window.autoDetectedRelationships = null;
+            window.autoDetectConflicts = null;
         }
         
         // 保存自动推断的关联关系（含冲突二次确认）
@@ -1336,13 +1637,13 @@
                 // ✅ 直接保存表格中所有数据
                 const relationships = window.autoDetectedRelationships.map(rel => ({
                     datasourceId: parseInt(currentDatasourceId),
-                    sourceTable: rel.source_table,
-                    sourceColumn: rel.source_column,
-                    targetTable: rel.target_table,
-                    targetColumn: rel.target_column,
+                    sourceTable: rel.sourceTable,
+                    sourceColumn: rel.sourceColumn,
+                    targetTable: rel.targetTable,
+                    targetColumn: rel.targetColumn,
                     relationshipType: rel.relationship_type || 'MANY_TO_ONE',
                     confidence: rel.confidence || 0.8,
-                    description: rel.description || `${rel.source_table}通过${rel.source_column}关联${rel.target_table}`
+                    description: rel.description || `${rel.sourceTable}通过${rel.sourceColumn}关联${rel.targetTable}`
                 }));
                 
                 const response = await fetch('/api/relationships/batch-save', {
@@ -1378,7 +1679,7 @@
             conflicts.forEach(conflict => {
                 // 查找当前表格中是否还有该冲突项
                 const found = relationships.find(rel => {
-                    const key = `${rel.source_table}.${rel.source_column}->${rel.target_table}.${rel.target_column}`;
+                    const key = `${rel.sourceTable}.${rel.sourceColumn}->${rel.targetTable}.${rel.targetColumn}`;
                     return key === conflict.key;
                 });
                 
@@ -1491,7 +1792,7 @@
                 
                 // 在表格中找到对应的项并替换
                 const index = relationships.findIndex(rel => {
-                    const key = `${rel.source_table}.${rel.source_column}->${rel.target_table}.${rel.target_column}`;
+                    const key = `${rel.sourceTable}.${rel.sourceColumn}->${rel.targetTable}.${rel.targetColumn}`;
                     return key === conflict.key;
                 });
                 
