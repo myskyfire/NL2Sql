@@ -2,6 +2,7 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
 import com.nl2sql.core.cache.MetadataCacheService;
+import com.nl2sql.core.metadata.MetadataService;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.service.DataSourceConfigService;
 import com.nl2sql.metadata.service.MetadataCollectorService;
@@ -30,6 +31,9 @@ public class AdminMetadataController {
     
     @Autowired(required = false)
     private MetadataCacheService metadataCacheService;
+    
+    @Autowired(required = false)
+    private MetadataService metadataService;
     
     public AdminMetadataController(DataSourceConfigService dataSourceConfigService,
                                    MetadataCollectorService metadataCollectorService,
@@ -355,6 +359,36 @@ public class AdminMetadataController {
         } catch (Exception e) {
             log.error("获取表列表失败", e);
             return Result.error("获取失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ 新增：刷新元数据缓存（用于数据变更后立即生效）
+     */
+    @PostMapping("/metadata/refresh")
+    public Result<Map<String, Object>> refreshMetadata() {
+        try {
+            log.info("[元数据刷新] 开始刷新元数据缓存");
+            
+            if (metadataService != null) {
+                metadataService.refreshMetadata();
+                log.info("[元数据刷新] ✅ MetadataService 缓存已刷新");
+            }
+            
+            // 清除 Caffeine 缓存
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[元数据刷新] ✅ Caffeine 缓存已清除");
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("message", "元数据缓存已刷新");
+            
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[元数据刷新] 失败", e);
+            return Result.error("刷新失败: " + e.getMessage());
         }
     }
     

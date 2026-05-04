@@ -1,6 +1,7 @@
 package com.nl2sql.core.agent.skills;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -50,6 +51,11 @@ import java.util.Map;
 public class SkillResult {
     
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    
+    static {
+        // ✅ 配置枚举大小写不敏感
+        objectMapper.configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true);
+    }
     
     /**
      * 是否成功
@@ -103,6 +109,7 @@ public class SkillResult {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     public static class ClarificationInfo {
         private String clarificationType;  // datasource_selection, table_missing, etc.
         private String message;            // 澄清消息
@@ -118,6 +125,7 @@ public class SkillResult {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     public static class ErrorInfo {
         private String errorCode;          // 错误代码
         private String errorMessage;       // 错误消息

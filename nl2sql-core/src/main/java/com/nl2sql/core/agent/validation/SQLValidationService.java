@@ -79,10 +79,17 @@ public class SQLValidationService {
             PlainSelect plainSelect = (PlainSelect) selectBody;
             GroupByElement groupBy = plainSelect.getGroupBy();
             
-            // 如果没有 GROUP BY，但 SELECT 中有聚合函数，需要警告
+            // ✅ 修复：只有当 SELECT 中既有聚合函数又有非聚合字段时，才需要 GROUP BY
             if (groupBy == null && hasAggregateFunction(plainSelect)) {
-                issues.add("⚠️ 检测到聚合函数但未使用 GROUP BY，可能导致意外结果");
-                return issues;
+                // 检查是否有非聚合字段
+                List<String> nonAggregateColumns = extractNonAggregateColumns(plainSelect);
+                
+                // 如果只有聚合函数（无非聚合字段），是合法的单行聚合查询
+                if (!nonAggregateColumns.isEmpty()) {
+                    issues.add("⚠️ 检测到聚合函数和非聚合字段混合，但未使用 GROUP BY，可能导致意外结果");
+                    return issues;
+                }
+                // 否则是合法的单行聚合查询（如 SELECT COUNT(*) FROM ...），无需警告
             }
             
             if (groupBy != null) {

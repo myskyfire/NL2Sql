@@ -5,26 +5,7 @@
 # 2. Order delivery location -> orders.shipping_address (LIKE match)
 # 3. User address book -> user_addresses table (add is_default=1 for default address)
 
-查询用户ID为1的订单|SELECT * FROM orders WHERE user_id = 1|orders|WHERE
-查询用户ID为2的订单|SELECT * FROM orders WHERE user_id = 2|orders|WHERE
-查询用户ID为3的订单|SELECT * FROM orders WHERE user_id = 3|orders|WHERE
-查询用户ID为4的订单|SELECT * FROM orders WHERE user_id = 4|orders|WHERE
-查询用户ID为5的订单|SELECT * FROM orders WHERE user_id = 5|orders|WHERE
-查询用户ID为6的订单|SELECT * FROM orders WHERE user_id = 6|orders|WHERE
-查询用户ID为7的订单|SELECT * FROM orders WHERE user_id = 7|orders|WHERE
-查询用户ID为8的订单|SELECT * FROM orders WHERE user_id = 8|orders|WHERE
-查询用户ID为9的订单|SELECT * FROM orders WHERE user_id = 9|orders|WHERE
-查询用户ID为10的订单|SELECT * FROM orders WHERE user_id = 10|orders|WHERE
-查询用户ID为11的订单|SELECT * FROM orders WHERE user_id = 11|orders|WHERE
-查询用户ID为12的订单|SELECT * FROM orders WHERE user_id = 12|orders|WHERE
-查询用户ID为13的订单|SELECT * FROM orders WHERE user_id = 13|orders|WHERE
-查询用户ID为14的订单|SELECT * FROM orders WHERE user_id = 14|orders|WHERE
-查询用户ID为15的订单|SELECT * FROM orders WHERE user_id = 15|orders|WHERE
-查询用户ID为16的订单|SELECT * FROM orders WHERE user_id = 16|orders|WHERE
-查询用户ID为17的订单|SELECT * FROM orders WHERE user_id = 17|orders|WHERE
-查询用户ID为18的订单|SELECT * FROM orders WHERE user_id = 18|orders|WHERE
-查询用户ID为19的订单|SELECT * FROM orders WHERE user_id = 19|orders|WHERE
-查询用户ID为20的订单|SELECT * FROM orders WHERE user_id = 20|orders|WHERE
+查询用户ID为{user_id}的订单|SELECT * FROM orders WHERE user_id = {user_id}|orders|WHERE
 查询订单号ORD20260401090001的详情|SELECT * FROM orders WHERE order_no = 'ORD20260401090001'|orders|WHERE
 订单总数|SELECT COUNT(*) FROM orders|orders|COUNT
 商品总数|SELECT COUNT(*) FROM products|products|COUNT
@@ -79,11 +60,7 @@ Adidas外套的信息|SELECT * FROM products WHERE product_name = 'Adidas外套'
 每个分类的平均价格|SELECT category_id, AVG(price) FROM products GROUP BY category_id|products|AVG,GROUP BY
 每个分类的最高价格|SELECT category_id, MAX(price) FROM products GROUP BY category_id|products|MAX,GROUP BY
 每个分类的最低价格|SELECT category_id, MIN(price) FROM products GROUP BY category_id|products|MIN,GROUP BY
-查询用户ID为1的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 1|orders|SUM,WHERE
-查询用户ID为2的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 2|orders|SUM,WHERE
-查询用户ID为3的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 3|orders|SUM,WHERE
-查询用户ID为4的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 4|orders|SUM,WHERE
-查询用户ID为5的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = 5|orders|SUM,WHERE
+查询用户ID为{user_id}的订单总金额|SELECT SUM(total_amount) FROM orders WHERE user_id = {user_id}|orders|SUM,WHERE
 订单金额超过10000的订单号|SELECT order_no FROM orders WHERE total_amount > 10000|orders|WHERE
 订单金额最高的前5个订单|SELECT order_no, total_amount FROM orders ORDER BY total_amount DESC LIMIT 5|orders|ORDER BY,LIMIT
 订单金额最低的前5个订单|SELECT order_no, total_amount FROM orders ORDER BY total_amount ASC LIMIT 5|orders|ORDER BY,LIMIT

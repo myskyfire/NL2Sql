@@ -1,6 +1,7 @@
 package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.common.util.JsonUtils;
 import com.nl2sql.core.agent.intent.IntentClassifier;
 import com.nl2sql.core.agent.routing.RoutingResult;
 import com.nl2sql.core.agent.routing.RoutingStrategy;
@@ -268,8 +269,19 @@ public class ReActAgent {
                     
                     log.info("[ReActAgent] 调用工具: {}, 参数: {}", toolName, argumentsJson);
                     
-                    // 解析参数
-                    Map<String, Object> arguments = objectMapper.readValue(argumentsJson, Map.class);
+                    // ✅ 使用公共工具类修复并解析JSON
+                    Map<String, Object> arguments = JsonUtils.parseToJsonMap(argumentsJson);
+                    
+                    if (arguments == null) {
+                        log.error("[ReActAgent] JSON解析失败，原始参数: {}", argumentsJson);
+                        // 返回友好的错误提示
+                        Map<String, Object> errorMsg = new HashMap<>();
+                        errorMsg.put("role", "tool");
+                        errorMsg.put("name", toolName);
+                        errorMsg.put("content", "错误：工具参数格式不正确，请重试");
+                        messages.add(errorMsg);
+                        continue; // 继续下一轮迭代
+                    }
                     
                     // 执行工具
                     ToolExecutor executor = tools.get(toolName);

@@ -1,0 +1,89 @@
+feat(P1-1): 完成 ReActAgent.execute() 方法的路由逻辑集成
+
+## 改动内容
+
+### ReActAgent.java
+
+#### 1. execute() 方法重构（第80-117行）
+**之前**：仅记录意图识别日志，仍执行完整 ReAct 循环
+**现在**：根据 SkillRouter 的路由结果分发到三种策略
+
+```java
+// ✅ P1-1: 意图识别 + 路由
+RoutingResult routing = skillRouter.route(userMessage, datasourceId);
+
+switch (routing.getStrategy()) {
+    case DIRECT:
+        return executeDirectSkill(...);  // 跳过 LLM
+    case LLM_ASSISTED:
+        return executeWithFilteredTools(...);  // 过滤工具
+    case FALLBACK:
+        return executeFullReAct(...);  // 完整流程
+}
+```
+
+#### 2. 新增 executeDirectSkill() 方法（第120-149行）
+- 直接调用推荐的 Skill，完全跳过 LLM
+- 适用于高置信度意图（>= 0.8）
+- 构造标准参数 {question, datasourceId}
+- 错误处理返回 SkillResult.error()
+
+#### 3. 新增 filterToolsByNames() 方法（第151-161行）
+- 根据技能名称过滤工具定义列表
+- 使用 Stream API 实现
+- 为 LLM_ASSISTED 策略提供精简的工具集
+
+#### 4. 新增 executeWithFilteredTools() 方法（第163-171行）
+- 使用过滤后的工具列表执行 ReAct 循环
+- 委托给 executeReActLoop() 公共方法
+
+#### 5. 新增 executeFullReAct() 方法（第173-181行）
+- 降级场景：使用所有 tools（包括 INTERNAL）
+- 委托给 executeReActLoop() 公共方法
+
+#### 6. 提取 executeReActLoop() 方法（第183-267行）
+- ReAct 循环的核心逻辑（原 execute() 方法主体）
+- 接受 toolsDef 参数，支持动态工具列表
+- 保留所有原有功能：
+  - 数据源自动选择（clarify_datasource autoExecuted）
+  - 统一 Tool 响应检测
+  - 消息历史管理
+  - 异常处理
+
+#### 7. 代码清理
+- 移除 executeReActLoop 中重复的 `ToolDefinitionConverter.convertToOpenAITools(tools)` 调用
+- 改为使用传入的 toolsDef 参数
+
+## 架构改进
+
+### 路由策略对比
+
+| 策略 | 触发条件 | LLM 调用 | 工具数量 | 适用场景 |
+|------|---------|---------|---------|---------|
+| DIRECT | 置信度 >= 0.8 | ❌ 无 | 1个 | 明确的数据查询、总结、图表生成 |
+| LLM_ASSISTED | 置信度 0.5-0.8 | ✅ 有 | 2-3个 | 意图不明确但可缩小范围 |
+| FALLBACK | 置信度 < 0.5 | ✅ 有 | 全部 | 复杂任务、未知意图 |
+
+### 性能提升预期
+
+- **DIRECT 策略**：节省 1-2 次 LLM 调用，响应时间减少 50-70%
+- **LLM_ASSISTED 策略**：减少工具选择空间，提高 LLM 决策准确性
+- **FALLBACK 策略**：保持原有功能，作为安全网
+
+## 测试
+
+- ✅ mvn clean compile -DskipTests 通过
+- ⏸️ 运行时测试待进行（需要启动完整应用）
+
+## 相关文档
+
+- [P1_1_REACT_AGENT_INTEGRATION_TODO.md](./P1_1_REACT_AGENT_INTEGRATION_TODO.md) - 实施计划
+- [P1_ARCHITECTURE_DESIGN.md](./P1_ARCHITECTURE_DESIGN.md) - 架构设计
+- [P1_IMPLEMENTATION_SUMMARY.md](./P1_IMPLEMENTATION_SUMMARY.md) - P1 阶段总结
+
+## 下一步
+
+1. 运行完整的单元测试套件
+2. 启动应用进行端到端测试
+3. 监控三种路由策略的实际使用情况
+4. 根据实际数据调整置信度阈值

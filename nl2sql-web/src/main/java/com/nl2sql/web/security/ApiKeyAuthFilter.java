@@ -36,7 +36,18 @@ public class ApiKeyAuthFilter implements Filter {
         
         // 仅对管理端点进行认证
         if (uri.startsWith("/api/admin/")) {
+            // ✅ 优先检查 JWT Token（已登录用户）
+            String authHeader = httpRequest.getHeader("Authorization");
+            log.info("[ApiKeyAuth] 检查管理端点: uri={}, Authorization={}", uri, authHeader != null ? "存在" : "不存在");
+            
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                log.info("[ApiKeyAuth] 检测到 JWT Token，跳过 API Key 验证: uri={}", uri);
+                chain.doFilter(request, response);
+                return;
+            }
+            
             String providedKey = httpRequest.getHeader(API_KEY_HEADER);
+            log.info("[ApiKeyAuth] 未检测到 JWT Token，尝试 API Key 验证: X-API-Key={}", providedKey);
             
             // 如果未配置 API Key，则允许访问（开发环境）
             if (apiKey == null || apiKey.trim().isEmpty()) {

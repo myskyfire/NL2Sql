@@ -3,6 +3,9 @@ package com.nl2sql.core.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.common.context.UserContext;
 import com.nl2sql.core.llm.LLMService;
+import com.nl2sql.core.agent.routing.SkillRouter;
+import com.nl2sql.core.agent.routing.RoutingResult;
+import com.nl2sql.core.agent.routing.RoutingStrategy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,12 +33,19 @@ class ReActAgentTest {
     @Mock
     private LLMService llmService;
     
+    @Mock
+    private SkillRouter skillRouter;
+    
     private ReActAgent agent;
     private ObjectMapper objectMapper;
     
     @BeforeEach
     void setUp() {
-        agent = new ReActAgent(llmService);
+        // Mock默认路由策略为FALLBACK，保持原有测试逻辑
+        when(skillRouter.route(anyString(), any()))
+            .thenReturn(RoutingResult.fallback("测试默认路由", null));
+        
+        agent = new ReActAgent(llmService, skillRouter);
         objectMapper = new ObjectMapper();
         // 设置测试用户上下文
         UserContext.set(new UserContext.UserInfo(123L, "user", "test-session"));

@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.common.util.JsonUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.config.TableSelectionConfig;
 import com.nl2sql.core.llm.LLMService;
@@ -180,8 +181,24 @@ public class DatasourceClarificationTool {
             Map<String, Object> result = parseLlmResponse(response);
             
             if (result != null && result.containsKey("matched_datasource_id")) {
-                Integer matchedId = (Integer) result.get("matched_datasource_id");
-                if (matchedId != null && "high".equalsIgnoreCase((String) result.get("confidence"))) {
+                Integer matchedId = result.get("matched_datasource_id") instanceof Number ?
+                    ((Number) result.get("matched_datasource_id")).intValue() : null;
+                
+                // ✅ 修复：confidence可能是Double或String，统一处理
+                double confidence = 0.0;
+                Object confObj = result.get("confidence");
+                if (confObj instanceof Number) {
+                    confidence = ((Number) confObj).doubleValue();
+                } else if (confObj instanceof String) {
+                    try {
+                        confidence = Double.parseDouble((String) confObj);
+                    } catch (NumberFormatException e) {
+                        confidence = 0.0;
+                    }
+                }
+                
+                // 置信度 > 0.8 认为匹配成功
+                if (matchedId != null && confidence > 0.8) {
                     for (Map<String, Object> ds : datasources) {
                         if (((Number) ds.get("id")).intValue() == matchedId) {
                             log.info("[DatasourceClarification] 匹配成功: {}", ds.get("name"));
@@ -266,28 +283,10 @@ public class DatasourceClarificationTool {
 
     
     /**
-     * 解析LLM返回的JSON
+     * 解析LLM返回的JSON（使用公共工具类）
      */
     private Map<String, Object> parseLlmResponse(String response) {
-        try {
-            // 去除可能的Markdown代码块
-            String cleaned = response.trim();
-            if (cleaned.startsWith("```") && cleaned.endsWith("```")) {
-                cleaned = cleaned.substring(3, cleaned.length() - 3).trim();
-                if (cleaned.startsWith("json")) {
-                    cleaned = cleaned.substring(4).trim();
-                }
-            }
-            
-            // ✅ 兜底：修复LLM可能返回的中文引号（Prompt已约束，此处理为保险）
-            cleaned = cleaned.replace("“", "\"").replace("”", "\"");
-            
-            return objectMapper.readValue(cleaned, Map.class);
-        } catch (Exception e) {
-            log.warn("[DatasourceClarification] 解析LLM响应失败: {}", e.getMessage());
-            log.debug("[DatasourceClarification] 原始响应: {}", response);
-            return null;
-        }
+        return JsonUtils.parseToJsonMap(response);
     }
     
     /**

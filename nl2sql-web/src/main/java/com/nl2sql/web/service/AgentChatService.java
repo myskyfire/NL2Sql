@@ -41,8 +41,9 @@ public class AgentChatService {
     @Autowired(required = false)
     private SessionContextManager sessionContextManager;
     
-    @Autowired(required = false)
-    private IntentClassifier intentClassifier;
+    // ✅ 已移除：意图分类由 SkillRouter 处理
+    // @Autowired(required = false)
+    // private IntentClassifier intentClassifier;
     
     @Autowired
     private AgentResponseProcessor responseProcessor;
@@ -239,15 +240,11 @@ public class AgentChatService {
     }
     
     /**
-     * 意图识别
+     * 意图识别（已由 SkillRouter 接管）
      */
     private String classifyIntent(String message) {
-        String intent = "QUERY"; // 默认意图
-        if (intentClassifier != null) {
-            intent = intentClassifier.classify(message);
-            log.debug("[Agent对话] 意图识别结果: {}", intent);
-        }
-        return intent;
+        // ✅ 简化：直接返回默认意图，实际路由由 ReActAgent 内部的 SkillRouter 处理
+        return "QUERY";
     }
     
     /**

@@ -32,7 +32,7 @@ public class RagKnowledgeBaseService {
     @Autowired
     private RagKnowledgeBaseServiceMapper ragMapper;
     
-    private static final double SIMILARITY_THRESHOLD = 0.85;
+    private static final double SIMILARITY_THRESHOLD = 0.9;
     private static final int MAX_EXAMPLES = 3;
     
     public RagKnowledgeBaseService(JdbcTemplate jdbcTemplate,

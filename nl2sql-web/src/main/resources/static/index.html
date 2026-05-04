@@ -1628,19 +1628,19 @@
             window.addEventListener('message', handleIframeMessage);
         };
         
-        // ✅ 处理iframe发送的消息
+        // ✅ 处理 iframe 发送的消息
         function handleIframeMessage(event) {
             const data = event.data;
             
             if (data.type === 'SHOW_MODAL') {
-                showRelationshipModal(data.modalType);
+                showRelationshipModal(data.modalType, data.relationshipData, data.data);
             } else if (data.type === 'CLOSE_MODAL') {
                 closeRelationshipModal();
             }
         }
         
         // ✅ 显示表关联管理模态框
-        function showRelationshipModal(modalType) {
+        function showRelationshipModal(modalType, relationshipData = null, modalData = null) {
             const overlay = document.getElementById('relationshipModalOverlay');
             const content = document.getElementById('relationshipModalContent');
             const iframe = document.getElementById('iframe-relationship-management');
@@ -1725,6 +1725,52 @@
             
             content.innerHTML = modalHTML;
             overlay.style.display = 'flex';
+            
+            // ✅ 修复：显示模态框后，调用 iframe 中的 loadTables() 加载表列表
+            if (modalType === 'create' || modalType === 'edit') {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const iframeWindow = iframe.contentWindow;
+                
+                // 等待 DOM 更新后再调用
+                setTimeout(() => {
+                    if (iframeWindow && typeof iframeWindow.loadTables === 'function') {
+                        iframeWindow.loadTables().then(() => {
+                            console.log('[showRelationshipModal] 表列表加载完成');
+                            
+                            // ✅ 如果是编辑模式，设置表单值
+                            if (modalType === 'edit' && relationshipData) {
+                                const rel = relationshipData;
+                                const sourceTable = iframeDoc.getElementById('sourceTable');
+                                const targetTable = iframeDoc.getElementById('targetTable');
+                                
+                                if (sourceTable && targetTable) {
+                                    sourceTable.value = rel.source_table;
+                                    targetTable.value = rel.target_table;
+                                    
+                                    // 加载字段
+                                    if (typeof iframeWindow.loadSourceColumns === 'function') {
+                                        iframeWindow.loadSourceColumns();
+                                    }
+                                    if (typeof iframeWindow.loadTargetColumns === 'function') {
+                                        iframeWindow.loadTargetColumns();
+                                    }
+                                    
+                                    // 设置字段值
+                                    setTimeout(() => {
+                                        const sourceColumn = iframeDoc.getElementById('sourceColumn');
+                                        const targetColumn = iframeDoc.getElementById('targetColumn');
+                                        const description = iframeDoc.getElementById('description');
+                                        
+                                        if (sourceColumn) sourceColumn.value = rel.source_column;
+                                        if (targetColumn) targetColumn.value = rel.target_column;
+                                        if (description) description.value = rel.description || '';
+                                    }, 500);
+                                }
+                            }
+                        });
+                    }
+                }, 100);
+            }
         }
         
         // ✅ 关闭表关联管理模态框

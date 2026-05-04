@@ -155,7 +155,8 @@ public class LLMService {
             
         } catch (Exception e) {
             log.error("[LLMService] 答案生成失败", e);
-            return "抱歉，无法生成回答: " + e.getMessage();
+            // ✅ 修复：返回null而非错误字符串，让调用方决定是否处理
+            return null;
         }
     }
     

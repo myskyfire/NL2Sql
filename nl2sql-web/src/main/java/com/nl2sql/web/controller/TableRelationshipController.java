@@ -72,7 +72,28 @@ public class TableRelationshipController {
                 "SELECT * FROM table_relationships WHERE datasource_id = ? ORDER BY source_table, target_table",
                 datasourceId
             );
-            return Result.success(relationships);
+            
+            // ✅ 将下划线命名转换为驼峰命名，统一返回格式
+            List<Map<String, Object>> camelCaseRelationships = new ArrayList<>();
+            for (Map<String, Object> rel : relationships) {
+                Map<String, Object> camelRel = new HashMap<>();
+                camelRel.put("id", rel.get("id"));
+                camelRel.put("datasourceId", rel.get("datasource_id"));
+                camelRel.put("sourceTable", rel.get("source_table"));
+                camelRel.put("sourceColumn", rel.get("source_column"));
+                camelRel.put("targetTable", rel.get("target_table"));
+                camelRel.put("targetColumn", rel.get("target_column"));
+                camelRel.put("relationshipType", rel.get("relationship_type"));
+                camelRel.put("confidence", rel.get("confidence"));
+                camelRel.put("description", rel.get("description"));
+                camelRel.put("isActive", rel.get("is_active"));
+                camelRel.put("createdBy", rel.get("created_by"));
+                camelRel.put("createdAt", rel.get("created_at"));
+                camelRel.put("updatedAt", rel.get("updated_at"));
+                camelCaseRelationships.add(camelRel);
+            }
+            
+            return Result.success(camelCaseRelationships);
         } catch (Exception e) {
             log.error("获取关联关系失败", e);
             return Result.error("获取关联关系失败: " + e.getMessage());
