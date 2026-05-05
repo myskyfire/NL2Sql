@@ -2,7 +2,8 @@ package com.nl2sql.core.cache;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.nl2sql.core.rerank.JinaReranker;
+import com.nl2sql.core.rerank.Reranker;
+import com.nl2sql.core.rerank.Reranker.RerankedDocument;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -37,7 +38,7 @@ public class MetadataCacheService {
     private QueryCacheVectorService queryCacheVectorService;
     
     @Autowired(required = false)
-    private JinaReranker jinaReranker;  // ✅ Jina AI重排序服务
+    private Reranker reranker;  // 统一 Reranker 接口
     
     /**
      * 表结构缓存：key = "schema:{datasourceId}:{tableName}"
@@ -256,34 +257,28 @@ public class MetadataCacheService {
                     log.info("[MetadataCache] ✅ L3语义匹配成功(Chroma): query='{}', similar='{}', similarity={}, jaccard={}", 
                         query, bestMatch.getCachedQuery(), String.format("%.3f", bestMatch.getScore()), String.format("%.3f", jaccardScore));
                     
-                    // ==================== ✅ 新增：Jina Reranker重排序 ====================
-                    if (jinaReranker != null) {
+                    // ==================== Reranker 重排序 ====================
+                    if (reranker != null && reranker.isAvailable()) {
                         try {
-                            log.info("[MetadataCache] 🔄 启动Jina Reranker重排序");
+                            log.info("[MetadataCache] 🔄 启动 Reranker 重排序 (provider={})", reranker.getName());
                             
-                            // 1. 从Chroma获取Top-20候选
                             List<QueryCacheVectorService.CachedQueryResult> candidates = 
                                 queryCacheVectorService.findTopKMatches(query, datasourceId, 20);
                             
                             if (candidates != null && !candidates.isEmpty()) {
-                                // 2. 提取候选文档文本
                                 List<String> candidateDocs = candidates.stream()
                                     .map(c -> c.getCachedQuery())
                                     .collect(java.util.stream.Collectors.toList());
                                 
-                                // 3. 调用Jina Reranker精排 TODO 后面再放开
-                                /*List<JinaReranker.RerankedDocument> reranked =
-                                    jinaReranker.rerank(query, candidateDocs);*/
-                                List<JinaReranker.RerankedDocument> reranked = new ArrayList<>();
+                                List<RerankedDocument> reranked = reranker.rerank(query, candidateDocs);
+                                
                                 if (!reranked.isEmpty()) {
-                                    // 4. 取Top-1最佳匹配
-                                    JinaReranker.RerankedDocument bestDoc = reranked.get(0);
+                                    RerankedDocument bestDoc = reranked.get(0);
                                     
                                     log.info("[MetadataCache] ✅ Reranking完成: originalScore={}, rerankScore={}", 
                                         String.format("%.3f", bestMatch.getScore()), 
                                         String.format("%.3f", bestDoc.getRelevanceScore()));
                                     
-                                    // 5. 查找对应的CachedQueryResult获取tables
                                     String bestMatchedQuery = bestDoc.getContent();
                                     QueryCacheVectorService.CachedQueryResult finalMatch = candidates.stream()
                                         .filter(c -> c.getCachedQuery().equals(bestMatchedQuery))

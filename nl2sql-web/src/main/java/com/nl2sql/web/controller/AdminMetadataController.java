@@ -327,19 +327,50 @@ public class AdminMetadataController {
     }
     
     /**
+     * ✅ 新增：按数据源获取数据库列表
+     */
+    @GetMapping("/metadata/databases")
+    public Result<List<Map<String, Object>>> getDatabasesByDatasource(@RequestParam Long datasourceId) {
+        try {
+            DataSourceConfig ds = dataSourceConfigService.getConfigById(datasourceId);
+            if (ds == null) {
+                return Result.error("数据源不存在: " + datasourceId);
+            }
+            
+            List<Map<String, Object>> databases = new java.util.ArrayList<>();
+            Map<String, Object> db = new HashMap<>();
+            db.put("name", ds.getDatabaseName());
+            db.put("databaseName", ds.getDatabaseName());
+            db.put("datasourceId", ds.getId());
+            db.put("datasourceName", ds.getName());
+            databases.add(db);
+            
+            return Result.success(databases);
+        } catch (Exception e) {
+            log.error("获取数据库列表失败", e);
+            return Result.error("获取失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * ✅ 新增：按数据库名获取表列表
      */
     @GetMapping("/metadata/tables")
-    public Result<List<String>> getTablesByDatabase(@RequestParam String databaseName) {
+    public Result<List<String>> getTablesByDatabase(
+            @RequestParam String databaseName,
+            @RequestParam(required = false) Long datasourceId) {
         try {
-            // 根据数据库名查找对应的数据源
-            List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
             DataSourceConfig targetDs = null;
             
-            for (DataSourceConfig ds : datasources) {
-                if (databaseName.equals(ds.getDatabaseName()) || databaseName.equals(ds.getName())) {
-                    targetDs = ds;
-                    break;
+            if (datasourceId != null) {
+                targetDs = dataSourceConfigService.getConfigById(datasourceId);
+            } else {
+                List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
+                for (DataSourceConfig ds : datasources) {
+                    if (databaseName.equals(ds.getDatabaseName()) || databaseName.equals(ds.getName())) {
+                        targetDs = ds;
+                        break;
+                    }
                 }
             }
             

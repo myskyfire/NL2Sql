@@ -63,15 +63,33 @@ public class DatasourceClarificationTool {
             }
                 
             // 情况2：使用LLM智能匹配
-            Map<String, Object> matchedDs = llmIntelligentMatch(userQuery, datasources);
+            Map<String, Object> matchResult = llmIntelligentMatch(userQuery, datasources);
                         
-            if (matchedDs != null) {
+            if (matchResult != null && matchResult.containsKey("datasource")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> matchedDs = (Map<String, Object>) matchResult.get("datasource");
                 Long dsId = ((Number) matchedDs.get("id")).longValue();
                 String dsName = (String) matchedDs.get("name");
-                return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(matchedDs), false);
-            }
+                double confidence = matchResult.containsKey("confidence") ? 
+                    ((Number) matchResult.get("confidence")).doubleValue() : 0.0;
                 
-            // 情况3：LLM无法确定，返回所有候选让用户选择
+                // ✅ 三层分级策略
+                if (confidence > 0.8) {
+                    // 高置信度：根据配置决定自动执行或推荐确认
+                    return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(matchedDs), false);
+                } else if (confidence >= 0.6) {
+                    // 中置信度：推荐+确认，提供"拒绝后选择其他"选项
+                    return buildMediumConfidenceRecommendation(matchedDs, confidence, 
+                        String.valueOf(matchResult.get("reason")), datasources);
+                } else {
+                    // 低置信度（<0.6）：直接列出所有数据源供选择
+                    log.info("[DatasourceClarification] 低置信度({})，返回所有数据源", confidence);
+                    return buildDatasourceSelectionResponse(datasources);
+                }
+            }
+            
+            // ✅ 情况3：LLM无法确定或置信度不足，返回所有候选让用户选择
+            log.info("[DatasourceClarification] LLM未能高置信度匹配，返回所有数据源供用户选择");
             return buildDatasourceSelectionResponse(datasources);
                 
         } catch (Exception e) {
@@ -110,6 +128,7 @@ public class DatasourceClarificationTool {
     
     /**
      * 单层策略：直接展示所有表（适用于≤5个数据源）
+     * @return Map包含: datasource(匹配的数据源), confidence(置信度), reason(推荐理由)
      */
     private Map<String, Object> singleLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
@@ -133,13 +152,13 @@ public class DatasourceClarificationTool {
                     datasourceInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
                 }
                 
-                // ✅ 查询该数据源的所有表（仅表名+注释，控制Token）
+                // ✅ 从本地元数据表查询表列表（避免连接远程业务数据库）
                 try {
                     List<Map<String, Object>> tables = jdbcTemplate.queryForList(
-                        "SELECT table_name, table_comment FROM information_schema.tables " +
-                        "WHERE table_schema = ? AND table_type = 'BASE TABLE' " +
+                        "SELECT table_name, table_comment FROM table_metadata " +
+                        "WHERE datasource_id = ? " +
                         "ORDER BY table_name",
-                        dbName
+                        dsId
                     );
                     
                     if (!tables.isEmpty()) {
@@ -197,12 +216,30 @@ public class DatasourceClarificationTool {
                     }
                 }
                 
-                // 置信度 > 0.8 认为匹配成功
-                if (matchedId != null && confidence > 0.8) {
+                // 置信度 > 0.6 认为匹配成功（平衡准确率与召回率）
+                if (matchedId != null && confidence > 0.6) {
                     for (Map<String, Object> ds : datasources) {
                         if (((Number) ds.get("id")).intValue() == matchedId) {
-                            log.info("[DatasourceClarification] 匹配成功: {}", ds.get("name"));
-                            return ds;
+                            log.info("[DatasourceClarification] 匹配成功: {}, confidence={}", ds.get("name"), confidence);
+                            // ✅ 返回完整结果，包含置信度和理由
+                            Map<String, Object> matchResult = new HashMap<>();
+                            matchResult.put("datasource", ds);
+                            matchResult.put("confidence", confidence);
+                            matchResult.put("reason", result.get("reason"));
+                            return matchResult;
+                        }
+                    }
+                } else if (matchedId != null) {
+                    // ✅ 低置信度匹配，仍返回结果供前端展示
+                    log.info("[DatasourceClarification] 低置信度匹配: {}, confidence={}", matchedId, confidence);
+                    for (Map<String, Object> ds : datasources) {
+                        if (((Number) ds.get("id")).intValue() == matchedId) {
+                            Map<String, Object> matchResult = new HashMap<>();
+                            matchResult.put("datasource", ds);
+                            matchResult.put("confidence", confidence);
+                            matchResult.put("reason", result.get("reason"));
+                            matchResult.put("lowConfidence", true);  // 标记为低置信度
+                            return matchResult;
                         }
                     }
                 }
@@ -287,6 +324,66 @@ public class DatasourceClarificationTool {
      */
     private Map<String, Object> parseLlmResponse(String response) {
         return JsonUtils.parseToJsonMap(response);
+    }
+    
+    /**
+     * ✅ 新增：构建中置信度推荐响应（推荐+确认+拒绝后选择其他）
+     */
+    private String buildMediumConfidenceRecommendation(Map<String, Object> recommendedDs, 
+                                                        double confidence, 
+                                                        String reason,
+                                                        List<Map<String, Object>> allDatasources) {
+        try {
+            Long dsId = ((Number) recommendedDs.get("id")).longValue();
+            String dsName = (String) recommendedDs.get("name");
+            
+            // 构建推荐理由
+            String recommendationMsg = String.format(
+                "💡 根据您的问句，**推荐使用数据源：%s**\n\n" +
+                "**匹配理由：** %s\n" +
+                "**置信度：** %.0f%%\n\n" +
+                "您可以：\n" +
+                "1️⃣ **使用此数据源** - 直接执行查询\n" +
+                "2️⃣ **选择其他数据源** - 查看所有可用数据源",
+                escapeJson(dsName),
+                escapeJson(reason != null ? reason : "无"),
+                confidence * 100
+            );
+            
+            // 构建所有数据源列表（供用户选择其他）
+            List<Map<String, Object>> datasourceList = new ArrayList<>();
+            for (Map<String, Object> ds : allDatasources) {
+                Map<String, Object> dsInfo = new HashMap<>();
+                dsInfo.put("id", ds.get("id"));
+                dsInfo.put("name", ds.get("name"));
+                dsInfo.put("db_type", ds.get("db_type"));
+                dsInfo.put("database_name", ds.get("database_name"));
+                if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
+                    dsInfo.put("description", ds.get("description"));
+                }
+                datasourceList.add(dsInfo);
+            }
+            
+            // ✅ 构建统一响应
+            return ToolResponseBuilder.clarification("datasource_medium_confidence")
+                .withMessage(recommendationMsg)
+                .withRecommendedDatasourceId(dsId)
+                .withContext(Map.of(
+                    "recommendedDatasource", recommendedDs,
+                    "availableDatasources", datasourceList,
+                    "confidence", confidence,
+                    "reason", reason
+                ))
+                .addMetadata("toolName", "clarify_datasource")
+                .addMetadata("confidenceLevel", "medium")
+                .build();
+            
+        } catch (Exception e) {
+            log.error("[DatasourceClarification] 构建中置信度推荐响应失败", e);
+            return ToolResponseBuilder.error("BUILD_ERROR", "构建响应失败: " + e.getMessage())
+                .addMetadata("toolName", "clarify_datasource")
+                .build();
+        }
     }
     
     /**

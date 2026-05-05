@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 数据助手</title>
     <!-- ECharts -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="lib/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -863,6 +863,26 @@
                 </button>`;
                 html += `<button class="clarification-btn" onclick="showAllDatasources()">
                     ❌ 不，我要选择其他数据源
+                </button>`;
+                html += '</div>';
+            }
+            // ✅ 中置信度推荐（0.6-0.8：推荐+确认+选择其他）
+            else if (data.clarificationType === 'datasource_medium_confidence') {
+                // 保存推荐的数据源ID
+                pendingDatasourceId = data.recommendedDatasourceId || null;
+                
+                // 保存所有数据源列表
+                if (data.availableDatasources) {
+                    pendingDatasourceList = data.availableDatasources;
+                }
+                
+                // 添加两个按钮：使用推荐 / 选择其他
+                html += '<div class="clarification-options">';
+                html += `<button class="clarification-btn" onclick="confirmDatasource(true)" style="background: #667eea;">
+                    ✅ 使用此数据源
+                </button>`;
+                html += `<button class="clarification-btn" onclick="showAllDatasources()" style="background: #f59e0b;">
+                    📋 选择其他数据源
                 </button>`;
                 html += '</div>';
             }

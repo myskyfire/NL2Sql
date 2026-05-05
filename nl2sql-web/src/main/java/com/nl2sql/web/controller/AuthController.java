@@ -203,7 +203,8 @@ public class AuthController {
             userInfo.getUserId(),
             request.getUserId(),
             request.getDatabaseName(),
-            request.getTableName()
+            request.getTableName(),
+            request.getDatasourceId()
         );
         
         if (success) {
@@ -240,7 +241,8 @@ public class AuthController {
             userInfo.getUserId(),
             request.getUserId(),
             request.getDatabaseName(),
-            request.getTableName()
+            request.getTableName(),
+            request.getDatasourceId()
         );
         
         if (success) {
@@ -256,7 +258,8 @@ public class AuthController {
     @GetMapping("/table-permission/user/{userId}")
     public Result<List<AuthService.TablePermission>> getUserTablePermissions(
         @RequestHeader("Authorization") String token,
-        @PathVariable Long userId
+        @PathVariable Long userId,
+        @RequestParam(required = false) Long datasourceId
     ) {
         AuthService.UserInfo userInfo = authService.validateToken(token);
         
@@ -268,7 +271,7 @@ public class AuthController {
             return Result.error("权限不足");
         }
         
-        List<AuthService.TablePermission> permissions = authService.getUserTablePermissions(userId);
+        List<AuthService.TablePermission> permissions = authService.getUserTablePermissions(userId, datasourceId);
         return Result.success(permissions);
     }
     
@@ -277,7 +280,8 @@ public class AuthController {
      */
     @GetMapping("/table-permission/all")
     public Result<List<Map<String, Object>>> getAllTablePermissions(
-        @RequestHeader("Authorization") String token
+        @RequestHeader("Authorization") String token,
+        @RequestParam(required = false) Long datasourceId
     ) {
         AuthService.UserInfo userInfo = authService.validateToken(token);
         
@@ -289,7 +293,7 @@ public class AuthController {
             return Result.error("权限不足");
         }
         
-        List<Map<String, Object>> permissions = authService.getAllTablePermissions();
+        List<Map<String, Object>> permissions = authService.getAllTablePermissions(datasourceId);
         return Result.success(permissions);
     }
     
@@ -300,7 +304,8 @@ public class AuthController {
     public Result<List<AuthService.TablePermission>> getPermissionsByTable(
         @RequestHeader("Authorization") String token,
         @PathVariable String tableName,
-        @RequestParam(required = false) String databaseName
+        @RequestParam(required = false) String databaseName,
+        @RequestParam(required = false) Long datasourceId
     ) {
         AuthService.UserInfo userInfo = authService.validateToken(token);
         
@@ -312,7 +317,7 @@ public class AuthController {
             return Result.error("权限不足");
         }
         
-        List<AuthService.TablePermission> permissions = authService.getPermissionsByTable(databaseName, tableName);
+        List<AuthService.TablePermission> permissions = authService.getPermissionsByTable(databaseName, tableName, datasourceId);
         return Result.success(permissions);
     }
     
@@ -423,6 +428,7 @@ public class AuthController {
         private Long userId;
         private String databaseName;
         private String tableName;
+        private Long datasourceId;
     }
     
     @Data

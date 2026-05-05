@@ -156,14 +156,18 @@ ollama:
   embedding-model: bge-m3  # 可切换: bge-m3 | text-embedding-ada-002 | m3e-base | nomic-embed-text
   timeout: 120  # ✅ 增加到120秒，避免首次加载模型超时
 
-# Reranker Configuration - Jina AI重排序服务
+# Reranker Configuration - 重排序服务（支持多 Provider 切换）
 reranker:
-  provider: jina  # jina | flag-embedding(本地)
-  top-k: 5        # 返回Top-K结果
-  threshold: 0.5  # 最低相关性阈值
+  provider: none      # jina | cross-encoder | none（切换重排序模型）
+  top-k: 5            # 返回 Top-K 结果
+  threshold: 0.5      # 最低相关性阈值
+  # Jina Cloud API 配置（外网环境推荐）
   jina:
-    api-key: jina_8dbdaf5c1b7d40dca36fae57943eec15EjCz5qiHqCfdJl2x7q9vfLZm84hJ
+    api-key: ${JINA_API_KEY:jina_8dbdaf5c1b7d40dca36fae57943eec15EjCz5qiHqCfdJl2x7q9vfLZm84hJ}
     model: jina-reranker-v2-base-multilingual
+  # Cross-Encoder 本地模型配置（内网环境推荐，需 Ollama 运行 bge-reranker）
+  cross-encoder:
+    model: bge-reranker-v2-m3
 
 # MyBatis Plus Configuration
 mybatis-plus:

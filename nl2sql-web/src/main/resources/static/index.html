@@ -76,7 +76,7 @@
         /* 侧边栏 */
         .sidebar {
             width: 200px; /* ✅ 调整宽度，避免菜单项换行 */
-            min-width: 150px; /* ✅ 最小宽度 */
+            min-width: 200px;
             max-width: 400px; /* ✅ 最大宽度 */
             background: white;
             box-shadow: 2px 0 10px rgba(0,0,0,0.05);
@@ -87,6 +87,54 @@
             overflow-x: hidden;
             max-height: calc(100vh - 60px); /* ✅ 减去顶部导航栏高度 */
             position: relative; /* ✅ 为拖拽条定位 */
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            padding: 0;
+            overflow: hidden;
+            border-right: none;
+        }
+        
+        /* 折叠按钮 */
+        .sidebar-toggle {
+            position: absolute;
+            left: 200px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 60px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: all 0.3s ease;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+        }
+        
+        .sidebar-toggle:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .sidebar-toggle.collapsed {
+            left: 0;
+        }
+        
+        .sidebar-toggle-icon {
+            font-size: 12px;
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar-toggle.collapsed .sidebar-toggle-icon {
+            transform: rotate(180deg);
         }
         
         /* ✅ 拖拽条 */
@@ -484,6 +532,11 @@
             <!-- ✅ 拖拽条 -->
             <div class="sidebar-resizer" id="sidebarResizer"></div>
         </div>
+        
+        <!-- 折叠按钮 -->
+        <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+            <span class="sidebar-toggle-icon">◀</span>
+        </button>
         
         <!-- 内容区域 -->
         <div class="content-area">
@@ -1033,6 +1086,14 @@
             function isAdminPage(pageName) {
                 return adminPages.includes(pageName);
             }
+        
+        // 折叠/展开侧边栏
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.getElementById('sidebarToggle');
+            sidebar.classList.toggle('collapsed');
+            toggle.classList.toggle('collapsed');
+        }
         
         // 切换页面
         function showPage(pageName, clickedElement) {

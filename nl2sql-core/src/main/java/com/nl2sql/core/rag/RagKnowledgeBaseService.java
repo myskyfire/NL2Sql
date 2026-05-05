@@ -283,7 +283,7 @@ public class RagKnowledgeBaseService {
             log.warn("⚠️ RAG知识库已全部清空: deleted={}条", deleted);
             return deleted;
         } catch (Exception e) {
-            log.error("清空RAG知识库失败", e);
+            log.error("清空RAG知 识库失败", e);
             throw new RuntimeException("清空失败: " + e.getMessage(), e);
         }
     }
