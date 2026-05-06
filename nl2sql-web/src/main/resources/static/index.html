@@ -875,6 +875,8 @@
                     const isChatPage = iframe.src.includes('agent-chat.html') || iframe.src.includes('stream-chat.html');
                     // ✅ 判断是否为表关联管理页面（需要显示 header）
                     const isRelationshipPage = iframe.src.includes('relationship-management.html');
+                    // ✅ 判断是否为帮助中心页面（需要保留 flex 布局）
+                    const isHelpCenterPage = iframe.src.includes('help-center.html');
                     
                     style.textContent = `
                         /* 强制重置 body */
@@ -892,8 +894,8 @@
                         }
                         /* 隐藏子页面的独立 header（表关联管理页面除外） */
                         ${isRelationshipPage ? '' : '.chat-header, .header { display: none !important; }'}
-                        /* 调整容器 - 保留底部边距 */
-                        .chat-container, .container, .main-container, .app-container, .query-container {
+                        /* 调整容器 - 保留底部边距（帮助中心除外，保持flex布局） */
+                        ${isHelpCenterPage ? '' : `.chat-container, .container, .main-container, .app-container, .query-container {
                             height: auto !important;
                             min-height: auto !important;
                             max-height: none !important;
@@ -905,7 +907,7 @@
                             padding: 0 !important;
                             display: block !important;
                             overflow: visible !important;
-                        }
+                        }`}
                         /* 内容区域允许正常显示 */
                         .chat-messages, .content-area, .messages-container, .chat-area, .content {
                             height: auto !important;
@@ -1714,16 +1716,20 @@
             // 根据类型设置不同的内容
             let modalHTML = '';
             
-            if (modalType === 'create' || modalType === 'edit') {
-                // 创建/编辑模态框 - 从iframe中获取表单
+            if (modalType === 'create') {
+                // 创建模态框 - 从iframe中获取表单
                 const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
                 const form = iframeDoc.getElementById('relationshipForm');
                 const modalTitle = iframeDoc.getElementById('modalTitle');
                 
                 if (form && modalTitle) {
+                    // ✅ 设置标题
+                    const titleText = '➕ 创建关联关系';
+                    modalTitle.textContent = titleText;
+                    
                     modalHTML = `
                         <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
-                            <h2 style="font-size:18px;color:#333;margin:0;">${modalTitle.textContent}</h2>
+                            <h2 style="font-size:18px;color:#333;margin:0;">${titleText}</h2>
                             <button onclick="closeRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
                         </div>
                         <div class="modal-body" style="padding:24px;">
@@ -1788,7 +1794,7 @@
             overlay.style.display = 'flex';
             
             // ✅ 修复：显示模态框后，调用 iframe 中的 loadTables() 加载表列表
-            if (modalType === 'create' || modalType === 'edit') {
+            if (modalType === 'create') {
                 const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
                 const iframeWindow = iframe.contentWindow;
                 
@@ -1797,37 +1803,6 @@
                     if (iframeWindow && typeof iframeWindow.loadTables === 'function') {
                         iframeWindow.loadTables().then(() => {
                             console.log('[showRelationshipModal] 表列表加载完成');
-                            
-                            // ✅ 如果是编辑模式，设置表单值
-                            if (modalType === 'edit' && relationshipData) {
-                                const rel = relationshipData;
-                                const sourceTable = iframeDoc.getElementById('sourceTable');
-                                const targetTable = iframeDoc.getElementById('targetTable');
-                                
-                                if (sourceTable && targetTable) {
-                                    sourceTable.value = rel.source_table;
-                                    targetTable.value = rel.target_table;
-                                    
-                                    // 加载字段
-                                    if (typeof iframeWindow.loadSourceColumns === 'function') {
-                                        iframeWindow.loadSourceColumns();
-                                    }
-                                    if (typeof iframeWindow.loadTargetColumns === 'function') {
-                                        iframeWindow.loadTargetColumns();
-                                    }
-                                    
-                                    // 设置字段值
-                                    setTimeout(() => {
-                                        const sourceColumn = iframeDoc.getElementById('sourceColumn');
-                                        const targetColumn = iframeDoc.getElementById('targetColumn');
-                                        const description = iframeDoc.getElementById('description');
-                                        
-                                        if (sourceColumn) sourceColumn.value = rel.source_column;
-                                        if (targetColumn) targetColumn.value = rel.target_column;
-                                        if (description) description.value = rel.description || '';
-                                    }, 500);
-                                }
-                            }
                         });
                     }
                 }, 100);

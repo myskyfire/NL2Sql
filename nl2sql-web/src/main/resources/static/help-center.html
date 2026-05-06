@@ -12,6 +12,10 @@
             background: #f5f7fa;
             color: #333;
             line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
         }
         
         /* 顶部标题栏 */
@@ -118,8 +122,10 @@
         }
         
         /* 主容器 */
-        .container {
-            display: flex;
+        #helpContainer {
+            display: flex !important;
+            flex-direction: row !important;
+            width: 100%;
             height: calc(100vh - 100px);
             overflow: hidden;
             position: relative;
@@ -128,58 +134,62 @@
         /* 左侧固定目录 */
         .toc-sidebar {
             width: 280px;
+            min-width: 280px;
             flex-shrink: 0;
+            flex-grow: 0;
             background: white;
             border-right: 1px solid #e8e8e8;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            transition: all 0.3s ease;
+            transition: width 0.3s ease, min-width 0.3s ease;
+            height: 100%;
         }
         
         .toc-sidebar.collapsed {
             width: 0;
+            min-width: 0;
             flex-shrink: 0;
             overflow: hidden;
             border-right: none;
         }
         
         /* 折叠按钮 */
-        .toc-toggle {
-            position: absolute;
-            left: 280px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 24px;
-            height: 60px;
-            background: white;
-            border: 1px solid #e8e8e8;
-            border-left: none;
-            border-radius: 0 8px 8px 0;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            transition: all 0.3s ease;
-            box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+        #tocToggle {
+            position: absolute !important;
+            left: 280px !important;
+            top: 150px !important;
+            transform: none !important;
+            width: 24px !important;
+            height: 60px !important;
+            background: white !important;
+            border: 1px solid #e8e8e8 !important;
+            border-left: none !important;
+            border-radius: 0 8px 8px 0 !important;
+            cursor: pointer !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            z-index: 1000 !important;
+            transition: left 0.3s ease !important;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.05) !important;
         }
         
-        .toc-toggle:hover {
-            background: #667eea;
-            color: white;
+        #tocToggle:hover {
+            background: #667eea !important;
+            color: white !important;
         }
         
-        .toc-toggle.collapsed {
-            left: 0;
+        #tocToggle.collapsed {
+            left: 0 !important;
         }
         
-        .toc-toggle-icon {
+        #tocToggle .toc-toggle-icon {
             font-size: 12px;
             transition: transform 0.3s ease;
         }
         
-        .toc-toggle.collapsed .toc-toggle-icon {
+        #tocToggle.collapsed .toc-toggle-icon {
             transform: rotate(180deg);
         }
         
@@ -195,7 +205,26 @@
         .toc-list {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 10px 0;
+        }
+        
+        /* 自定义滚动条样式 */
+        .toc-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .toc-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .toc-list::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+        
+        .toc-list::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
         }
         
         .toc-category {
@@ -274,18 +303,22 @@
         /* 右侧内容区 */
         .content {
             flex: 1;
+            min-width: 0;
             background: #fafbfc;
             overflow-y: auto;
-            padding: 30px 40px;
+            overflow-x: hidden;
+            padding: 0;
+            height: 100%;
         }
         
         .content-inner {
             max-width: 1000px;
-            margin: 0 auto;
+            margin: 0;
             background: white;
-            border-radius: 8px;
-            padding: 40px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border-radius: 0;
+            padding: 30px 40px;
+            box-shadow: none;
+            min-height: 100%;
         }
         
         /* 文档头部 */
@@ -506,15 +539,8 @@
         
         /* 响应式 */
         @media (max-width: 768px) {
-            .container {
-                flex-direction: column;
-            }
-            
             .toc-sidebar {
-                width: 100%;
-                max-height: 200px;
-                border-right: none;
-                border-bottom: 1px solid #e8e8e8;
+                width: 240px;
             }
             
             .content {
@@ -543,7 +569,7 @@
     </div>
     
     <!-- 主容器 -->
-    <div class="container">
+    <div class="container help-container" id="helpContainer">
         <!-- 左侧目录 -->
         <div class="toc-sidebar" id="tocSidebar">
             <div class="toc-header">📑 目录导航</div>

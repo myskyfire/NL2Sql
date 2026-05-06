@@ -479,7 +479,6 @@
     <!-- ✅ 隐藏的表单模板（用于克隆） -->
     <div id="relationshipFormTemplate" style="display:none;">
         <form id="relationshipForm">
-            <input type="hidden" id="editId" value="">
             <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:8px;font-weight:600;color:#555;">源表：</label>
                 <select id="sourceTable" onchange="loadSourceColumns()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
@@ -647,9 +646,8 @@
                     <td><strong>${rel.targetTable}</strong></td>
                     <td>${rel.targetColumn}</td>
                     <td>${rel.description || '-'}</td>
-                    <td>${rel.is_active ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-warning">禁用</span>'}</td>
+                    <td>${rel.isActive === 1 ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-warning">禁用</span>'}</td>
                     <td class="actions">
-                        <button class="btn btn-small btn-primary" onclick="editRelationship(${rel.id})">编辑</button>
                         <button class="btn btn-small btn-danger" onclick="deleteRelationship(${rel.id})">删除</button>
                     </td>
                 </tr>
@@ -836,30 +834,6 @@
         }
         
         // 编辑关联关系
-        async function editRelationship(id) {
-            try {
-                const response = await fetch(`/api/relationships?datasourceId=${currentDatasourceId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const result = await response.json();
-                
-                const rel = result.data.find(r => r.id === id);
-                if (!rel) return;
-                
-                document.getElementById('editId').value = rel.id;
-                
-                // ✅ 修复：不立即调用 loadTables() 和设置值，而是通过 postMessage 通知父页面
-                // 父页面会在显示模态框后调用 loadTablesInIframe() 并设置值
-                window.parent.postMessage({
-                    type: 'SHOW_MODAL',
-                    modalType: 'edit',
-                    relationshipData: rel  // 传递给父页面
-                }, '*');
-            } catch (error) {
-                console.error('加载关联关系详情失败:', error);
-            }
-        }
-        
         // 关闭模态框
         function closeModal() {
             // ✅ 直接在 iframe 内部隐藏模态框
@@ -885,8 +859,8 @@
                     
                     if (!sourceSelect || !targetSelect) {
                         console.warn('[loadTables] 模态框元素未找到，1秒后重试...');
-                        setTimeout(() => loadTables(), 1000);
-                        return;
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        return loadTables();
                     }
                     
                     const currentSource = sourceSelect.value;
@@ -909,9 +883,12 @@
                     
                     sourceSelect.value = currentSource;
                     targetSelect.value = currentTarget;
+                    
+                    return true; // ✅ 返回成功标志
                 }
             } catch (error) {
                 console.error('加载表列表失败:', error);
+                return false;
             }
         }
         
@@ -1018,8 +995,6 @@
         
         // 保存关联关系
         async function saveRelationship() {
-            const editId = document.getElementById('editId').value;
-            
             // ✅ 使用页面顶部已选择的数据源
             if (!currentDatasourceId) {
                 alert('数据源未选择，请刷新页面后重试');
@@ -1049,33 +1024,20 @@
             }
             
             try {
-                let response;
-                if (editId) {
-                    // 更新
-                    response = await fetch(`/api/relationships/${editId}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify(data)
-                    });
-                } else {
-                    // 创建
-                    response = await fetch('/api/relationships', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify(data)
-                    });
-                }
+                // 创建
+                const response = await fetch('/api/relationships', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(data)
+                });
                 
                 const result = await response.json();
                 
                 if (result.code === 200) {
-                    alert(editId ? '更新成功' : '创建成功');
+                    alert('创建成功');
                     closeModal();
                     loadRelationships();
                 } else {
@@ -1718,11 +1680,11 @@
                 const conflictRows = unresolvedConflicts.map((conflict, idx) => `
                     <tr>
                         <td style="padding: 12px;">
-                            <strong>${conflict.ruleBased.source_table || conflict.llmBased.source_table}</strong>.
-                            ${conflict.ruleBased.source_column || conflict.llmBased.source_column}
+                            <strong>${conflict.ruleBased.sourceTable || conflict.llmBased.sourceTable}</strong>.
+                            ${conflict.ruleBased.sourceColumn || conflict.llmBased.sourceColumn}
                             →
-                            <strong>${conflict.ruleBased.target_table || conflict.llmBased.target_table}</strong>.
-                            ${conflict.ruleBased.target_column || conflict.llmBased.target_column}
+                            <strong>${conflict.ruleBased.targetTable || conflict.llmBased.targetTable}</strong>.
+                            ${conflict.ruleBased.targetColumn || conflict.llmBased.targetColumn}
                         </td>
                         <td style="padding: 12px;">
                             <div class="radio-group">
