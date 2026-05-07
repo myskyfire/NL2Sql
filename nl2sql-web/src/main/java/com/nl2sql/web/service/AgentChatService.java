@@ -87,8 +87,8 @@ public class AgentChatService {
             // 3. 构建完整消息（包含 context）
             String fullMessage = buildFullMessage(fixedMessage, request.getContext());
             
-            // 4. 意图识别
-            String intent = classifyIntent(fullMessage);
+            /*// 4. 意图识别
+            String intent = classifyIntent(fullMessage);*/
             
             // 5. 设置会话ID到 SessionContextManager
             setSessionId(sessionId);

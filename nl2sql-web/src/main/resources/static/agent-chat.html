@@ -680,10 +680,7 @@
                 
                 // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
                 if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    const followUpHtml = renderRemainingFollowUpHints('summary');
-                    if (followUpHtml) {
-                        addMessage(followUpHtml, 'agent');
-                    }
+                    renderRemainingFromCache();
                 }
                 return;
             }
@@ -697,10 +694,7 @@
                 
                 // ✅ 图表生成后，重新渲染剩余追问按钮
                 if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    const followUpHtml = renderRemainingFollowUpHints('chart');
-                    if (followUpHtml) {
-                        addMessage(followUpHtml, 'agent');
-                    }
+                    renderRemainingFromCache();
                 }
                 return;
             }
@@ -788,10 +782,7 @@
                 
                 // ✅ 图表生成后，重新渲染剩余追问按钮（基于原始查询数据）
                 if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    const followUpHtml = renderRemainingFollowUpHints('chart');
-                    if (followUpHtml) {
-                        addMessage(followUpHtml, 'agent');
-                    }
+                    renderRemainingFromCache();
                 }
                 return;
             }
