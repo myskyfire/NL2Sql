@@ -398,22 +398,39 @@ public class AgentConfig {
         // 注册图表生成工具（处理 [INTENT:GENERATE_CHART] 意图）
         agent.registerTool("generate_chart", (args, dsId, userId, username, userMessage) -> {
             log.info("[generate_chart] 收到参数: args={}", args);
+            log.info("[generate_chart] userMessage={}", userMessage);
             
-            String chartType;
-            String generatedSQL;
+            String chartType = null;
+            String generatedSQL = null;
             
-            // ✅ 关键修复：优先从 SessionContextManager 获取最新的 SQL
-            if (sessionContextManager != null) {
-                generatedSQL = sessionContextManager.getCurrentSQL();
+            // ✅ 关键修复：从 userMessage 中提取 context JSON
+            if (userMessage != null && userMessage.contains("Context: ")) {
+                try {
+                    int contextStart = userMessage.indexOf("Context: ") + "Context: ".length();
+                    String contextJson = userMessage.substring(contextStart).trim();
+                    com.fasterxml.jackson.databind.ObjectMapper contextMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    com.fasterxml.jackson.databind.JsonNode contextNode = contextMapper.readTree(contextJson);
+                    
+                    chartType = contextNode.has("chartType") ? contextNode.get("chartType").asText() : null;
+                    generatedSQL = contextNode.has("generatedSQL") ? contextNode.get("generatedSQL").asText() : null;
+                    
+                    log.info("[generate_chart] 从 context 提取: chartType={}, sql={}", chartType, generatedSQL != null ? generatedSQL.substring(0, Math.min(50, generatedSQL.length())) : "null");
+                } catch (Exception e) {
+                    log.warn("[generate_chart] 解析 context 失败", e);
+                }
+            }
+            
+            // 降级：从 args 中获取
+            if (chartType == null) {
                 chartType = (String) args.get("chartType");
-                log.info("[generate_chart] 从 SessionContextManager 获取上下文: sql={}, chartType={}", generatedSQL, chartType);
-            } else {
-                // 降级：从扁平参数中获取
-                chartType = (String) args.get("chartType");
-                generatedSQL = (String) args.get("generatedSQL");
+            }
+            if (generatedSQL == null) {
+                // ✅ 优先从 SessionContextManager 获取最新的 SQL
+                if (sessionContextManager != null) {
+                    generatedSQL = sessionContextManager.getCurrentSQL();
+                }
                 if (generatedSQL == null) {
-                    log.error("[generate_chart] generatedSQL 为空");
-                    return "{\"status\":\"error\",\"message\":\"缺少 generatedSQL 参数\"}";
+                    generatedSQL = (String) args.get("generatedSQL");
                 }
             }
             

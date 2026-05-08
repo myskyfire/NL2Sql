@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.tool.BaseToolAdapter;
 import com.nl2sql.core.agent.tool.ToolContext;
 import com.nl2sql.core.llm.IndustryConceptDictionary;
+import com.nl2sql.core.llm.LLMService;
 import com.nl2sql.core.llm.ModelRouterService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,9 @@ public class TableSelectorTool extends BaseToolAdapter {
     
     @Autowired
     private ModelRouterService modelRouter;
+    
+    @Autowired
+    private LLMService llmService;  // ✅ 表选择阶段不使用RAG，直接调用LLM
     
     @Autowired
     private IndustryConceptDictionary industryConceptDictionary;
@@ -77,8 +81,9 @@ public class TableSelectorTool extends BaseToolAdapter {
         // 构建Prompt
         String prompt = buildTableCheckPrompt(query, schemaInfo, relationshipInfo, datasourceId);
         
-        // 调用LLM
-        String llmResponse = modelRouter.smartGenerateSQL(prompt, query);
+        // ✅ 关键修复：表选择阶段禁用RAG增强，直接调用LLM
+        // RAG检索的SQL示例对表选择没有帮助，反而会增加prompt长度干扰判断
+        String llmResponse = llmService.generateSQL(prompt);
         
         log.info("[TableSelector] LLM原始响应: {}", llmResponse);
         

@@ -563,6 +563,12 @@
                     if (!data.error && data.message) {
                         data.error = data.message;
                     }
+                } else if (data.type === 'summary') {
+                    // ✅ AI总结：直接透传，让 handleQuerySuccess 处理
+                    data.status = 'success';
+                } else if (data.type === 'chart') {
+                    // ✅ 图表生成：直接透传，让 handleQuerySuccess 处理
+                    data.status = 'success';
                 }
             }
             
@@ -673,14 +679,19 @@
             
             // 情况1：AI总结（type=summary）
             if (data.type === 'summary') {
-                console.log('[AI总结] 检测到 type=summary:', data.message);
+                console.log('[AI总结] ✅ 检测到 type=summary, message:', data.message);
+                console.log('[AI总结] currentContext.data:', currentContext?.data);
+                console.log('[AI总结] followUpState:', followUpState);
                 const formattedSummary = formatAISummary(data.message);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
                 addMessage(html, 'agent');
                 
                 // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
                 if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
+                    console.log('[AI总结] ✅ 开始渲染剩余按钮');
                     renderRemainingFromCache();
+                } else {
+                    console.warn('[AI总结] ❌ 无法渲染剩余按钮: currentContext=', currentContext);
                 }
                 return;
             }
@@ -797,7 +808,8 @@
             addMessage(html, 'agent');
             
             // ✅ 新增：如果是有数据的查询结果，显示追问提示（DeepSeek风格）
-            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+            // ⚠️ 关键修复：只有在followUpState未初始化时才渲染，避免AI总结/图表后重复渲染
+            if (data.data && Array.isArray(data.data) && data.data.length > 0 && !followUpState.containerId) {
                 const followUpHtml = renderDynamicFollowUpHints(data);
                 if (followUpHtml) {
                     addMessage(followUpHtml, 'agent');
@@ -1391,9 +1403,7 @@
                 
                 if (result.code === 200 && result.data) {
                     handleAgentResponse(result.data);
-                    
-                    // ✅ 图表返回后，重新渲染剩余按钮
-                    renderRemainingFromCache();
+                    // ✅ 追问渲染已由 handleAgentResponse 内部处理，此处不再重复调用
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
                 }
@@ -1425,11 +1435,14 @@
         
         // ✅ 根据缓存渲染剩余按钮
         function renderRemainingFromCache() {
-            if (!followUpState.containerId || followUpState.availableActions.length === 0) {
+            // ✅ 关键修复：移除 containerId 检查，因为点击后已删除旧容器
+            if (followUpState.availableActions.length === 0) {
+                console.log('[追问状态] 无剩余动作,不渲染');
                 return;
             }
             
             if (!currentContext || !currentContext.data || !Array.isArray(currentContext.data) || currentContext.data.length === 0) {
+                console.log('[追问状态] 无数据,不渲染');
                 return;
             }
             
@@ -1458,6 +1471,7 @@
             
             html += '</div></div>';
             addMessage(html, 'agent');
+            console.log('[追问状态] 已渲染剩余按钮:', followUpState.availableActions);
         }
         
         // 渲染图表选择按钮
@@ -1469,11 +1483,12 @@
             }
             
             const chartTypes = suggestedChartsStr.split(',').map(t => t.trim());
-            let html = '<div class="follow-up-suggestions">';
+            const containerId = 'chart-selection-' + Date.now();
+            let html = `<div class="follow-up-suggestions" id="${containerId}">`;
             
             chartTypes.forEach(chartType => {
                 const typeConfig = getChartTypeConfig(chartType);
-                html += `<button class="suggestion-btn" onclick="generateChartWithType('${typeConfig.type}')">${typeConfig.icon} ${typeConfig.name}</button>`;
+                html += `<button class="suggestion-btn" onclick="generateChartWithType('${typeConfig.type}', '${containerId}')">${typeConfig.icon} ${typeConfig.name}</button>`;
             });
             
             html += '</div>';
@@ -1482,7 +1497,7 @@
         }
         
         // 生成指定类型的图表
-        async function generateChartWithType(chartType) {
+        async function generateChartWithType(chartType, containerId) {
             console.log('[生成图表] currentContext:', currentContext);
             console.log('[生成图表] currentContext keys:', Object.keys(currentContext || {}));
             console.log('[生成图表] datasourceId:', currentContext?.datasourceId);
@@ -1499,6 +1514,15 @@
                 addMessage('❌ 缺少 SQL 信息，请重新执行查询', 'agent');
                 removeTypingIndicator();
                 return;
+            }
+            
+            // ⚠️ 关键修复：点击后立即删除选择界面
+            if (containerId) {
+                const container = document.getElementById(containerId);
+                if (container) {
+                    container.remove();
+                    console.log('[图表选择] 已删除选择界面:', containerId);
+                }
             }
             
             const typeNames = {

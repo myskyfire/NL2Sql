@@ -48,6 +48,7 @@ import java.util.Map;
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)  // ✅ 忽略未知字段(兼容Groovy脚本返回的扁平化结构)
 public class SkillResult {
     
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -94,7 +95,8 @@ public class SkillResult {
      * 响应类型枚举
      */
     public enum ResultType {
-        QUERY_RESULT,      // 查询结果
+        QUERY_RESULT,      // 查询结果(标准)
+        DATA,              // 查询结果(别名,兼容旧代码)
         SUMMARY,           // AI总结
         CHART,             // 图表配置
         CLARIFICATION,     // 需要澄清

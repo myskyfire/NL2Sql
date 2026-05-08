@@ -394,6 +394,7 @@ public class NL2SQLService {
                     "6. 按天/月统计用DATE_FORMAT(created_at, '%%Y-%%m-%%d')\n" +
                     "7. ORDER BY别名必须与SELECT一致\n" +
                     "8. 相同语义查询保持SQL结构一致\n" +
+                    "9. GROUP BY 后面不能加中文\n"+
                     "SQL：",
                     expandedTables.size(), updatedAvailableTablesList,
                     updatedSchemaInfo, updatedRelationshipInfo.isEmpty() ? "" : updatedRelationshipInfo + "\n\n", ragEnhancement, negativeExamples, expandedQuery

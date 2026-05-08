@@ -356,7 +356,9 @@ public class TableSelectionOrchestrator {
                 }
                 
                 String checkPrompt = promptBuilder.apply(expandedQuery, schemaInfo);
-                String llmResponse = modelRouter.smartGenerateSQL(checkPrompt, expandedQuery);
+                // ✅ 关键修复：表选择阶段禁用RAG增强，直接调用LLM
+                // RAG检索的SQL示例对表选择没有帮助，反而会增加prompt长度干扰判断
+                String llmResponse = modelRouter.getMultiModelService().generateSQL(checkPrompt);
                 lastLlmResponse = llmResponse;
                 
                 log.info("[TableSelection] ========== LLM原始响应 ==========");
