@@ -4,9 +4,153 @@ displayName: 标准查询技能
 description: 执行完整的数据查询流程，包括表结构检索、SQL生成、风险评估、执行和自动修正。适用于用户有明确数据查询需求的场景。
 category: query
 priority: 1
-version: "1.0"
+version: "2.0"
 script: scripts/StandardQuerySkill.groovy
 requiredParams: [question, datasourceId]
+workflow:
+  version: 2.0
+  description: 标准查询工作流（完整版，含参数校验、图表检测、LLM风险评估、人机协同、sqlOnly分支）
+  steps:
+    - id: validate_params
+      action: call_tool
+      tool: validateParams
+      input:
+        question: "{{question}}"
+        datasourceId: "{{datasourceId}}"
+        userId: "{{userId}}"
+        username: "{{username}}"
+        sqlOnly: "{{sqlOnly}}"
+      output_var: validation_result
+      on_next: detect_chart
+
+    - id: detect_chart
+      action: call_tool
+      tool: detectAndGenerateChart
+      condition: "${validation_result.validated}==true"
+      input:
+        question: "{{question}}"
+      output_var: chart_result
+      on_next: retrieve_schema
+      on_condition_false: respond_clarification
+
+    - id: retrieve_schema
+      action: call_tool
+      tool: retrieveSchema
+      input:
+        question: "{{chart_result.cleanedQuestion}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: schema_result
+      on_next: generate_sql
+
+    - id: generate_sql
+      action: call_tool
+      tool: generateSQL
+      input:
+        question: "{{chart_result.cleanedQuestion}}"
+        datasourceId: "{{datasourceId}}"
+        schemaInfo: "{{schema_result}}"
+        tableHint: ""
+      output_var: sql_result
+      on_next: check_sql_valid
+
+    - id: check_sql_valid
+      action: call_tool
+      tool: analyzeSQLRisk
+      condition: "${sql_result.success}==true"
+      input:
+        sql: "{{sql_result.data.sql}}"
+        datasourceId: "{{datasourceId}}"
+        question: "{{chart_result.cleanedQuestion}}"
+      output_var: risk_result
+      on_next: check_human_approval
+      on_condition_false: respond_error
+
+    - id: check_human_approval
+      action: respond
+      condition: "${risk_result.needsHumanApproval}==true"
+      output:
+        success: false
+        type: "human_approval_required"
+        approvalId: "{{sessionId}}"
+        riskLevel: "{{risk_result.riskLevel}}"
+        riskReason: "{{risk_result.reason}}"
+        sql: "{{sql_result.data.sql}}"
+        optimizedSql: "{{risk_result.optimizedSql}}"
+        optimizationSuggestion: "{{risk_result.optimizationSuggestion}}"
+        message: "该SQL存在高风险，请审核后再决定是否执行"
+      on_next: null
+      on_condition_false: check_sql_only
+
+    - id: check_sql_only
+      action: respond
+      condition: "${validation_result.sqlOnly}==true"
+      output:
+        success: true
+        type: "sql_only"
+        sql: "{{sql_result.data.sql}}"
+        datasourceId: "{{datasourceId}}"
+        optimizationSuggestion: "{{risk_result.optimizationSuggestion}}"
+      on_next: null
+      on_condition_false: execute_sql
+
+    - id: execute_sql
+      action: call_tool
+      tool: executeSQL
+      input:
+        sql: "{{sql_result.data.sql}}"
+        datasourceId: "{{datasourceId}}"
+        userId: "{{userId}}"
+        username: "{{username}}"
+      output_var: exec_result
+      on_next: post_process
+
+    - id: post_process
+      action: call_tool
+      tool: post_process_response
+      condition: "${exec_result.success}==true"
+      input:
+        data: "{{exec_result.data}}"
+        rowCount: "{{exec_result.rowCount}}"
+        executionTime: "{{exec_result.executionTime}}"
+        sql: "{{sql_result.data.sql}}"
+        datasourceId: "{{datasourceId}}"
+        optimizationSuggestion: "{{risk_result.optimizationSuggestion}}"
+        chartConfig: "{{chart_result}}"
+      output_var: final_result
+      on_next: respond_success
+      on_condition_false: respond_error
+
+    - id: respond_success
+      action: respond
+      output:
+        success: "{{final_result.success}}"
+        type: "{{final_result.type}}"
+        data: "{{final_result.data}}"
+        rowCount: "{{final_result.rowCount}}"
+        executionTime: "{{final_result.executionTime}}"
+        sql: "{{final_result.sql}}"
+        datasourceId: "{{final_result.datasourceId}}"
+        followUpSuggestions: "{{final_result.followUpSuggestions}}"
+        optimizationSuggestion: "{{final_result.optimizationSuggestion}}"
+        chartConfig: "{{final_result.chartConfig}}"
+      on_next: null
+
+    - id: respond_error
+      action: respond
+      output:
+        success: false
+        type: "error"
+        error: "{{exec_result.error}}"
+      on_next: null
+
+    - id: respond_clarification
+      action: respond
+      output:
+        success: true
+        type: "clarification"
+        needsClarification: true
+        clarificationMessage: "{{validation_result.clarificationMessage}}"
+      on_next: null
 ---
 
 # 标准查询技能（Standard Query Skill）
@@ -14,10 +158,16 @@ requiredParams: [question, datasourceId]
 ## 功能说明
 
 封装完整的查询生命周期，自动处理以下所有步骤：
-- 智能检索相关表结构
-- 自动生成 SQL 语句
-- LLM 自主评估 SQL 风险（LOW/MEDIUM/HIGH/UNCERTAIN）
+- 参数校验（datasourceId、question 必填校验，缺失时返回澄清请求）
+- 图表意图检测（自动识别柱状图/折线图/饼图/面积图需求，生成ECharts配置）
+- 智能检索相关表结构（并设置ThreadLocal表名偏好）
+- 自动生成 SQL 语句（支持预检索schema和表名偏好）
+- LLM 自主评估 SQL 风险（三层评估：快速判断→EXPLAIN→LLM辅助）
+- 高风险SQL自动优化与重新生成
+- 人机协同审批（高风险SQL需人工确认）
+- sqlOnly 模式（仅生成SQL不执行）
 - 执行 SQL 查询（支持自动修正，最多重试 2 次）
+- 智能后处理（追问建议、优化建议、图表配置）
 - 高风险 SQL 自动阻断，保护数据库性能
 
 ## 适用场景
@@ -49,64 +199,17 @@ requiredParams: [question, datasourceId]
 
 当前通过 `scripts/StandardQuerySkill.groovy` 执行，包含复杂的 LLM 交互和循环重试逻辑。
 
-### Workflow 配置（文档参考）
+### Workflow 配置（已启用）
 
-以下是声明式 workflow 配置示例（**当前未启用**，仅作架构演进参考）：
+Workflow 定义已在 YAML front matter 中配置，由 WorkflowEngine 直接执行。执行顺序：
 
-```yaml
-workflow:
-  version: 1.0
-  description: 标准查询工作流（简化版，不含风险评估）
-  steps:
-    - id: retrieve_schema
-      action: call_tool
-      tool: retrieve_table_schema
-      input:
-        question: "{{question}}"
-        datasourceId: "{{datasourceId}}"
-      output_var: schema_result
-    
-    - id: generate_sql
-      action: call_tool
-      tool: generate_sql
-      input:
-        question: "{{question}}"
-        datasourceId: "{{datasourceId}}"
-      output_var: sql_result
-    
-    - id: execute_sql
-      action: call_tool
-      tool: execute_sql
-      condition: "{{sql_result.success == true}}"
-      input:
-        sql: "{{sql_result.sql}}"
-        datasourceId: "{{datasourceId}}"
-        userId: "{{userId}}"
-        username: "{{username}}"
-      output_var: exec_result
-    
-    - id: respond_success
-      action: respond
-      condition: "{{exec_result.success == true}}"
-      output:
-        status: "success"
-        data: "{{exec_result.data}}"
-        rowCount: "{{exec_result.rowCount}}"
-        executionTime: "{{exec_result.executionTime}}"
-        sql: "{{sql_result.sql}}"
-    
-    - id: respond_error
-      action: respond
-      condition: "{{exec_result.success == false}}"
-      output:
-        status: "error"
-        error: "{{exec_result.error}}"
-```
+1. `retrieve_schema` → 调用 `retrieveSchema` Tool 检索表结构
+2. `generate_sql` → 调用 `execute` Tool (GenerateSQLTool) 生成 SQL
+3. `check_sql_valid` → 调用 `analyzeSQLRisk` Tool 评估风险
+4. `execute_sql` → 调用 `executeSQL` Tool 执行查询（风险非 HIGH 时）
+5. `respond_success` / `respond_error` → 返回结果
 
-⚠️ **重要说明**：
-- 当前 workflow 配置**不完整**，缺少风险评估、自动修正等复杂逻辑
-- 实际执行仍通过 `script` 字段指定的 Groovy 脚本
-- Workflow 配置仅作为架构演进参考，未来可逐步迁移简单场景
+⚠️ **降级机制**：如果 workflow 执行失败，系统会自动降级到 Worker 执行模式。
 
 ### Groovy 脚本详细流程
 
