@@ -1,7 +1,7 @@
 package com.nl2sql.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nl2sql.common.util.BooleanUtils;
+import com.nl2sql.core.agent.ReActAgent;
 import com.nl2sql.core.agent.tools.SQLExecutionTool;
 import com.nl2sql.core.service.NL2SQLService;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +29,9 @@ import java.util.regex.Pattern;
 @Slf4j
 @Component
 public class AgentResponseProcessor {
+    
+    @Autowired
+    private ReActAgent reActAgent;
     
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -120,21 +123,13 @@ public class AgentResponseProcessor {
         
         // ✅ 关键修复：将 StandardQuerySkill 的 success 字段转换为 status 字段
         if (parsed.containsKey("success") && !parsed.containsKey("status")) {
-            Boolean success = BooleanUtils.toBoolean(parsed.get("success"));
-
-            // ✅ 人机协同：human_approval_required 类型优先处理
-            if ("human_approval_required".equals(parsed.get("type"))) {
-                parsed.put("status", "human_approval_required");
-            } else if (BooleanUtils.isTrue(success)) {
+            Boolean success = (Boolean) parsed.get("success");
+            if (success != null && success) {
                 parsed.put("status", "success");
-            } else if (parsed.containsKey("needsClarification")) {
-                if (BooleanUtils.isTrue(parsed.get("needsClarification"))) {
-                    parsed.put("status", "clarification_needed");
-                    if (!parsed.containsKey("message") && parsed.containsKey("clarificationMessage")) {
-                        parsed.put("message", parsed.get("clarificationMessage"));
-                    }
-                } else {
-                    parsed.put("status", "error");
+            } else if (parsed.containsKey("needsClarification") && (Boolean) parsed.get("needsClarification")) {
+                parsed.put("status", "clarification_needed");
+                if (!parsed.containsKey("message") && parsed.containsKey("clarificationMessage")) {
+                    parsed.put("message", parsed.get("clarificationMessage"));
                 }
             } else {
                 parsed.put("status", "error");
