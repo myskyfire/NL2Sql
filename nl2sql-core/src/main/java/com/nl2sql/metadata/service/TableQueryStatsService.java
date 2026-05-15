@@ -31,7 +31,7 @@ public class TableQueryStatsService {
                               "ON DUPLICATE KEY UPDATE " +
                               "query_count = query_count + 1, " +
                               "avg_rating = ((avg_rating * (query_count - 1)) + ?) / query_count, " +
-                              "low_rating_count = low_rating + (CASE WHEN ? <= 2 THEN 1 ELSE 0 END), " +
+                              "low_rating_count = low_rating_count + (CASE WHEN ? <= 2 THEN 1 ELSE 0 END), " +
                               "last_query_at = NOW()";
             
             double ratingDouble = rating;
