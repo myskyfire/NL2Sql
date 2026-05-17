@@ -111,4 +111,14 @@ public interface IndustryConceptAdminMapper {
      * 查询已审核的行业概念（entity/metric）
      */
     List<Map<String, Object>> selectApprovedConceptsByType(@Param("industryCode") String industryCode);
+
+    @Select("SELECT concept_key, concept_aliases FROM industry_concept " +
+            "WHERE industry_code = #{industryCode} AND concept_key = #{conceptKey} AND status = 'approved' " +
+            "LIMIT 1")
+    Map<String, Object> selectConceptByIndustryAndKey(@Param("industryCode") String industryCode,
+                                                       @Param("conceptKey") String conceptKey);
+
+    int updateConceptAliases(@Param("industryCode") String industryCode,
+                             @Param("conceptKey") String conceptKey,
+                             @Param("conceptAliases") String conceptAliases);
 }

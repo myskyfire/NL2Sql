@@ -6,7 +6,6 @@ import com.nl2sql.core.agent.tool.ToolContext;
 import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.retriever.VectorRetriever;
 import com.nl2sql.metadata.mapper.MetadataQueryMapper;
-import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -63,8 +62,8 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
     @Override
     protected void validateParameters(ToolContext context) {
         parameterValidator
-            .required("query", context.getParameter("query"))
-            .required("datasourceId", context.getParameter("datasourceId"))
+            .required("query", (String) context.getParameter("query"))
+            .required("datasourceId", String.valueOf((Long)context.getParameter("datasourceId")))
             .throwIfHasErrors();
     }
     
@@ -129,11 +128,14 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
                 if (!columns.isEmpty()) {
                     schemaInfo.append("字段:\n");
                     for (Map<String, Object> col : columns) {
-                        String colName = (String) col.get("column_name");
-                        String dataType = (String) col.get("data_type");
-                        String comment = (String) col.get("column_comment");
-                        String isNullable = (String) col.get("is_nullable");
-                        String columnKey = (String) col.get("column_key");
+                        String colName = String.valueOf(col.get("column_name"));
+                        String dataType = String.valueOf(col.get("data_type"));
+                        String comment = col.get("column_comment") != null ? String.valueOf(col.get("column_comment")) : null;
+                        Object isNullableObj = col.get("is_nullable");
+                        String isNullable = isNullableObj instanceof Number ? 
+                            ((Number) isNullableObj).intValue() == 0 ? "NO" : "YES" : 
+                            String.valueOf(isNullableObj);
+                        String columnKey = String.valueOf(col.get("column_key"));
                         
                         schemaInfo.append(String.format("  - %s (%s)", colName, dataType));
                         if ("PRI".equals(columnKey)) {
@@ -142,7 +144,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
                         if ("NO".equalsIgnoreCase(isNullable)) {
                             schemaInfo.append(" [非空]");
                         }
-                        if (comment != null && !comment.isEmpty()) {
+                        if (comment != null && !comment.isEmpty() && !"null".equals(comment)) {
                             schemaInfo.append(String.format(": %s", comment));
                         }
                         schemaInfo.append("\n");
@@ -167,7 +169,6 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
         return extractor.toNormalizedJson(structure);
     }
     
-    @Tool("根据用户自然语言问题和数据源ID，检索相关的数据库表结构信息。返回表名、字段、数据类型、注释等信息")
     public String retrieveSchema(String query, Long datasourceId) {
         try {
             ToolContext context = ToolContext.builder()

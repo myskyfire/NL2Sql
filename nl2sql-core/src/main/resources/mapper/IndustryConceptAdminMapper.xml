@@ -91,5 +91,14 @@
         FROM industry_concept 
         WHERE status = 'approved'
     </select>
+
+    <update id="updateConceptAliases">
+        UPDATE industry_concept
+        SET concept_aliases = #{conceptAliases},
+            updated_at = NOW()
+        WHERE industry_code = #{industryCode}
+          AND concept_key = #{conceptKey}
+          AND status = 'approved'
+    </update>
     
 </mapper>

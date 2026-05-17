@@ -34,8 +34,9 @@ public class ExecuteSafeSQLTool {
         try {
             log.info("[ExecuteSafeSQLTool] 执行SQL: datasourceId={}, userId={}", datasourceId, userId);
             
-            // 调用 SQLExecutionTool 执行SQL
-            SQLExecutionTool.ExecutionResult result = sqlExecutionTool.executeSQL(sql, datasourceId, userId, username);
+            // 调用 SQLExecutionTool 执行SQL（返回JSON字符串）
+            String jsonResult = sqlExecutionTool.executeSQL(sql, datasourceId, userId, username);
+            SQLExecutionTool.ExecutionResult result = objectMapper.readValue(jsonResult, SQLExecutionTool.ExecutionResult.class);
             
             if (result.isSuccess()) {
                 // ✅ 构建统一响应

@@ -1,8 +1,10 @@
 package com.nl2sql.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.common.util.BooleanUtils;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.SupervisorAgent;
 import com.nl2sql.core.service.NL2SQLService;
 import com.nl2sql.core.service.SessionContextManager;
 import com.nl2sql.common.event.StreamProgressEvent;
@@ -26,21 +28,21 @@ import java.util.concurrent.CompletableFuture;
 @Service
 public class StreamChatService {
     
-    private final ReActAgent reActAgent;
+    private final SupervisorAgent supervisorAgent;
     private final ConversationHistoryService conversationHistoryService;
     private final NL2SQLService nl2sqlService;
     private final SessionContextManager sessionContextManager;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
+
     public StreamChatService(
-        ReActAgent reActAgent,
+        SupervisorAgent supervisorAgent,
         ConversationHistoryService conversationHistoryService,
         NL2SQLService nl2sqlService,
         SessionContextManager sessionContextManager,
         ApplicationEventPublisher eventPublisher
     ) {
-        this.reActAgent = reActAgent;
+        this.supervisorAgent = supervisorAgent;
         this.conversationHistoryService = conversationHistoryService;
         this.nl2sqlService = nl2sqlService;
         this.sessionContextManager = sessionContextManager;
@@ -109,7 +111,7 @@ public class StreamChatService {
                 eventPublisher.publishEvent(StreamProgressEvent.creating(sessionId));
                 
                 // 5. 调用Agent执行查询（✅ 优化：userId/username从UserContext获取）
-                String agentResponse = reActAgent.execute(
+                String agentResponse = supervisorAgent.execute(
                     question,
                     datasourceId,
                     null  // ✅ TODO: 传入历史消息
@@ -175,11 +177,11 @@ public class StreamChatService {
             return;
         }
         
-        Boolean success = (Boolean) responseMap.getOrDefault("success", false);
-        if (success != null && success) {
+        Boolean success = com.nl2sql.common.util.BooleanUtils.toBoolean(responseMap.getOrDefault("success", false));
+        if (BooleanUtils.isTrue(success)) {
             responseMap.put("status", "success");
         } else if (responseMap.containsKey("needsClarification") && 
-                   (Boolean) responseMap.get("needsClarification")) {
+                   BooleanUtils.isTrue(responseMap.get("needsClarification"))) {
             responseMap.put("status", "clarification_needed");
         } else {
             responseMap.put("status", "error");

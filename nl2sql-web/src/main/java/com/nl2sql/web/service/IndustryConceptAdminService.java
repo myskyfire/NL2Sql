@@ -158,4 +158,81 @@ public class IndustryConceptAdminService {
     public List<Map<String, Object>> getApprovedConcepts(String industryCode) {
         return adminMapper.selectApprovedConceptsByType(industryCode);
     }
+
+    public List<Map<String, Object>> getPendingAliases(String industryCode) {
+        StringBuilder sql = new StringBuilder(
+            "SELECT * FROM concept_alias_learning WHERE status = 'pending'");
+        List<Object> params = new ArrayList<>();
+        if (industryCode != null && !industryCode.isEmpty()) {
+            sql.append(" AND industry_code = ?");
+            params.add(industryCode);
+        }
+        sql.append(" ORDER BY created_at DESC");
+        return jdbcTemplate.queryForList(sql.toString(), params.toArray());
+    }
+
+    public void approveAlias(Long aliasId, String reviewedBy) {
+        Map<String, Object> alias = jdbcTemplate.queryForMap(
+            "SELECT * FROM concept_alias_learning WHERE id = ? AND status = 'pending'", aliasId);
+        if (alias == null) {
+            throw new RuntimeException("alias not found or not pending: " + aliasId);
+        }
+
+        String industryCode = (String) alias.get("industry_code");
+        String conceptKey = (String) alias.get("concept_key");
+        String newAlias = (String) alias.get("new_alias");
+
+        Map<String, Object> concept = adminMapper.selectConceptByIndustryAndKey(industryCode, conceptKey);
+        if (concept != null) {
+            String aliasesJson = (String) concept.get("concept_aliases");
+            List<String> aliases = parseAliasesJson(aliasesJson);
+            if (!aliases.contains(newAlias)) {
+                aliases.add(newAlias);
+                try {
+                    String updatedJson = objectMapper.writeValueAsString(aliases);
+                    adminMapper.updateConceptAliases(industryCode, conceptKey, updatedJson);
+                } catch (Exception e) {
+                    throw new RuntimeException("update aliases failed", e);
+                }
+            }
+        }
+
+        jdbcTemplate.update(
+            "UPDATE concept_alias_learning SET status = 'approved', reviewed_by = ?, reviewed_at = NOW() WHERE id = ?",
+            reviewedBy, aliasId);
+
+        log.info("[IndustryConceptAdmin] approved alias: conceptKey={}, alias={}, by={}",
+            conceptKey, newAlias, reviewedBy);
+    }
+
+    public void rejectAlias(Long aliasId, String reviewedBy) {
+        jdbcTemplate.update(
+            "UPDATE concept_alias_learning SET status = 'rejected', reviewed_by = ?, reviewed_at = NOW() WHERE id = ?",
+            reviewedBy, aliasId);
+        log.info("[IndustryConceptAdmin] rejected alias: id={}, by={}", aliasId, reviewedBy);
+    }
+
+    public int batchApproveAliases(List<Long> ids, String reviewedBy) {
+        int count = 0;
+        for (Long id : ids) {
+            try {
+                approveAlias(id, reviewedBy);
+                count++;
+            } catch (Exception e) {
+                log.warn("[IndustryConceptAdmin] batch approve alias failed: id={}, error={}", id, e.getMessage());
+            }
+        }
+        return count;
+    }
+
+    private List<String> parseAliasesJson(String json) {
+        if (json == null || json.isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            return objectMapper.readValue(json, List.class);
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
 }

@@ -43,7 +43,7 @@ public class ParameterValidator {
     }
     
     /**
-     * 校验对象字段不为null
+     * 校验对象字段不为null（通用版本，支持任意类型）
      */
     public ParameterValidator required(String field, Object value) {
         if (value == null) {

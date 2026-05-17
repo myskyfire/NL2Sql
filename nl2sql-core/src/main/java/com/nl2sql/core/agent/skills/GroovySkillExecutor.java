@@ -53,21 +53,18 @@ public class GroovySkillExecutor implements ApplicationContextAware {
     private ApplicationContext applicationContext;
     
     /**
-     * ✅ Workflow 引擎（声明式工作流执行器）
+     * ✅ Workflow 引擎已废弃 - 使用新的 Plan-and-Execute 架构
+     * @deprecated 使用 com.nl2sql.core.agent.engine.WorkflowEngine 替代
      */
-    private com.nl2sql.core.agent.skills.WorkflowEngine workflowEngine;
+    @Deprecated
+    private Object workflowEngine;
     
     @Override
     public void setApplicationContext(ApplicationContext context) throws BeansException {
         this.applicationContext = context;
-        // 延迟初始化，避免循环依赖
-        try {
-            this.workflowEngine = applicationContext.getBean(com.nl2sql.core.agent.skills.WorkflowEngine.class);
-            log.info("[GroovySkillExecutor] WorkflowEngine 初始化成功");
-        } catch (Exception e) {
-            log.warn("[GroovySkillExecutor] WorkflowEngine 未找到，将使用纯 Groovy 模式: {}", e.getMessage());
-            this.workflowEngine = null;
-        }
+        // ✅ 旧的 WorkflowEngine 已废弃，不再初始化
+        this.workflowEngine = null;
+        log.info("[GroovySkillExecutor] 使用纯 Groovy 模式（Plan-and-Execute 架构由 SupervisorAgent 管理）");
         // 立即扫描 Skills
         scanSkillsInternal();
     }
@@ -163,11 +160,8 @@ public class GroovySkillExecutor implements ApplicationContextAware {
      */
     public Object executeSkill(String skillPath, SkillContext context) {
         try {
-            // ✅ 优先检查是否有 workflow 配置
-            if (workflowEngine != null && hasWorkflow(skillPath)) {
-                log.info("[GroovySkillExecutor] 检测到 Workflow 配置，使用声明式引擎执行: {}", skillPath);
-                return workflowEngine.executeWorkflow(skillPath, context);
-            }
+            // ✅ 旧的 Workflow 支持已移除，统一使用 Groovy 脚本执行
+            // 如需工作流编排，请使用 SupervisorAgent + PlannerAgent + engine.WorkflowEngine
             
             // 从 SKILL.md 中解析 script 字段
             String scriptRelativePath = parseScriptField(skillPath);

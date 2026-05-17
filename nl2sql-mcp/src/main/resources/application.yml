@@ -1,0 +1,33 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: nl2sql-mcp-server
+
+# MCP Server 配置
+nl2sql:
+  mcp:
+    # 传输方式: stdio 或 sse
+    transport: stdio
+  
+  # 数据源配置（凭据由 Server 管理，AI 不可见）
+  datasources:
+    1:
+      name: "主数据库"
+      jdbc-url: jdbc:mysql://localhost:3306/nl2sql_db?useUnicode=true&characterEncoding=utf8mb4&useSSL=false&serverTimezone=Asia/Shanghai
+      username: root
+      password: ${DB_PASSWORD:your_password}
+    2:
+      name: "财务数据库"
+      jdbc-url: jdbc:mysql://localhost:3306/finance_db?useUnicode=true&characterEncoding=utf8mb4&useSSL=false&serverTimezone=Asia/Shanghai
+      username: root
+      password: ${DB_PASSWORD_2:your_password}
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.nl2sql.mcp: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

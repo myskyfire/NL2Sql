@@ -214,4 +214,57 @@ public class IndustryConceptAdminController {
             return Map.of("success", false, "error", e.getMessage());
         }
     }
+
+    @GetMapping("/alias-learning/pending")
+    public Map<String, Object> getPendingAliases(@RequestParam(required = false) String industryCode) {
+        try {
+            List<Map<String, Object>> aliases = adminService.getPendingAliases(industryCode);
+            return Map.of("success", true, "data", aliases, "count", aliases.size());
+        } catch (Exception e) {
+            log.error("[IndustryConceptAdmin] getPendingAliases failed", e);
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
+
+    @PostMapping("/alias-learning/{id}/approve")
+    public Map<String, Object> approveAlias(@PathVariable Long id,
+                                             @RequestBody(required = false) Map<String, Object> request) {
+        try {
+            String reviewedBy = request != null ? (String) request.getOrDefault("reviewedBy", "admin") : "admin";
+            adminService.approveAlias(id, reviewedBy);
+            return Map.of("success", true, "message", "别名审核通过");
+        } catch (Exception e) {
+            log.error("[IndustryConceptAdmin] approveAlias failed", e);
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
+
+    @PostMapping("/alias-learning/{id}/reject")
+    public Map<String, Object> rejectAlias(@PathVariable Long id,
+                                            @RequestBody(required = false) Map<String, Object> request) {
+        try {
+            String reviewedBy = request != null ? (String) request.getOrDefault("reviewedBy", "admin") : "admin";
+            adminService.rejectAlias(id, reviewedBy);
+            return Map.of("success", true, "message", "别名已拒绝");
+        } catch (Exception e) {
+            log.error("[IndustryConceptAdmin] rejectAlias failed", e);
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
+
+    @PostMapping("/alias-learning/batch-approve")
+    public Map<String, Object> batchApproveAliases(@RequestBody Map<String, Object> request) {
+        try {
+            List<Long> ids = (List<Long>) request.get("ids");
+            String reviewedBy = (String) request.getOrDefault("reviewedBy", "admin");
+            if (ids == null || ids.isEmpty()) {
+                return Map.of("success", false, "error", "请选择要审核的别名");
+            }
+            int count = adminService.batchApproveAliases(ids, reviewedBy);
+            return Map.of("success", true, "message", String.format("已审核通过 %d 条别名", count));
+        } catch (Exception e) {
+            log.error("[IndustryConceptAdmin] batchApproveAliases failed", e);
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
 }

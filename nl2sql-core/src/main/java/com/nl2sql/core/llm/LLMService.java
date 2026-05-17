@@ -2,20 +2,16 @@ package com.nl2sql.core.llm;
 
 import com.nl2sql.core.llm.provider.LLMProvider;
 import com.nl2sql.core.llm.provider.LLMProviderManager;
+import com.nl2sql.core.tracing.LangSmithRun;
+import com.nl2sql.core.tracing.LangSmithTracingService;
+import com.nl2sql.core.tracing.TracingContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-/**
- * LLM服务 - 统一的LLM调用接口
- * 
- * 通过LLMProviderManager动态选择活跃的LLM提供者
- * 支持运行时切换不同的LLM后端
- */
 @Slf4j
 @Service
 public class LLMService {
@@ -28,6 +24,9 @@ public class LLMService {
     
     @Autowired(required = false)
     private com.nl2sql.core.llm.provider.OllamaProvider ollamaCodeProvider;
+
+    @Autowired(required = false)
+    private LangSmithTracingService tracingService;
     
     private LLMProvider activeProvider;
     
@@ -35,14 +34,9 @@ public class LLMService {
     public void init() {
         this.activeProvider = providerManager.getActiveProvider();
         log.info("[LLMService] 初始化完成，活跃提供者: {}", activeProvider.getName());
-        
-        // 健康检查
         checkHealth();
     }
     
-    /**
-     * 健康检查所有提供者
-     */
     private void checkHealth() {
         var healthStatus = providerManager.healthCheck();
         
@@ -50,7 +44,6 @@ public class LLMService {
         for (var entry : healthStatus.entrySet()) {
             String status = entry.getValue() ? "✅" : "❌";
             log.info("[LLMService] 提供者 {} 状态: {}", entry.getKey(), status);
-            
             if (!entry.getValue()) {
                 allHealthy = false;
             }
@@ -63,161 +56,201 @@ public class LLMService {
         }
     }
     
-    /**
-     * 生成SQL查询（使用代码专用模型）
-     */
     public String generateSQL(String prompt) {
+        LangSmithRun run = startLlmTrace("generateSQL", Map.of("prompt", truncate(prompt, 500)));
         try {
             log.debug("发送提示词到LLM: {}", prompt);
-            
-            // ✅ 优先使用代码专用模型（qwen2.5-coder）
             LLMProvider codeProvider = (ollamaCodeProvider != null) ? ollamaCodeProvider : activeProvider;
-            
-            // 使用低温度以获得更确定的结果
             String response = codeProvider.generate(prompt, 0.0);
-            
             log.debug("LLM响应: {}", response);
+            endLlmTrace(run, Map.of("response", truncate(response, 500)), null);
             return response.trim();
-            
         } catch (Exception e) {
             log.error("[LLMService] SQL生成失败", e);
+            endLlmTrace(run, null, e.getMessage());
             throw new RuntimeException("SQL生成失败: " + e.getMessage(), e);
         }
     }
     
-    /**
-     * 总结查询结果（使用推理模型）
-     */
     public String summarizeResult(String query, Object result) {
         String systemPrompt = "用3句话总结查询结果。";
         String userPrompt = String.format("问题: %s\n查询结果: %s", query, result.toString());
-        
+        LangSmithRun run = startLlmTrace("summarizeResult", Map.of("query", query));
         try {
-            // ✅ 优先使用推理模型（qwen3:8b）
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
-            return reasoningProvider.generateJson(systemPrompt, userPrompt, 0.7).trim();
+            String response = reasoningProvider.generateJson(systemPrompt, userPrompt, 0.7).trim();
+            endLlmTrace(run, Map.of("summary", truncate(response, 300)), null);
+            return response;
         } catch (Exception e) {
             log.error("[LLMService] 总结结果失败", e);
+            endLlmTrace(run, null, e.getMessage());
             return "无法生成总结";
         }
     }
     
-    /**
-     * 澄清用户问题（使用推理模型）
-     */
     public String clarifyQuestion(String query, String missingInfo) {
         String systemPrompt = "友好地追问缺失信息。";
         String userPrompt = String.format("用户问题: %s\n缺少信息: %s", query, missingInfo);
-        
+        LangSmithRun run = startLlmTrace("clarifyQuestion", Map.of("query", query, "missingInfo", missingInfo));
         try {
-            // ✅ 优先使用推理模型（qwen3:8b）
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
-            return reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.7).trim();
+            String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.7).trim();
+            endLlmTrace(run, Map.of("clarification", truncate(response, 300)), null);
+            return response;
         } catch (Exception e) {
             log.error("[LLMService] 生成澄清问题失败", e);
+            endLlmTrace(run, null, e.getMessage());
             return "请补充更多信息";
         }
     }
     
-    /**
-     * 意图分类（使用推理模型）
-     */
     public String classifyIntent(String query) {
         String systemPrompt = "分类: QUERY/CREATE/UPDATE/DELETE/OTHER，只返回类型。";
         String userPrompt = "用户问题: " + query;
-        
+        LangSmithRun run = startLlmTrace("classifyIntent", Map.of("query", query));
         try {
-            // ✅ 优先使用推理模型（qwen3:8b）
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
-            String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.0).trim();
-            return response.toUpperCase();
+            String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.0).trim().toUpperCase();
+            endLlmTrace(run, Map.of("intent", response), null);
+            return response;
         } catch (Exception e) {
             log.error("[LLMService] 意图分类失败", e);
+            endLlmTrace(run, null, e.getMessage());
             return "OTHER";
         }
     }
     
-    /**
-     * 生成答案（用于非SQL场景，使用推理模型）
-     */
     public String generateAnswer(String prompt) {
+        LangSmithRun run = startLlmTrace("generateAnswer", Map.of("prompt", truncate(prompt, 500)));
         try {
             log.debug("发送提示词到LLM: {}", prompt);
-            
-            // ✅ 优先使用推理模型（qwen3:8b）
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
-            
-            // 使用中等温度以获得更自然的回答
             String response = reasoningProvider.generate(prompt, 0.7);
-            
             log.debug("LLM响应: {}", response);
+            endLlmTrace(run, Map.of("answer", truncate(response, 500)), null);
             return response.trim();
-            
         } catch (Exception e) {
             log.error("[LLMService] 答案生成失败", e);
-            // ✅ 修复：返回null而非错误字符串，让调用方决定是否处理
+            endLlmTrace(run, null, e.getMessage());
             return null;
         }
     }
     
-    /**
-     * 使用原生 Tool Calling 生成响应
-     * 
-     * <p><b>设计决策: 为什么使用推理模型而非代码模型?</b></p>
-     * <ul>
-     *   <li><b>Ollama官方建议</b>: Tool Calling需要强推理能力理解工具描述和参数结构</li>
-     *   <li><b>业界实践</b>: Claude Code、OpenCode等均使用通用推理模型处理Tool调度</li>
-     *   <li><b>职责分离</b>: qwen3(推理)负责决策调用哪个Tool, qwen2.5-coder(代码)负责生成SQL</li>
-     *   <li><b>性能权衡</b>: 推理模型在Tool选择准确率上优于代码模型(~15%提升)</li>
-     * </ul>
-     * 
-     * @param messages 消息列表
-     * @param temperature 温度参数
-     * @param tools 工具定义列表
-     * @return 完整响应（包含 tool_calls 或 content）
-     */
     public Map<String, Object> generateWithTools(List<Map<String, Object>> messages, double temperature, List<Map<String, Object>> tools) {
+        LangSmithRun run = startLlmTrace("generateWithTools", Map.of("messageCount", messages != null ? messages.size() : 0, "toolCount", tools != null ? tools.size() : 0));
         try {
             log.debug("[LLMService] 调用原生 Tool Calling，工具数量: {}", tools != null ? tools.size() : 0);
             
-            // ✅ 使用当前活跃的 Provider（支持 Ollama、阿里云等）
             if (activeProvider instanceof com.nl2sql.core.llm.provider.OpenAICompatibleProvider) {
-                return activeProvider.generateWithTools(messages, temperature, tools);
+                Map<String, Object> result = activeProvider.generateWithTools(messages, temperature, tools);
+                endLlmTrace(run, Map.of("hasToolCalls", result.get("message") != null), null);
+                return result;
             }
             
             if (ollamaReasoningProvider != null) {
-                return ollamaReasoningProvider.generateWithTools(messages, temperature, tools);
+                Map<String, Object> result = ollamaReasoningProvider.generateWithTools(messages, temperature, tools);
+                endLlmTrace(run, Map.of("hasToolCalls", result.get("message") != null), null);
+                return result;
             }
             
-            // 降级：如果所有 Provider 都不支持，抛出异常
             throw new UnsupportedOperationException("当前 Provider 不支持原生 Tool Calling");
-            
         } catch (Exception e) {
             log.error("[LLMService] Tool Calling 失败", e);
+            endLlmTrace(run, null, e.getMessage());
             throw new RuntimeException("Tool Calling 失败: " + e.getMessage(), e);
         }
     }
     
-    /**
-     * 获取当前活跃的提供者名称
-     */
+    public String generate(String systemPrompt, String userPrompt, String fullPrompt) {
+        LangSmithRun run = startLlmTrace("generate", Map.of("systemPrompt", truncate(systemPrompt, 200), "userPrompt", truncate(userPrompt, 200)));
+        try {
+            LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
+            String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.7).trim();
+            endLlmTrace(run, Map.of("response", truncate(response, 500)), null);
+            return response;
+        } catch (Exception e) {
+            log.error("[LLMService] 生成失败", e);
+            endLlmTrace(run, null, e.getMessage());
+            throw new RuntimeException("LLM 生成失败: " + e.getMessage(), e);
+        }
+    }
+
+    public String generateWithJsonSchema(String systemPrompt, String userPrompt, Class<?> targetClass) {
+        LangSmithRun run = startLlmTrace("generateWithJsonSchema", Map.of("targetClass", targetClass.getSimpleName(), "userPrompt", truncate(userPrompt, 200)));
+        try {
+            String schemaHint = generateJsonSchemaHint(targetClass);
+            String fullSystemPrompt = systemPrompt + "\n\n## JSON Schema\n" + schemaHint;
+            LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
+            String response = reasoningProvider.generateJson(fullSystemPrompt, userPrompt, 0.3).trim();
+            endLlmTrace(run, Map.of("response", truncate(response, 500)), null);
+            return response;
+        } catch (Exception e) {
+            log.error("[LLMService] JSON Schema 生成失败", e);
+            endLlmTrace(run, null, e.getMessage());
+            throw new RuntimeException("JSON Schema 生成失败: " + e.getMessage(), e);
+        }
+    }
+
+    private String generateJsonSchemaHint(Class<?> clazz) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("输出JSON格式如下：\n");
+        java.lang.reflect.Field[] fields = clazz.getDeclaredFields();
+        sb.append("{\n");
+        for (int i = 0; i < fields.length; i++) {
+            java.lang.reflect.Field field = fields[i];
+            String type = mapTypeToJsonType(field.getType());
+            sb.append("  \"").append(field.getName()).append("\": ").append(type);
+            if (i < fields.length - 1) sb.append(",");
+            sb.append("\n");
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String mapTypeToJsonType(Class<?> type) {
+        if (type == String.class) return "\"string\"";
+        if (type == boolean.class || type == Boolean.class) return "true/false";
+        if (type == int.class || type == Integer.class || type == long.class || type == Long.class) return "number";
+        if (type == List.class) return "[...]";
+        if (type.isEnum()) return "\"enum\"";
+        return "\"object\"";
+    }
+
     public String getActiveProviderName() {
         return activeProvider.getName();
     }
     
-    /**
-     * 切换活跃的提供者
-     */
     public void switchProvider(String providerName) {
         providerManager.setActiveProvider(providerName);
         this.activeProvider = providerManager.getActiveProvider();
         log.info("[LLMService] 已切换LLM提供者: {}", providerName);
     }
     
-    /**
-     * 获取所有可用提供者的健康状态
-     */
     public java.util.Map<String, Boolean> getProviderHealthStatus() {
         return providerManager.healthCheck();
+    }
+
+    private LangSmithRun startLlmTrace(String name, Map<String, Object> inputs) {
+        if (tracingService == null || !tracingService.isEnabled()) return null;
+        try {
+            return tracingService.traceLlm(name, inputs, TracingContext.currentRunId());
+        } catch (Exception e) {
+            log.debug("[LangSmith] startLlmTrace 失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void endLlmTrace(LangSmithRun run, Map<String, Object> outputs, String error) {
+        if (tracingService == null || run == null) return;
+        try {
+            tracingService.endRun(run, outputs, error);
+        } catch (Exception e) {
+            log.debug("[LangSmith] endLlmTrace 失败: {}", e.getMessage());
+        }
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return null;
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
     }
 }

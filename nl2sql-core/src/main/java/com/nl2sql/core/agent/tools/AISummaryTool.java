@@ -29,7 +29,7 @@ public class AISummaryTool {
      * @param dataJson 查询结果数据JSON字符串
      * @return AI生成的总结文本
      */
-    @Tool("对SQL查询结果进行智能分析和总结，提取关键洞察")
+    @Tool(name = "summarize_result", value = "对SQL查询结果进行智能分析和总结，提取关键洞察")
     public String summarize(String userQuery, String sql, String dataJson) {
         try {
             List<Map<String, Object>> data = parseDataJson(dataJson);

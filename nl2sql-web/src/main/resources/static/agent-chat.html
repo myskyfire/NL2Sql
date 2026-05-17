@@ -246,6 +246,71 @@
             transform: translateX(5px);
         }
         
+        /* 人机协同审批对话框 */
+        .approval-dialog {
+            margin-top: 12px;
+            padding: 16px;
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left: 4px solid #ff9800;
+            border-radius: 8px;
+        }
+        
+        .approval-dialog .approval-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e65100;
+            margin-bottom: 12px;
+        }
+        
+        .approval-dialog .approval-info {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        
+        .approval-dialog .approval-info strong {
+            color: #333;
+        }
+        
+        .approval-dialog .approval-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .approval-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .approval-btn.approve {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .approval-btn.approve:hover {
+            background: #388e3c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(76,175,80,0.3);
+        }
+        
+        .approval-btn.reject {
+            background: #f44336;
+            color: white;
+        }
+        
+        .approval-btn.reject:hover {
+            background: #d32f2f;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(244,67,54,0.3);
+        }
+        
         /* 输入区域 */
         .chat-input-area {
             padding: 20px 24px;
@@ -488,7 +553,7 @@
                     body: JSON.stringify({
                         message: message,
                         sessionId: sessionId,
-                        datasourceId: currentContext?.datasourceId || null  // ✅ 传递当前上下文中的数据源ID
+                        datasourceId: currentContext?.datasourceId ? parseInt(currentContext.datasourceId) : null  // ✅ 传递当前上下文中的数据源ID
                     })
                 });
                 
@@ -563,12 +628,8 @@
                     if (!data.error && data.message) {
                         data.error = data.message;
                     }
-                } else if (data.type === 'summary') {
-                    // ✅ AI总结：直接透传，让 handleQuerySuccess 处理
-                    data.status = 'success';
-                } else if (data.type === 'chart') {
-                    // ✅ 图表生成：直接透传，让 handleQuerySuccess 处理
-                    data.status = 'success';
+                } else if (data.type === 'human_approval_required') {
+                    data.status = 'human_approval_required';
                 }
             }
             
@@ -619,6 +680,10 @@
                     }
                     
                     addMessage(errorHtml, 'agent');
+                    break;
+                    
+                case 'human_approval_required':
+                    handleHumanApprovalRequired(data);
                     break;
                     
                 default:
@@ -675,23 +740,42 @@
             console.log('[handleQuerySuccess] data.data 类型:', Array.isArray(data.data) ? 'Array' : typeof data.data);
             console.log('[handleQuerySuccess] data.data 长度:', Array.isArray(data.data) ? data.data.length : 'N/A');
             
+            // ✅ 关键修复：解析后端返回的JSON字符串字段
+            if (typeof data.data === 'string') {
+                try {
+                    data.data = JSON.parse(data.data);
+                    console.log('[handleQuerySuccess] data字段已解析为数组');
+                } catch (e) {
+                    console.warn('[handleQuerySuccess] data字段解析失败:', e);
+                }
+            }
+            if (typeof data.followUpSuggestions === 'string') {
+                try {
+                    data.followUpSuggestions = JSON.parse(data.followUpSuggestions);
+                } catch (e) {
+                    console.warn('[handleQuerySuccess] followUpSuggestions解析失败:', e);
+                }
+            }
+            if (typeof data.echartsConfig === 'string') {
+                try {
+                    data.echartsConfig = JSON.parse(data.echartsConfig);
+                } catch (e) {
+                    console.warn('[handleQuerySuccess] echartsConfig解析失败:', e);
+                }
+            }
+            
             let html = '';
             
             // 情况1：AI总结（type=summary）
             if (data.type === 'summary') {
-                console.log('[AI总结] ✅ 检测到 type=summary, message:', data.message);
-                console.log('[AI总结] currentContext.data:', currentContext?.data);
-                console.log('[AI总结] followUpState:', followUpState);
+                console.log('[AI总结] 检测到 type=summary:', data.message);
                 const formattedSummary = formatAISummary(data.message);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
                 addMessage(html, 'agent');
                 
                 // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
                 if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    console.log('[AI总结] ✅ 开始渲染剩余按钮');
                     renderRemainingFromCache();
-                } else {
-                    console.warn('[AI总结] ❌ 无法渲染剩余按钮: currentContext=', currentContext);
                 }
                 return;
             }
@@ -808,8 +892,7 @@
             addMessage(html, 'agent');
             
             // ✅ 新增：如果是有数据的查询结果，显示追问提示（DeepSeek风格）
-            // ⚠️ 关键修复：只有在followUpState未初始化时才渲染，避免AI总结/图表后重复渲染
-            if (data.data && Array.isArray(data.data) && data.data.length > 0 && !followUpState.containerId) {
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
                 const followUpHtml = renderDynamicFollowUpHints(data);
                 if (followUpHtml) {
                     addMessage(followUpHtml, 'agent');
@@ -956,6 +1039,76 @@
             addMessage(html, 'agent');
         }
         
+        // 处理人机协同审批
+        function handleHumanApprovalRequired(data) {
+            console.log('[人机协同] 收到审批请求:', data);
+            
+            let html = '<div class="approval-dialog">';
+            html += '<div class="approval-title">⚠️ 高风险 SQL 需要人工审批</div>';
+            
+            if (data.message) {
+                html += `<div class="approval-info">${escapeHtml(data.message)}</div>`;
+            }
+            
+            if (data.riskLevel) {
+                const riskColor = data.riskLevel === 'HIGH' ? '#f44336' : '#ff9800';
+                html += `<div class="approval-info"><strong>风险等级：</strong><span style="color:${riskColor};font-weight:600;">${escapeHtml(data.riskLevel)}</span></div>`;
+            }
+            
+            if (data.riskReason) {
+                html += `<div class="approval-info"><strong>风险原因：</strong>${escapeHtml(data.riskReason)}</div>`;
+            }
+            
+            if (data.sql) {
+                html += `<div class="sql-display" style="margin-top:10px;"><strong>📝 待审批 SQL:</strong><br>${escapeHtml(data.sql)}</div>`;
+            }
+            
+            if (data.optimizedSql && data.optimizedSql !== data.sql) {
+                html += `<div class="sql-display" style="margin-top:10px;background:#e8f5e9;border-left-color:#4caf50;"><strong>🔧 优化建议 SQL:</strong><br>${escapeHtml(data.optimizedSql)}</div>`;
+            }
+            
+            if (data.optimizationSuggestion) {
+                html += `<div class="approval-info" style="margin-top:8px;color:#e65100;"><strong>💡 优化建议：</strong>${escapeHtml(data.optimizationSuggestion)}</div>`;
+            }
+            
+            html += '<div class="approval-actions">';
+            html += `<button class="approval-btn approve" onclick="handleSqlApproval('${escapeHtml(data.approvalId || '')}', true)">✅ 批准执行</button>`;
+            html += `<button class="approval-btn reject" onclick="handleSqlApproval('${escapeHtml(data.approvalId || '')}', false)">❌ 拒绝执行</button>`;
+            html += '</div>';
+            html += '</div>';
+            
+            addMessage(html, 'agent');
+        }
+        
+        // 处理 SQL 审批结果
+        async function handleSqlApproval(approvalId, approved) {
+            console.log('[人机协同] 审批结果:', { approvalId, approved });
+            
+            try {
+                const response = await fetch('/api/agent/approve-sql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        approvalId: approvalId,
+                        approved: approved
+                    })
+                });
+                
+                const result = await response.json();
+                console.log('[人机协同] 审批响应:', result);
+                
+                const data = result.data || result;
+                if (result.success || result.code === 200) {
+                    addMessage(data.message || (approved ? '✅ 已批准，请重新发送查询请求' : '❌ 已拒绝执行'), 'agent');
+                } else {
+                    addMessage(`❌ 审批处理失败: ${data.message || result.message || '未知错误'}`, 'agent');
+                }
+            } catch (error) {
+                console.error('[人机协同] 审批请求失败:', error);
+                addMessage('❌ 审批请求发送失败，请重试', 'agent');
+            }
+        }
+        
         // 处理建议按钮点击
         function handleSuggestionClick(index) {
             console.log('[追问点击] index:', index, '数据:', window.suggestionData && window.suggestionData[index]);
@@ -1039,7 +1192,7 @@
                     body: JSON.stringify({
                         message: answer,
                         sessionId: sessionId,
-                        datasourceId: currentContext ? currentContext.datasourceId : null
+                        datasourceId: currentContext ? parseInt(currentContext.datasourceId) : null
                     })
                 });
                 
@@ -1075,7 +1228,7 @@
                     body: JSON.stringify({
                         message: '执行SQL',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId
+                        datasourceId: parseInt(currentContext.datasourceId)
                     })
                 });
                 
@@ -1120,7 +1273,7 @@
                     body: JSON.stringify({
                         message: '[INTENT:GENERATE_CHART] 请生成图表',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         // ⚠️ 关键修复：传递 context，包含 SQL 信息
                         context: {
                             chartType: null,  // 不指定类型，让后端智能推荐
@@ -1172,7 +1325,7 @@
                     body: JSON.stringify({
                         message: `[INTENT:AI_SUMMARY] 请对以下查询结果进行AI分析总结`,
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         // 传递 context，Controller 会将其拼接到消息中
                         context: {
                             lastQuery: currentContext.lastQuery,
@@ -1338,7 +1491,7 @@
                     body: JSON.stringify({
                         message: '[INTENT:AI_SUMMARY] 请对以上查询结果进行AI分析总结',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         context: {
                             lastQuery: currentContext.lastQuery,
                             generatedSQL: currentContext.sql
@@ -1390,7 +1543,7 @@
                     body: JSON.stringify({
                         message: '[INTENT:GENERATE_CHART] 请生成柱状图',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         context: {
                             chartType: 'bar',
                             generatedSQL: currentContext.sql
@@ -1403,7 +1556,9 @@
                 
                 if (result.code === 200 && result.data) {
                     handleAgentResponse(result.data);
-                    // ✅ 追问渲染已由 handleAgentResponse 内部处理，此处不再重复调用
+                    
+                    // ✅ 图表返回后，重新渲染剩余按钮
+                    renderRemainingFromCache();
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
                 }
@@ -1435,14 +1590,11 @@
         
         // ✅ 根据缓存渲染剩余按钮
         function renderRemainingFromCache() {
-            // ✅ 关键修复：移除 containerId 检查，因为点击后已删除旧容器
-            if (followUpState.availableActions.length === 0) {
-                console.log('[追问状态] 无剩余动作,不渲染');
+            if (!followUpState.containerId || followUpState.availableActions.length === 0) {
                 return;
             }
             
             if (!currentContext || !currentContext.data || !Array.isArray(currentContext.data) || currentContext.data.length === 0) {
-                console.log('[追问状态] 无数据,不渲染');
                 return;
             }
             
@@ -1471,7 +1623,6 @@
             
             html += '</div></div>';
             addMessage(html, 'agent');
-            console.log('[追问状态] 已渲染剩余按钮:', followUpState.availableActions);
         }
         
         // 渲染图表选择按钮
@@ -1483,12 +1634,11 @@
             }
             
             const chartTypes = suggestedChartsStr.split(',').map(t => t.trim());
-            const containerId = 'chart-selection-' + Date.now();
-            let html = `<div class="follow-up-suggestions" id="${containerId}">`;
+            let html = '<div class="follow-up-suggestions">';
             
             chartTypes.forEach(chartType => {
                 const typeConfig = getChartTypeConfig(chartType);
-                html += `<button class="suggestion-btn" onclick="generateChartWithType('${typeConfig.type}', '${containerId}')">${typeConfig.icon} ${typeConfig.name}</button>`;
+                html += `<button class="suggestion-btn" onclick="generateChartWithType('${typeConfig.type}')">${typeConfig.icon} ${typeConfig.name}</button>`;
             });
             
             html += '</div>';
@@ -1497,7 +1647,7 @@
         }
         
         // 生成指定类型的图表
-        async function generateChartWithType(chartType, containerId) {
+        async function generateChartWithType(chartType) {
             console.log('[生成图表] currentContext:', currentContext);
             console.log('[生成图表] currentContext keys:', Object.keys(currentContext || {}));
             console.log('[生成图表] datasourceId:', currentContext?.datasourceId);
@@ -1514,15 +1664,6 @@
                 addMessage('❌ 缺少 SQL 信息，请重新执行查询', 'agent');
                 removeTypingIndicator();
                 return;
-            }
-            
-            // ⚠️ 关键修复：点击后立即删除选择界面
-            if (containerId) {
-                const container = document.getElementById(containerId);
-                if (container) {
-                    container.remove();
-                    console.log('[图表选择] 已删除选择界面:', containerId);
-                }
             }
             
             const typeNames = {
@@ -1546,7 +1687,7 @@
                     body: JSON.stringify({
                         message: `[INTENT:GENERATE_CHART] 请生成${typeName}`,
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         // 传递 context，Controller 会将其拼接到消息中
                         context: {
                             chartType: chartType,
@@ -1707,7 +1848,7 @@
                     body: JSON.stringify({
                         message: message,
                         sessionId: sessionId,
-                        datasourceId: datasourceId
+                        datasourceId: parseInt(datasourceId)
                     })
                 });
                 

@@ -103,24 +103,6 @@ CREATE TABLE IF NOT EXISTS metadata_sync_log (
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='元数据采集日志表';
 
--- 6. 表查询统计表
-CREATE TABLE IF NOT EXISTS table_query_stats (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
-    datasource_id BIGINT NOT NULL COMMENT '数据源ID',
-    table_name VARCHAR(100) NOT NULL COMMENT '表名',
-    query_count INT DEFAULT 0 COMMENT '查询次数',
-    avg_rating DOUBLE DEFAULT 0 COMMENT '平均评分(1-5)',
-    low_rating_count INT DEFAULT 0 COMMENT '低评分次数(评分<=2)',
-    last_query_at DATETIME COMMENT '最后查询时间',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    UNIQUE KEY uk_datasource_table (datasource_id, table_name),
-    INDEX idx_datasource_id (datasource_id),
-    INDEX idx_query_count (query_count),
-    INDEX idx_avg_rating (avg_rating),
-    INDEX idx_last_query (last_query_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='表查询统计表';
-
--- 7. 插入默认数据源配置示例（可选）
+-- 6. 插入默认数据源配置示例（可选）
 -- INSERT INTO datasource_config (name, db_type, host, port, database_name, username, password_encrypted, description)
 -- VALUES ('生产库', 'MYSQL', 'localhost', 3306, 'production_db', 'root', 'encrypted_password_here', '生产环境数据库');

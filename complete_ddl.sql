@@ -93,24 +93,6 @@ CREATE TABLE IF NOT EXISTS rag_knowledge_base (
     FULLTEXT INDEX idx_question (question)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='RAG鐭ヨ瘑搴撹〃';
 
--- 1.6 琛ㄦ煡璇㈢粺璁¤〃
-CREATE TABLE IF NOT EXISTS table_query_stats (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '涓婚敭ID',
-    datasource_id BIGINT NOT NULL COMMENT '鏁版嵁婧怚D',
-    table_name VARCHAR(100) NOT NULL COMMENT '琛ㄥ悕',
-    query_count INT DEFAULT 0 COMMENT '鏌ヨ鏁伴噺',
-    avg_rating DOUBLE DEFAULT 0 COMMENT '骞冲潎璇勫垎(1-5)',
-    low_rating_count INT DEFAULT 0 COMMENT '浣庤瘎鍒嗘鏁(璇勫垎<=2)',
-    last_query_at DATETIME COMMENT '鏈€鍚庢煡璇㈡椂闂?,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '鏇存柊鏃堕棿',
-    UNIQUE KEY uk_datasource_table (datasource_id, table_name),
-    INDEX idx_datasource_id (datasource_id),
-    INDEX idx_query_count (query_count),
-    INDEX idx_avg_rating (avg_rating),
-    INDEX idx_last_query (last_query_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='琛ㄦ煡璇㈢粺璁¤〃';
-
 
 -- ============================================
 -- 2. 璁よ瘉鏁版嵁搴?(nl2sql_auth_db)

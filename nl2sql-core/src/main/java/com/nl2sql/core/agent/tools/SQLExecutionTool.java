@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.validation.SQLValidationService;
 import com.nl2sql.core.executor.SQLExecutor;
 import com.nl2sql.core.rag.RagAutoLearner;
@@ -30,6 +31,8 @@ public class SQLExecutionTool {
     @Autowired(required = false)
     private RagAutoLearner ragAutoLearner;  // RAG自动学习器
     
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    
     /**
      * 执行SQL查询（带智能重试）
      * 
@@ -37,11 +40,17 @@ public class SQLExecutionTool {
      * @param datasourceId 数据源ID
      * @param userId 用户ID
      * @param username 用户名
-     * @return 执行结果（包含数据和元信息）
+     * @return JSON字符串：{"success":true,"data":[],"rowCount":10,...}
      */
     @Tool("执行SQL查询并返回结果数据")
-    public ExecutionResult executeSQL(String sql, Long datasourceId, Long userId, String username) {
-        return executeSQLWithRetry(sql, datasourceId, userId, username, 3);
+    public String executeSQL(String sql, Long datasourceId, Long userId, String username) {
+        try {
+            ExecutionResult result = executeSQLWithRetry(sql, datasourceId, userId, username, 3);
+            return objectMapper.writeValueAsString(result);
+        } catch (Exception e) {
+            log.error("[SQLExecutionTool] 序列化失败", e);
+            return "{\"success\":false,\"error\":\"序列化失败: " + e.getMessage() + "\"}";
+        }
     }
     
     /**

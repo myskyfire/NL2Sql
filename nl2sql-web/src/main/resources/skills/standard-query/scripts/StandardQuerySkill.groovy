@@ -164,8 +164,8 @@ class StandardQuerySkill {
                 }
                 
                 if ("HIGH".equals(riskResult.getRiskLevel())) {
-                    log.warn("SQL风险评估为高风险，阻断执行: {}", riskResult.getReason())
-                    publishEvent(context, sessionId, "risk_blocked", "⚠️ 高风险SQL已阻断: " + riskResult.getReason())
+                    log.warn("SQL风险评估为高风险，进入人机协同确认: {}", riskResult.getReason())
+                    publishEvent(context, sessionId, "risk_blocked", "⚠️ 高风险SQL需要人工确认")
                     
                     // ✅ 关键修复：如果经过 LLM 优化，返回优化后的 SQL；否则返回原始 SQL
                     String sqlToReturn = riskResult.getOptimizedSql() != null ? riskResult.getOptimizedSql() : sql
@@ -173,7 +173,8 @@ class StandardQuerySkill {
                     // ✅ 构建优化建议/风险原因
                     String optimizationSuggestion = buildOptimizationSuggestionForFrontend(riskResult)
                     
-                    return createRiskBlockedResult(riskResult.getReason(), sqlToReturn, optimizationSuggestion)
+                    // ✅ 改为等待用户确认（而非直接阻断）
+                    return createHumanApprovalRequiredResult(riskResult.getReason(), sqlToReturn, optimizationSuggestion, sessionId)
                 } else if ("MEDIUM".equals(riskResult.getRiskLevel())) {
                     log.info("SQL风险评估为中风险，继续执行但提示用户: {}", riskResult.getReason())
                     publishEvent(context, sessionId, "risk_medium", "⚠️ 中风险SQL，继续执行")
@@ -1254,6 +1255,36 @@ ${sql}
         if (optimizationSuggestion != null && !optimizationSuggestion.trim().isEmpty()) {
             result.optimizationSuggestion = optimizationSuggestion
         }
+        
+        return result
+    }
+    
+    /**
+     * ✅ 人机协同：高风险SQL需要用户确认
+     * 
+     * @param reason 风险原因
+     * @param sql 待执行的SQL（可能是LLM优化后的）
+     * @param optimizationSuggestion 优化建议
+     * @param sessionId 会话ID（用于后续确认请求关联）
+     * @return 等待用户确认的响应
+     */
+    private Map<String, Object> createHumanApprovalRequiredResult(String reason, String sql, String optimizationSuggestion, String sessionId) {
+        def result = [
+            success: false,
+            type: "human_approval_required",  // ✅ 新类型：需要人工确认
+            approvalId: sessionId + "_" + System.currentTimeMillis(),  // ✅ 生成唯一确认ID
+            error: "⚠️ SQL风险评估为高风险，需要人工确认",
+            riskReason: reason,
+            sql: sql,
+            message: "该SQL存在高风险，请审核后再决定是否执行"
+        ]
+        
+        // ✅ 如果有优化建议，添加到返回结果中
+        if (optimizationSuggestion != null && !optimizationSuggestion.trim().isEmpty()) {
+            result.optimizationSuggestion = optimizationSuggestion
+        }
+        
+        log.info("✅ 人机协同：生成确认请求 approvalId={}", result.approvalId)
         
         return result
     }

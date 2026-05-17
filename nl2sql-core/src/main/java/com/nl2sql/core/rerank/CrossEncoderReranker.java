@@ -105,16 +105,19 @@ public class CrossEncoderReranker implements Reranker {
     }
     
     private List<RerankResult> batchRerank(List<QueryDocPair> pairs) throws Exception {
-        String url = baseUrl + "/api/rerank";
+        // ✅ TEI (Text Embeddings Inference) API 格式
+        String url = baseUrl + "/rerank";
         
-        List<List<String>> documents = pairs.stream()
-            .map(p -> List.of(p.query, p.document))
+        // 提取所有文档文本
+        List<String> texts = pairs.stream()
+            .map(p -> p.document)
             .collect(Collectors.toList());
         
+        // TEI 请求格式：{"query": "...", "texts": ["doc1", "doc2"]}
         String requestBody = objectMapper.writeValueAsString(
             java.util.Map.of(
-                "model", rerankerModel,
-                "documents", documents
+                "query", pairs.get(0).query,
+                "texts", texts
             )
         );
         
@@ -130,21 +133,22 @@ public class CrossEncoderReranker implements Reranker {
         );
         
         if (response.statusCode() != 200) {
-            throw new RuntimeException("Ollama Rerank API error: " + response.body());
+            throw new RuntimeException("TEI Rerank API error: " + response.body());
         }
         
-        JsonNode jsonNode = objectMapper.readTree(response.body());
-        JsonNode resultsNode = jsonNode.get("results");
+        // TEI 响应格式：[{"index": 0, "score": 0.9}, ...]
+        JsonNode resultsNode = objectMapper.readTree(response.body());
         
-        if (resultsNode == null || !resultsNode.isArray()) {
-            throw new RuntimeException("Invalid rerank response from Ollama");
+        if (!resultsNode.isArray()) {
+            throw new RuntimeException("Invalid rerank response from TEI");
         }
         
         List<RerankResult> results = new ArrayList<>();
         for (int i = 0; i < resultsNode.size(); i++) {
             JsonNode resultNode = resultsNode.get(i);
+            int index = resultNode.get("index").asInt();
             double score = resultNode.get("score").asDouble();
-            results.add(new RerankResult(pairs.get(i).originalIndex, score));
+            results.add(new RerankResult(index, score));
         }
         
         return results;

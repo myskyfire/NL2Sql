@@ -18,9 +18,6 @@ import java.util.*;
 public class ConversationHistoryService {
     
     @Autowired(required = false)
-    private JdbcTemplate jdbcTemplate;
-    
-    @Autowired(required = false)
     private com.nl2sql.conversation.mapper.ConversationMapper conversationMapper;
     
     @Autowired(required = false)
@@ -36,11 +33,6 @@ public class ConversationHistoryService {
      * @return 历史消息列表
      */
     public List<Map<String, Object>> getHistory(String sessionId) {
-        if (jdbcTemplate == null) {
-            log.warn("[ConversationHistory] JdbcTemplate未注入，返回空历史");
-            return Collections.emptyList();
-        }
-        
         try {
             // 查询最近N轮对话的消息
             List<Map<String, Object>> messages = historyMapper.selectMessagesBySessionId(
@@ -70,10 +62,6 @@ public class ConversationHistoryService {
      * @param messages 消息列表
      */
     public void saveHistory(String sessionId, Long userId, List<Map<String, Object>> messages) {
-        if (jdbcTemplate == null) {
-            log.warn("[ConversationHistory] JdbcTemplate未注入，跳过保存");
-            return;
-        }
         
         if (messages == null || messages.isEmpty()) {
             return;
@@ -155,9 +143,6 @@ public class ConversationHistoryService {
      * @param sessionId 会话ID
      */
     public void clearHistory(String sessionId) {
-        if (jdbcTemplate == null) {
-            return;
-        }
         
         try {
             conversationMapper.clearHistory(sessionId);

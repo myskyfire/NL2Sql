@@ -158,16 +158,17 @@ ollama:
 
 # Reranker Configuration - 重排序服务（支持多 Provider 切换）
 reranker:
-  provider: none      # jina | cross-encoder | none（切换重排序模型）
-  top-k: 5            # 返回 Top-K 结果
+  provider: cross-encoder  # jina | cross-encoder | none（切换重排序模型）
+  top-k: 5            # 返回 Top-K 结果（电商场景推荐 5，平衡准确性与 Token 消耗）
   threshold: 0.5      # 最低相关性阈值
-  # Jina Cloud API 配置（外网环境推荐）
+  # Jina Cloud API 配置（已禁用，使用本地 Docker bge-reranker）
   jina:
-    api-key: ${JINA_API_KEY:jina_8dbdaf5c1b7d40dca36fae57943eec15EjCz5qiHqCfdJl2x7q9vfLZm84hJ}
+    api-key: ""  # ✅ 留空以禁用 Jina API
     model: jina-reranker-v2-base-multilingual
-  # Cross-Encoder 本地模型配置（内网环境推荐，需 Ollama 运行 bge-reranker）
+  # Cross-Encoder 本地模型配置（Docker 部署的 BGE-Reranker 服务）
   cross-encoder:
-    model: bge-reranker-v2-m3
+    base-url: http://localhost:8081/v1  # ✅ Docker 容器映射端口
+    model: BAAI/bge-reranker-v2-m3
 
 # MyBatis Plus Configuration
 mybatis-plus:
@@ -231,6 +232,14 @@ skills:
 admin:
   api:
     key: ${ADMIN_API_KEY:}  # 生产环境请设置环境变量 ADMIN_API_KEY
+
+# LangSmith Tracing Configuration
+langsmith:
+  enabled: false
+  api-key: ${LANGSMITH_API_KEY:}
+  base-url: https://api.smith.langchain.com
+  project: nl2sql
+  timeout: 10
 
 # Spring Boot Actuator 配置
 management:

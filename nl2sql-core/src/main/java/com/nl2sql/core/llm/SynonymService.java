@@ -108,4 +108,10 @@ public class SynonymService {
     public Map<String, List<String>> getAllConcepts() {
         return new HashMap<>(synonymMap);
     }
+
+    public void reload() {
+        synonymMap.clear();
+        loadSynonymsFromDatabase();
+        log.info("[SynonymService] 同义词缓存已刷新: {}个概念", synonymMap.size());
+    }
 }

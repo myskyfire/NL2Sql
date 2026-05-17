@@ -300,7 +300,7 @@ public class ReActAgent {
                                 
                                 if (clarificationResult.containsKey("clarification")) {
                                     Map<String, Object> clarification = (Map<String, Object>) clarificationResult.get("clarification");
-                                    autoExecuted = (Boolean) clarification.get("autoExecuted");
+                                    autoExecuted = com.nl2sql.common.util.BooleanUtils.toBoolean(clarification.get("autoExecuted"));
                                     recommendedDsId = clarification.get("recommendedDatasourceId") != null ?
                                         ((Number) clarification.get("recommendedDatasourceId")).longValue() : null;
                                 }

@@ -57,8 +57,8 @@ public class MetadataEnhancementScheduler {
             for (Map<String, Object> stats : candidates) {
                 Long datasourceId = ((Number) stats.get("datasource_id")).longValue();
                 String tableName = (String) stats.get("table_name");
-                Integer queryCount = (Integer) stats.get("query_count");
-                Integer lowRatingCount = (Integer) stats.get("low_rating_count");
+                Integer queryCount = parseInteger(stats.get("query_count"));
+                Integer lowRatingCount = parseInteger(stats.get("low_rating_count"));
                 
                 log.info("[定时任务] 增强表: {}.{}, 查询次数={}, 低分次数={}", 
                         datasourceId, tableName, queryCount, lowRatingCount);
@@ -143,5 +143,21 @@ public class MetadataEnhancementScheduler {
                 log.error("[定时任务] 清理统计数据失败", e);
             }
         }
+    }
+    
+    /**
+     * 安全解析 Integer（兼容 String/Number/null）
+     */
+    private Integer parseInteger(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number) return ((Number) value).intValue();
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+        return 0;
     }
 }

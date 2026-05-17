@@ -3,9 +3,11 @@ package com.nl2sql.web.service;
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.context.UserContext;
 import com.nl2sql.common.result.Result;
+import com.nl2sql.common.util.BooleanUtils;
 import com.nl2sql.common.util.LogContextUtil;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.SupervisorAgent;
 import com.nl2sql.core.rag.SQLFeedbackService;
 import com.nl2sql.core.service.SessionContextManager;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +29,10 @@ import java.util.*;
 public class AgentChatService {
     
     @Autowired
-    private ReActAgent reActAgent;
+    private SupervisorAgent supervisorAgent;
+
+    @Autowired(required = false)
+    private ReActAgent reActAgent; // ⚠️ 保留供降级使用
     
     @Autowired(required = false)
     private SQLFeedbackService feedbackService;
@@ -130,8 +135,8 @@ public class AgentChatService {
                 // 10. ✅ 异步记录监控数据（不阻塞主流程）
                 publishMonitoringEvent(request, response, userInfo);
                 
-                // 11. 保存对话历史
-                saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, agentResponse);
+                // 11. 保存对话历史（使用已解析的Map，避免重复解析）
+                saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, response);
                 
                 return Result.success(response);
                 
@@ -289,16 +294,15 @@ public class AgentChatService {
             ? datasourceSessionService.resolveDatasourceId(sessionId, request.getDatasourceId())
             : request.getDatasourceId();
         
-        log.info("[Agent对话] 调用 ReActAgent.execute()... [datasourceId={}]", resolvedDatasourceId);
-        
+        log.info("[Agent对话] 调用 SupervisorAgent.execute()... [datasourceId={}]", resolvedDatasourceId);
+
         // ✅ 加载对话历史
-        List<Map<String, Object>> history = historyService != null 
+        List<Map<String, Object>> history = historyService != null
             ? historyService.getHistory(sessionId)
             : Collections.emptyList();
-        
+
         try {
-            // ✅ 优化：不再传递 userId/username，ReActAgent从UserContext获取
-            String result = reActAgent.execute(
+            String result = supervisorAgent.execute(
                 fullMessage,
                 resolvedDatasourceId,
                 history  // ✅ 传入历史消息
@@ -442,12 +446,10 @@ public class AgentChatService {
             eventData.put("industryTermsMatched", monitoringData.getIndustryTermsMatched());
             
             // SQL执行相关
-            Boolean success = (Boolean) response.get("success");
+            Boolean success = com.nl2sql.common.util.BooleanUtils.toBoolean(response.get("success"));
             String sql = (String) response.get("sql");
-            Integer rowCount = response.get("rowCount") != null ? 
-                (Integer) response.get("rowCount") : 0;
-            Long executionTime = response.get("executionTime") != null ? 
-                (Long) response.get("executionTime") : 0L;
+            Integer rowCount = parseInteger(response.get("rowCount"));
+            Long executionTime = parseLong(response.get("executionTime"));
             
             eventData.put("generatedSql", sql != null ? sql : "");
             eventData.put("executedSql", sql != null ? sql : "");
@@ -480,7 +482,7 @@ public class AgentChatService {
     /**
      * 保存对话历史（优化版：只保存摘要，避免上下文爆炸）
      */
-    private void saveConversationHistory(String sessionId, Number userId, String userMessage, String agentResponse) {
+    private void saveConversationHistory(String sessionId, Number userId, String userMessage, Map<String, Object> response) {
         if (historyService == null) {
             return;
         }
@@ -494,8 +496,8 @@ public class AgentChatService {
             userMsg.put("content", userMessage);
             messages.add(userMsg);
             
-            // ✅ 关键优化：解析 agentResponse，只保存摘要信息
-            String assistantContent = extractSummaryFromResponse(agentResponse);
+            // ✅ 关键优化：解析 response，只保存摘要信息
+            String assistantContent = extractSummaryFromResponse(response);
             
             Map<String, Object> assistantMsg = new HashMap<>();
             assistantMsg.put("role", "assistant");
@@ -512,28 +514,20 @@ public class AgentChatService {
     /**
      * 从 Agent 响应中提取摘要信息（避免保存完整结果数据）
      * 
-     * @param agentResponse 完整的 Agent 响应 JSON
+     * @param response 已解析的 Agent 响应 Map
      * @return 摘要文本
      */
-    private String extractSummaryFromResponse(String agentResponse) {
-        // ✅ 先检查是否为 JSON 格式
-        if (agentResponse == null || !agentResponse.trim().startsWith("{")) {
-            log.debug("[对话历史] 响应非 JSON 格式，直接截断保存");
-            if (agentResponse != null && agentResponse.length() > 1000) {
-                return agentResponse.substring(0, 1000) + "... [已截断]";
-            }
-            return agentResponse;
+    private String extractSummaryFromResponse(Map<String, Object> response) {
+        if (response == null) {
+            return "无响应";
         }
         
         try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<String, Object> response = mapper.readValue(agentResponse, Map.class);
-            
-            Boolean success = (Boolean) response.get("success");
-            if (success != null && success) {
+            Boolean success = com.nl2sql.common.util.BooleanUtils.toBoolean(response.get("success"));
+            if (BooleanUtils.isTrue(success)) {
                 // 成功查询：保存 SQL + 结果摘要
                 String sql = (String) response.get("sql");
-                Integer rowCount = (Integer) response.get("rowCount");
+                Integer rowCount = parseInteger(response.get("rowCount"));
                 
                 StringBuilder summary = new StringBuilder();
                 summary.append("✅ 查询成功\n");
@@ -545,8 +539,14 @@ public class AgentChatService {
                 }
                 
                 // ✅ 可选：添加前3行数据样本（限制字段数）
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> data = (List<Map<String, Object>>) response.get("data");
+                Object dataObj = response.get("data");
+                List<Map<String, Object>> data = null;
+                if (dataObj instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> tempList = (List<Map<String, Object>>) dataObj;
+                    data = tempList;
+                }
+                
                 if (data != null && !data.isEmpty()) {
                     summary.append("\n\n数据样本（前3行）:\n");
                     int sampleSize = Math.min(3, data.size());
@@ -571,13 +571,81 @@ public class AgentChatService {
             }
             
         } catch (Exception e) {
-            log.warn("[对话历史] 解析响应失败，保存原始响应", e);
-            // 降级：如果解析失败，截断原始响应
-            if (agentResponse != null && agentResponse.length() > 1000) {
-                return agentResponse.substring(0, 1000) + "... [已截断]";
-            }
-            return agentResponse;
+            log.warn("[对话历史] 提取摘要失败", e);
+            return "响应处理异常";
         }
+    }
+    
+    /**
+     * ✅ 人机协同：处理SQL确认请求
+     * 
+     * @param approvalId 确认ID
+     * @param approved 是否批准
+     * @param userInfo 用户信息
+     * @return 执行结果
+     */
+    public Result<Map<String, Object>> handleSqlApproval(
+        String approvalId, 
+        Boolean approved,
+        AuthService.UserInfo userInfo
+    ) {
+        log.info("[人机协同] 处理SQL确认: approvalId={}, approved={}, userId={}", 
+            approvalId, approved, userInfo.getUserId());
+        
+        if (!approved) {
+            // 用户取消执行
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "❌ 已取消执行高风险SQL");
+            response.put("approvalId", approvalId);
+            return Result.success(response);
+        }
+        
+        // ✅ 用户批准，需要重新执行原始SQL
+        // TODO: 从缓存中获取原始请求参数，重新调用Agent执行
+        // 当前简化实现：返回提示信息，前端需要重新发送完整请求
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "✅ 已批准执行，请重新发送查询请求");
+        response.put("approvalId", approvalId);
+        response.put("note", "由于会话状态已过期，请重新发送原始问题以执行SQL");
+        
+        log.info("[人机协同] SQL已批准，但需重新发送请求: approvalId={}", approvalId);
+        
+        return Result.success(response);
+    }
+    
+    /**
+     * 安全解析 Integer（兼容 String/Number/null）
+     */
+    private Integer parseInteger(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number) return ((Number) value).intValue();
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+    
+    /**
+     * 安全解析 Long（兼容 String/Number/null）
+     */
+    private Long parseLong(Object value) {
+        if (value == null) return 0L;
+        if (value instanceof Number) return ((Number) value).longValue();
+        if (value instanceof String) {
+            try {
+                return Long.parseLong((String) value);
+            } catch (NumberFormatException e) {
+                return 0L;
+            }
+        }
+        return 0L;
     }
     
     /**

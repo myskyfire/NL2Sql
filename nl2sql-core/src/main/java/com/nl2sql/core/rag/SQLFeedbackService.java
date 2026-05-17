@@ -789,7 +789,7 @@ public class SQLFeedbackService {
             String question = (String) lastQuery.get("question");
             String generatedSql = (String) lastQuery.get("generated_sql");
             String executedSql = (String) lastQuery.get("executed_sql");
-            Boolean executionSuccess = (Boolean) lastQuery.get("execution_success");
+            Boolean executionSuccess = com.nl2sql.common.util.BooleanUtils.toBoolean(lastQuery.get("execution_success"));
             
             // ✅ 关键修复：先检查是否已存在相同问题的评分记录
             String checkExistingSql = "SELECT id FROM rag_feedback WHERE session_id = ? AND question = ? LIMIT 1";

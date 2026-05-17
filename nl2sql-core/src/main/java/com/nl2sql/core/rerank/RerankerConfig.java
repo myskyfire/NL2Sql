@@ -36,7 +36,10 @@ public class RerankerConfig {
     @Value("${ollama.base-url:http://localhost:11434}")
     private String ollamaBaseUrl;
     
-    @Value("${reranker.cross-encoder.model:bge-reranker-v2-m3}")
+    @Value("${reranker.cross-encoder.base-url:http://localhost:8081/v1}")
+    private String crossEncoderBaseUrl;
+    
+    @Value("${reranker.cross-encoder.model:BAAI/bge-reranker-v2-m3}")
     private String crossEncoderModel;
     
     @Bean
@@ -63,8 +66,8 @@ public class RerankerConfig {
     
     private Reranker createCrossEncoderReranker() {
         log.info("[RerankerConfig] 创建 Cross-Encoder Reranker, model={}, url={}", 
-            crossEncoderModel, ollamaBaseUrl);
-        return new CrossEncoderReranker(ollamaBaseUrl, crossEncoderModel, topK, threshold);
+            crossEncoderModel, crossEncoderBaseUrl);
+        return new CrossEncoderReranker(crossEncoderBaseUrl, crossEncoderModel, topK, threshold);
     }
     
     /**

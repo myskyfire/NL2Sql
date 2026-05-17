@@ -323,8 +323,8 @@ public class SQLRiskAnalyzer {
                                             List<String> risks) {
         List<String> suggestions = new ArrayList<>();
         
+        // ✅ LOW风险时不添加任何建议
         if (risks.isEmpty()) {
-            suggestions.add("✅ SQL执行计划良好，无明显风险");
             return suggestions;
         }
         

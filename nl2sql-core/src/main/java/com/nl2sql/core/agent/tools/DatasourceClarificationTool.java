@@ -200,8 +200,21 @@ public class DatasourceClarificationTool {
             Map<String, Object> result = parseLlmResponse(response);
             
             if (result != null && result.containsKey("matched_datasource_id")) {
-                Integer matchedId = result.get("matched_datasource_id") instanceof Number ?
-                    ((Number) result.get("matched_datasource_id")).intValue() : null;
+                Object matchedIdObj = result.get("matched_datasource_id");
+                log.info("[DatasourceClarification] matched_datasource_id 原始值: {}, 类型: {}", matchedIdObj, matchedIdObj != null ? matchedIdObj.getClass().getName() : "null");
+                
+                Integer matchedId = null;
+                if (matchedIdObj instanceof Number) {
+                    matchedId = ((Number) matchedIdObj).intValue();
+                } else if (matchedIdObj instanceof String) {
+                    try {
+                        matchedId = Integer.parseInt((String) matchedIdObj);
+                    } catch (NumberFormatException e) {
+                        log.warn("[DatasourceClarification] matched_datasource_id 字符串解析失败: {}", matchedIdObj);
+                    }
+                }
+                
+                log.info("[DatasourceClarification] 转换后的 matchedId: {}", matchedId);
                 
                 // ✅ 修复：confidence可能是Double或String，统一处理
                 double confidence = 0.0;
@@ -218,8 +231,13 @@ public class DatasourceClarificationTool {
                 
                 // 置信度 > 0.6 认为匹配成功（平衡准确率与召回率）
                 if (matchedId != null && confidence > 0.6) {
+                    log.info("[DatasourceClarification] 开始遍历数据源，查找 matchedId={}", matchedId);
                     for (Map<String, Object> ds : datasources) {
-                        if (((Number) ds.get("id")).intValue() == matchedId) {
+                        Object dsIdObj = ds.get("id");
+                        int dsId = ((Number) dsIdObj).intValue();
+                        log.info("[DatasourceClarification] 检查数据源: id={}, 类型={}, 是否匹配={}", 
+                            dsId, dsIdObj.getClass().getName(), dsId == matchedId);
+                        if (dsId == matchedId) {
                             log.info("[DatasourceClarification] 匹配成功: {}, confidence={}", ds.get("name"), confidence);
                             // ✅ 返回完整结果，包含置信度和理由
                             Map<String, Object> matchResult = new HashMap<>();

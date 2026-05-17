@@ -84,9 +84,11 @@
         ORDER BY ordinal_position
     </select>
     
-    <!-- 查询表的字段列表（完整版，含is_nullable/column_key） -->
+    <!-- 查询表的字段列表（完整版，含is_nullable/is_primary_key） -->
     <select id="selectColumnListFull" resultType="java.util.HashMap">
-        SELECT column_name, data_type, column_comment, is_nullable, column_key, ordinal_position
+        SELECT column_name, data_type, column_comment, is_nullable, 
+               CASE WHEN is_primary_key = 1 THEN 'PRI' ELSE '' END AS column_key,
+               ordinal_position
         FROM column_metadata 
         WHERE datasource_id = #{datasourceId} AND table_name = #{tableName}
         ORDER BY ordinal_position

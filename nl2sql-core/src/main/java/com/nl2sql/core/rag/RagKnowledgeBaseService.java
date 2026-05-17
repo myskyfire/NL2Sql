@@ -7,6 +7,7 @@ import com.nl2sql.core.rag.mapper.RagKnowledgeBaseServiceMapper;
 import com.nl2sql.core.rag.provider.VectorSearchResult;
 import com.nl2sql.core.rag.provider.VectorStoreManager;
 import com.nl2sql.core.rag.provider.VectorStoreProvider;
+import com.nl2sql.core.rerank.Reranker;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,8 +33,12 @@ public class RagKnowledgeBaseService {
     @Autowired
     private RagKnowledgeBaseServiceMapper ragMapper;
     
+    @Autowired(required = false)
+    private Reranker reranker;  // Reranker 重排序服务
+    
     private static final double SIMILARITY_THRESHOLD = 0.9;
-    private static final int MAX_EXAMPLES = 3;
+    private static final int MAX_EXAMPLES = 5;  // ✅ 电商场景推荐 5 个示例
+    private static final int RERANK_CANDIDATE_COUNT = 20;  // ✅ Rerank 候选数量（top-k * 4）
     
     public RagKnowledgeBaseService(JdbcTemplate jdbcTemplate,
                                    VectorStoreManager vectorStoreManager) {
@@ -77,7 +82,7 @@ public class RagKnowledgeBaseService {
     }
     
     /**
-     * 检索相似的问答对（多提供者架构，自动降级）
+     * 检索相似的问答对（多提供者架构，自动降级 + Reranker 精排）
      */
     public List<KnowledgeItem> searchSimilarQuestions(String question, int maxResults) {
         // 使用活跃的向量数据库提供者
@@ -85,14 +90,65 @@ public class RagKnowledgeBaseService {
         
         if (activeProvider != null) {
             try {
-                List<VectorSearchResult> providerResults = 
-                    activeProvider.searchSimilar(question, maxResults, SIMILARITY_THRESHOLD);
+                // ✅ Step 1: 向量粗排（召回更多候选）
+                int candidateCount = (reranker != null && reranker.isAvailable()) 
+                    ? RERANK_CANDIDATE_COUNT 
+                    : maxResults;
                 
-                if (!providerResults.isEmpty()) {
-                    log.info("RAG检索成功({}): question={}, found={} items", 
-                        activeProvider.getName(), question, providerResults.size());
-                    return convertFromProviderResults(providerResults);
+                List<VectorSearchResult> candidates = 
+                    activeProvider.searchSimilar(question, candidateCount, 0.7);  // 降低阈值以召回更多
+                
+                if (candidates.isEmpty()) {
+                    log.debug("{}向量搜索无结果，降级到MySQL", activeProvider.getName());
+                    return searchByMySQL(question, maxResults);
                 }
+                
+                // ✅ Step 2: Reranker 精排（如果启用）
+                if (reranker != null && reranker.isAvailable()) {
+                    log.info("[RAG-Rerank] 启动重排序: provider={}, candidates={}", 
+                        reranker.getName(), candidates.size());
+                    
+                    List<String> candidateDocs = candidates.stream()
+                        .map(VectorSearchResult::getQuestion)
+                        .collect(java.util.stream.Collectors.toList());
+                    
+                    List<Reranker.RerankedDocument> reranked = reranker.rerank(question, candidateDocs);
+                    
+                    if (!reranked.isEmpty()) {
+                        log.info("[RAG-Rerank] 重排序完成: top_score={}", 
+                            String.format("%.3f", reranked.get(0).getRelevanceScore()));
+                        
+                        // 取 Top-K
+                        int topK = Math.min(maxResults, reranked.size());
+                        List<VectorSearchResult> finalResults = new ArrayList<>();
+                        
+                        for (int i = 0; i < topK; i++) {
+                            Reranker.RerankedDocument doc = reranked.get(i);
+                            // 找到对应的原始结果
+                            VectorSearchResult original = candidates.stream()
+                                .filter(c -> c.getQuestion().equals(doc.getContent()))
+                                .findFirst()
+                                .orElse(null);
+                            
+                            if (original != null) {
+                                // 更新相似度分数为 Reranker 分数
+                                original.setScore(doc.getRelevanceScore());
+                                finalResults.add(original);
+                            }
+                        }
+                        
+                        log.info("[RAG-Rerank] 最终返回 {} 条结果", finalResults.size());
+                        return convertFromProviderResults(finalResults);
+                    } else {
+                        log.warn("[RAG-Rerank] 重排序失败，使用原始向量排序");
+                    }
+                }
+                
+                // 未启用 Reranker 或重排序失败，直接返回向量搜索结果
+                log.info("RAG检索成功({}): question={}, found={} items", 
+                    activeProvider.getName(), question, candidates.size());
+                return convertFromProviderResults(candidates.subList(0, Math.min(maxResults, candidates.size())));
+                
             } catch (Exception e) {
                 log.warn("{}向量搜索失败，降级到MySQL全文检索: {}", 
                     activeProvider.getName(), e.getMessage());

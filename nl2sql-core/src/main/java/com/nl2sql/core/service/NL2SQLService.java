@@ -394,7 +394,6 @@ public class NL2SQLService {
                     "6. 按天/月统计用DATE_FORMAT(created_at, '%%Y-%%m-%%d')\n" +
                     "7. ORDER BY别名必须与SELECT一致\n" +
                     "8. 相同语义查询保持SQL结构一致\n" +
-                    "9. GROUP BY 后面不能加中文\n"+
                     "SQL：",
                     expandedTables.size(), updatedAvailableTablesList,
                     updatedSchemaInfo, updatedRelationshipInfo.isEmpty() ? "" : updatedRelationshipInfo + "\n\n", ragEnhancement, negativeExamples, expandedQuery
@@ -473,6 +472,7 @@ public class NL2SQLService {
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
             RagLearningContext.setCurrentQuestion(expandedQuery);
             RagLearningContext.setCurrentSql(sql);
+            RagLearningContext.setCurrentDatasourceId(datasourceId);
             
             // ✅ 关键修复：保存当前 SQL 和查询问题到 ThreadLocal（用于 AI 总结/图表生成）
             sessionContextManager.saveCurrentContext(sql, expandedQuery);

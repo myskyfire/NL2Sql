@@ -1,0 +1,70 @@
+name: complex-query
+description: 多步聚合查询，先查中间结果再关联详情，使用 Tool 调用链
+
+steps:
+  - id: resolve_datasource
+    type: skip
+    condition: "${datasourceId == null}"
+    onConditionTrue: fail
+    onConditionFalse: retrieve_schema
+
+  - id: retrieve_schema
+    action: call_tool
+    tool: retrieveSchema
+    toolInput:
+      query: "${userMessage}"
+      datasourceId: "${datasourceId}"
+    outputVar: schema_result
+    onNext: generate_sql
+
+  - id: generate_sql
+    action: call_tool
+    tool: generateSQL
+    toolInput:
+      question: "${userMessage}"
+      datasourceId: "${datasourceId}"
+    outputVar: sql_result
+    onNext: assess_risk
+
+  - id: assess_risk
+    action: call_tool
+    tool: analyzeSQLRisk
+    condition: "${sql_result.success == true}"
+    toolInput:
+      sql: "${sql_result.sql}"
+      datasourceId: "${datasourceId}"
+    outputVar: risk_result
+    onNext: execute_sql
+
+  - id: execute_sql
+    action: call_tool
+    tool: executeSQL
+    condition: "${risk_result.riskLevel != HIGH}"
+    toolInput:
+      sql: "${sql_result.sql}"
+      datasourceId: "${datasourceId}"
+    outputVar: exec_result
+    onNext: parallel_branch
+
+  - id: parallel_branch
+    type: parallel
+    branches:
+      - chart_worker
+      - summary_worker
+    onNext: assemble
+
+  - id: chart_worker
+    type: worker
+    worker: chart
+    input: "${queryPlan.chart, exec_result.result}"
+
+  - id: summary_worker
+    type: worker
+    worker: summary
+    input: "${exec_result.result}"
+
+  - id: assemble
+    type: assemble
+
+  - id: fail
+    type: skip
