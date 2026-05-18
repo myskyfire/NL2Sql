@@ -126,7 +126,19 @@ public class SQLValidatorTool extends BaseToolAdapter {
             // 综合验证
             SQLValidationService.ValidationReport report = sqlValidationService.comprehensiveValidate(sql);
             
-            if (report.isOverallValid()) {
+            // ✅ 等效于 Groovy optimizeSQL：IN子查询关联检测，建议改写为JOIN
+            List<String> inSubqueryIssues = detectInSubqueryIssues(sql);
+            if (!inSubqueryIssues.isEmpty()) {
+                log.warn("[SQLValidator] ⚠️ 检测到IN子查询性能问题 (attempt={}): {}", attempt, inSubqueryIssues);
+                
+                if (attempt < maxRetries) {
+                    log.info("[SQLValidator] 尝试优化IN子查询为JOIN...");
+                    sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, inSubqueryIssues);
+                    continue;
+                }
+            }
+            
+            if (report.isOverallValid() && inSubqueryIssues.isEmpty()) {
                 log.info("[SQLValidator] SQL验证通过 (attempt={})", attempt);
                 return sql;
             }
@@ -258,6 +270,62 @@ public class SQLValidatorTool extends BaseToolAdapter {
             log.warn("[SQLValidator] 提取列名白名单失败: {}", e.getMessage());
             return Collections.emptySet();
         }
+    }
+    
+    /**
+     * ✅ 等效于 Groovy optimizeSQL：检测IN子查询关联问题，建议改写为JOIN
+     * 
+     * IN子查询性能问题：
+     * 1. WHERE col IN (SELECT ...) - 关联子查询效率低
+     * 2. 建议改写为 JOIN 或 EXISTS
+     */
+    private List<String> detectInSubqueryIssues(String sql) {
+        List<String> issues = new ArrayList<>();
+        if (sql == null || sql.isEmpty()) {
+            return issues;
+        }
+        
+        String upperSql = sql.toUpperCase();
+        
+        // 检测 IN (SELECT ...) 模式
+        java.util.regex.Pattern inSubqueryPattern = java.util.regex.Pattern.compile(
+            "\\bIN\\s*\\(\\s*SELECT\\b", java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        java.util.regex.Matcher matcher = inSubqueryPattern.matcher(sql);
+        
+        int inSubqueryCount = 0;
+        while (matcher.find()) {
+            inSubqueryCount++;
+        }
+        
+        if (inSubqueryCount > 0) {
+            issues.add(String.format(
+                "⚠️ 检测到 %d 个IN子查询，建议改写为JOIN以提升性能。" +
+                "例如：WHERE id IN (SELECT id FROM t) → JOIN t ON t.id = main.id",
+                inSubqueryCount
+            ));
+        }
+        
+        // 检测 NOT IN (SELECT ...) 模式（更严重的性能问题）
+        java.util.regex.Pattern notInSubqueryPattern = java.util.regex.Pattern.compile(
+            "\\bNOT\\s+IN\\s*\\(\\s*SELECT\\b", java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        java.util.regex.Matcher notInMatcher = notInSubqueryPattern.matcher(sql);
+        
+        int notInSubqueryCount = 0;
+        while (notInMatcher.find()) {
+            notInSubqueryCount++;
+        }
+        
+        if (notInSubqueryCount > 0) {
+            issues.add(String.format(
+                "🔴 检测到 %d 个NOT IN子查询，性能极差，建议改写为LEFT JOIN + IS NULL。" +
+                "例如：WHERE id NOT IN (SELECT id FROM t) → LEFT JOIN t ON t.id = main.id WHERE t.id IS NULL",
+                notInSubqueryCount
+            ));
+        }
+        
+        return issues;
     }
     
     /**

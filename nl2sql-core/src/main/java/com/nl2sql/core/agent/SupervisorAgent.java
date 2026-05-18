@@ -13,8 +13,8 @@ import com.nl2sql.core.agent.worker.Worker;
 import com.nl2sql.core.cache.QueryCacheService;
 import com.nl2sql.core.llm.LLMService;
 import com.nl2sql.core.service.SessionContextManager;
-import com.nl2sql.core.tracing.LangSmithRun;
-import com.nl2sql.core.tracing.LangSmithTracingService;
+import com.nl2sql.core.tracing.TraceSpan;
+import com.nl2sql.core.tracing.TracingService;
 import com.nl2sql.core.tracing.TracingContext;
 import lombok.extern.slf4j.Slf4j;
 
@@ -37,7 +37,7 @@ public class SupervisorAgent {
     private final PlannerAgent plannerAgent;
     private final WorkflowEngine workflowEngine;
     private final DatasourceClarificationTool datasourceClarificationTool;
-    private final LangSmithTracingService tracingService;
+    private final TracingService tracingService;
     private final ToolRegistry toolRegistry;
     private final SessionContextManager sessionContextManager;
     private final QueryCacheService queryCacheService;
@@ -51,7 +51,7 @@ public class SupervisorAgent {
             PlannerAgent plannerAgent,
             WorkflowEngine workflowEngine,
             DatasourceClarificationTool datasourceClarificationTool,
-            LangSmithTracingService tracingService,
+            TracingService tracingService,
             ToolRegistry toolRegistry,
             SessionContextManager sessionContextManager,
             QueryCacheService queryCacheService,
@@ -90,7 +90,7 @@ public class SupervisorAgent {
         log.info("[SupervisorAgent] 开始执行，用户消息: {}, datasourceId={}, userId={}",
             userMessage, datasourceId, userId);
 
-        LangSmithRun rootRun = null;
+        TraceSpan rootRun = null;
         if (tracingService != null && tracingService.isEnabled()) {
             rootRun = tracingService.traceChain("SupervisorAgent.execute",
                 Map.of("userMessage", userMessage != null ? userMessage.substring(0, Math.min(200, userMessage.length())) : "",
@@ -159,11 +159,22 @@ public class SupervisorAgent {
         }
     }
 
-    private String endTrace(LangSmithRun rootRun, String result) {
+    private String endTrace(TraceSpan rootRun, String result) {
         if (tracingService != null && rootRun != null) {
             Map<String, Object> outputs = new LinkedHashMap<>();
             outputs.put("resultLength", result != null ? result.length() : 0);
             tracingService.endRun(rootRun, outputs, null);
+            
+            // 将 runId 注入到响应中，供前端反馈使用
+            if (result != null) {
+                try {
+                    Map<String, Object> resultMap = objectMapper.readValue(result, Map.class);
+                    resultMap.put("runId", rootRun.getId().toString());
+                    result = objectMapper.writeValueAsString(resultMap);
+                } catch (Exception e) {
+                    log.debug("[LangSmith] 注入 runId 失败: {}", e.getMessage());
+                }
+            }
         }
         return result;
     }
@@ -182,6 +193,11 @@ public class SupervisorAgent {
                 return datasourceClarificationTool.clarifyDatasource(userMessage);
             }
             return "{\"success\":false,\"error\":\"clarify_datasource工具未注册\"}";
+        }
+
+        // ✅ 总结/图表等已有上下文的 skill 直接走硬编码，不走 SKILL.md workflow（避免重复查询）
+        if ("summarize_result".equals(skillName) || "generate_chart".equals(skillName)) {
+            return executeDirectSkill(skillName, datasourceId, userId, username, userMessage);
         }
 
         // ✅ 优先尝试从 SKILL.md 的 workflow 定义执行
@@ -235,12 +251,23 @@ public class SupervisorAgent {
         }
 
         if ("summarize_result".equals(skillName)) {
+            return executeDirectSkill(skillName, datasourceId, userId, username, userMessage);
+        }
+
+        return "{\"success\":false,\"error\":\"未知的Skill: " + skillName + "\"}";
+    }
+
+    /**
+     * 直接执行 skill（不走 SKILL.md workflow，已有上下文数据）
+     */
+    private String executeDirectSkill(String skillName, Long datasourceId,
+                                       Long userId, String username, String userMessage) {
+        if ("summarize_result".equals(skillName)) {
             if (toolRegistry.hasTool("summarize_result")) {
                 try {
                     Map<String, Object> args = new LinkedHashMap<>();
                     args.put("userQuery", userMessage);
                     
-                    // ✅ 从 SessionContextManager 获取之前查询的 SQL
                     String sql = "";
                     if (sessionContextManager != null) {
                         sql = sessionContextManager.getCurrentSQL();
@@ -249,7 +276,6 @@ public class SupervisorAgent {
                     }
                     args.put("sql", sql != null ? sql : "");
                     
-                    // ✅ 从 QueryCacheService 获取查询结果数据
                     String dataJson = "";
                     if (queryCacheService != null && sql != null && !sql.trim().isEmpty()) {
                         try {
@@ -279,6 +305,47 @@ public class SupervisorAgent {
                 }
             }
             return "{\"success\":false,\"error\":\"summarize_result Tool未注册\"}";
+        }
+
+        if ("generate_chart".equals(skillName)) {
+            if (toolRegistry.hasTool("detectAndGenerateChart")) {
+                try {
+                    Map<String, Object> args = new LinkedHashMap<>();
+                    args.put("question", userMessage);
+                    
+                    String sql = "";
+                    if (sessionContextManager != null) {
+                        sql = sessionContextManager.getCurrentSQL();
+                        log.info("[SupervisorAgent] 从上下文获取 SQL: {}", 
+                            sql != null ? sql.substring(0, Math.min(50, sql.length())) : "null");
+                    }
+                    
+                    List<Map<String, Object>> data = new ArrayList<>();
+                    if (queryCacheService != null && sql != null && !sql.trim().isEmpty()) {
+                        try {
+                            com.nl2sql.core.cache.QueryCacheService.CachedResult cached = 
+                                queryCacheService.getFromCache(sql);
+                            if (cached != null && cached.getData() != null) {
+                                data = cached.getData();
+                                log.info("[SupervisorAgent] 从缓存获取图表数据: {} rows", data.size());
+                            }
+                        } catch (Exception e) {
+                            log.warn("[SupervisorAgent] 从缓存读取图表数据失败", e);
+                        }
+                    }
+                    args.put("data", data);
+                    
+                    Object result = toolRegistry.callTool("detectAndGenerateChart", args);
+                    if (result instanceof String) {
+                        return (String) result;
+                    }
+                    return objectMapper.writeValueAsString(result);
+                } catch (Exception e) {
+                    log.error("[SupervisorAgent] generate_chart Tool调用失败", e);
+                    return "{\"success\":false,\"error\":\"图表生成失败: " + e.getMessage() + "\"}";
+                }
+            }
+            return "{\"success\":false,\"error\":\"generate_chart Tool未注册\"}";
         }
 
         return "{\"success\":false,\"error\":\"未知的Skill: " + skillName + "\"}";

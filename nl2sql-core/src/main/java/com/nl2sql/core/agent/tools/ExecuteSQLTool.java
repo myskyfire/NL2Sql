@@ -91,6 +91,11 @@ public class ExecuteSQLTool implements BaseTool {
         usernameParam.put("description", "用户名（可选）");
         properties.put("username", usernameParam);
         
+        Map<String, Object> sqlOnlyParam = new HashMap<>();
+        sqlOnlyParam.put("type", "boolean");
+        sqlOnlyParam.put("description", "是否仅生成SQL不执行（离线模式），默认false");
+        properties.put("sqlOnly", sqlOnlyParam);
+        
         schema.put("properties", properties);
         schema.put("required", Arrays.asList("sql", "datasourceId"));
         
@@ -126,13 +131,37 @@ public class ExecuteSQLTool implements BaseTool {
             Long datasourceId = context.getRequiredParameter("datasourceId");
             Long userId = context.getParameter("userId");
             String username = context.getParameter("username");
+            Boolean sqlOnly = context.getParameter("sqlOnly");
+            if (sqlOnly == null) sqlOnly = false;
             
-            log.info("[ExecuteSQLTool] 开始执行SQL: datasourceId={}, sql={}", datasourceId, sql);
+            log.info("[ExecuteSQLTool] 开始执行SQL: datasourceId={}, sqlOnly={}", datasourceId, sqlOnly);
             
             // 2. 安全检查：只允许SELECT语句
             String upperSQL = sql.trim().toUpperCase();
             if (!upperSQL.startsWith("SELECT")) {
                 return ToolResult.error("只允许执行SELECT查询");
+            }
+            
+            // ✅ 等效于 Groovy sqlOnly 模式：仅做静态风险评估，不执行SQL
+            if (sqlOnly) {
+                log.info("[ExecuteSQLTool] ✅ 离线模式：仅生成SQL，不执行");
+                RiskAssessmentResult riskResult = staticRiskAssessment(sql);
+                
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("success", true);
+                response.put("type", "data");
+                response.put("data", new ArrayList<>());
+                response.put("rowCount", 0);
+                response.put("executionTime", 0.0);
+                response.put("sql", sql);
+                response.put("datasourceId", datasourceId);
+                response.put("sqlOnly", true);
+                
+                if (riskResult.getOptimizationSuggestion() != null && !riskResult.getOptimizationSuggestion().trim().isEmpty()) {
+                    response.put("optimizationSuggestion", riskResult.getOptimizationSuggestion());
+                }
+                
+                return ToolResult.success(response);
             }
             
             // ✅ 3. 完整风险评估（等效于 Groovy assessSQLRisk）
@@ -531,7 +560,7 @@ public class ExecuteSQLTool implements BaseTool {
                 List<Map<String, Object>> results = jdbcTemplate.queryForList(currentSql);
                 
                 return new ExecutionResult(true, results, results.size(), 
-                    System.currentTimeMillis(), null, currentSql);
+                    System.currentTimeMillis(), null, currentSql, false, null);
                 
             } catch (Exception e) {
                 log.error("[ExecuteSQLTool] 执行失败 (attempt={}): {}", attempt + 1, e.getMessage());
@@ -566,12 +595,12 @@ public class ExecuteSQLTool implements BaseTool {
                 } else {
                     // 达到最大重试次数
                     return new ExecutionResult(false, null, 0, 0.0, 
-                        "SQL执行失败，已尝试" + maxRetries + "次修正: " + e.getMessage(), currentSql);
+                        "SQL执行失败，已尝试" + maxRetries + "次修正: " + e.getMessage(), currentSql, false, null);
                 }
             }
         }
         
-        return new ExecutionResult(false, null, 0, 0.0, "达到最大重试次数", sql);
+        return new ExecutionResult(false, null, 0, 0.0, "达到最大重试次数", sql, false, null);
     }
     
     /**
@@ -772,6 +801,9 @@ public class ExecuteSQLTool implements BaseTool {
         public void setExpectedImprovement(String improvement) { this.expectedImprovement = improvement; }
     }
     
+    @lombok.Data
+    @lombok.NoArgsConstructor(force = true, access = lombok.AccessLevel.PUBLIC)
+    @lombok.AllArgsConstructor(access = lombok.AccessLevel.PUBLIC)
     static class ExecutionResult {
         boolean success;
         List<Map<String, Object>> data;
@@ -781,23 +813,6 @@ public class ExecuteSQLTool implements BaseTool {
         String sql;
         boolean offlineMode;
         String message;
-        
-        ExecutionResult(boolean success, List<Map<String, Object>> data, int rowCount, 
-                       double executionTime, String error, String sql) {
-            this(success, data, rowCount, executionTime, error, sql, false, null);
-        }
-        
-        ExecutionResult(boolean success, List<Map<String, Object>> data, int rowCount, 
-                       double executionTime, String error, String sql, boolean offlineMode, String message) {
-            this.success = success;
-            this.data = data;
-            this.rowCount = rowCount;
-            this.executionTime = executionTime;
-            this.error = error;
-            this.sql = sql;
-            this.offlineMode = offlineMode;
-            this.message = message;
-        }
     }
     
     // ==================== 保留旧方法以兼容LangChain4j @Tool注解 ====================

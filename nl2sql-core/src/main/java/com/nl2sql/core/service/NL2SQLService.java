@@ -169,7 +169,14 @@ public class NL2SQLService {
                                 boolean isStatQuestion = item.getQuestion().contains("统计") || 
                                                        item.getQuestion().contains("汇总") ||
                                                        item.getQuestion().contains("平均") ||
-                                                       item.getQuestion().contains("合计");
+                                                       item.getQuestion().contains("合计") ||
+                                                       item.getQuestion().contains("趋势") ||
+                                                       item.getQuestion().contains("对比") ||
+                                                       item.getQuestion().contains("分布") ||
+                                                       item.getQuestion().contains("排名") ||
+                                                       item.getQuestion().contains("每天") ||
+                                                       item.getQuestion().contains("每月") ||
+                                                       item.getQuestion().contains("各");
                                 
                                 // 如果SQL有GROUP BY但问题不是统计类，跳过此示例
                                 if (hasGroupBy && !isStatQuestion) {
@@ -329,10 +336,10 @@ public class NL2SQLService {
                 "1. 只输出SQL，无标记\n" +
                 "2. SELECT字段必须属于FROM/JOIN中的表\n" +
                 "3. 所有SELECT字段用AS指定中文别名\n" +
-                "4. 统计类（明确说'统计/汇总/平均'）才用GROUP BY，详情查询不用\n" +
+                "4. 需要GROUP BY的场景：统计/汇总/平均/趋势/对比/分布/排名/每天/每月/各X等聚合查询；不需要GROUP BY的场景：查详情/查列表/查具体某天的数据\n" +
                 "5. JOIN必须用ID字段，禁止子查询，一对多需加过滤条件\n" +
                 "6. 按天/月统计用DATE_FORMAT(created_at, '%%Y-%%m-%%d')\n" +
-                "7. ORDER BY别名必须与SELECT一致\n" +
+                "7. GROUP BY和ORDER BY必须使用与SELECT相同的原始表达式，禁止用中文别名或数字位置\n" +
                 "8. 相同语义查询保持SQL结构一致\n" +
                 "SQL：",
                 expandedTables.size(), availableTablesList,
@@ -389,10 +396,10 @@ public class NL2SQLService {
                     "1. 只输出SQL，无标记\n" +
                     "2. SELECT字段必须属于FROM/JOIN中的表\n" +
                     "3. 所有SELECT字段用AS指定中文别名\n" +
-                    "4. 统计类（明确说'统计/汇总/平均'）才用GROUP BY，详情查询不用\n" +
+                    "4. 需要GROUP BY的场景：统计/汇总/平均/趋势/对比/分布/排名/每天/每月/各X等聚合查询；不需要GROUP BY的场景：查详情/查列表/查具体某天的数据\n" +
                     "5. JOIN必须用ID字段，禁止子查询，一对多需加过滤条件\n" +
                     "6. 按天/月统计用DATE_FORMAT(created_at, '%%Y-%%m-%%d')\n" +
-                    "7. ORDER BY别名必须与SELECT一致\n" +
+                    "7. GROUP BY和ORDER BY必须使用与SELECT相同的原始表达式，禁止用中文别名或数字位置\n" +
                     "8. 相同语义查询保持SQL结构一致\n" +
                     "SQL：",
                     expandedTables.size(), updatedAvailableTablesList,

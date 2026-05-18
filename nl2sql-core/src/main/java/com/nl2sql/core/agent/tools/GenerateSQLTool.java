@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Collection;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 生成 SQL Tool
@@ -60,9 +62,19 @@ public class GenerateSQLTool {
             }
 
             String enhancedQuestion = question;
-            if (tableHint != null && !tableHint.trim().isEmpty()) {
-                enhancedQuestion = question + " [优先使用表: " + tableHint.trim() + "]";
-                log.info("[GenerateSQLTool] 应用表名偏好: {}", tableHint);
+            
+            // ✅ 等效于 Groovy extractTablePreference：自动从问题中提取表名偏好
+            String effectiveTableHint = tableHint;
+            if ((effectiveTableHint == null || effectiveTableHint.trim().isEmpty()) && question != null) {
+                effectiveTableHint = extractTablePreference(question);
+                if (effectiveTableHint != null) {
+                    log.info("[GenerateSQLTool] 自动检测到用户指定表: {}", effectiveTableHint);
+                }
+            }
+            
+            if (effectiveTableHint != null && !effectiveTableHint.trim().isEmpty()) {
+                enhancedQuestion = question + " [优先使用表: " + effectiveTableHint.trim() + "]";
+                log.info("[GenerateSQLTool] 应用表名偏好: {}", effectiveTableHint);
             }
             Collection<IndustryConceptExtension> conceptExtensions =
                 applicationContext != null ?
@@ -137,5 +149,31 @@ public class GenerateSQLTool {
         return ToolResponseBuilder.error("SQL_GENERATION_ERROR", error)
             .addMetadata("toolName", "generate_sql")
             .build();
+    }
+    
+    /**
+     * ✅ 等效于 Groovy extractTablePreference：从用户问题中提取表名偏好
+     * 匹配模式："使用XX表"、"用XX表"、"从XX表"、"基于XX表"
+     */
+    private String extractTablePreference(String question) {
+        if (question == null || question.trim().isEmpty()) {
+            return null;
+        }
+        
+        Pattern[] patterns = {
+            Pattern.compile("使用(\\w+)表"),
+            Pattern.compile("用(\\w+)表"),
+            Pattern.compile("从(\\w+)表"),
+            Pattern.compile("基于(\\w+)表")
+        };
+        
+        for (Pattern pattern : patterns) {
+            Matcher matcher = pattern.matcher(question);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        
+        return null;
     }
 }

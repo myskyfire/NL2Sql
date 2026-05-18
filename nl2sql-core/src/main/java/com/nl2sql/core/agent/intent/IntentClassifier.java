@@ -47,8 +47,7 @@ public class IntentClassifier {
 
     // 意图识别规则（正则表达式）
     private static final Pattern SUMMARY_PATTERN = Pattern.compile(
-        "(总结 | 分析 | 洞察 | 趋势 | 建议 | 解读 | 说明 | 解释).*?(数据 | 结果 | 查询)" +
-        "|(数据 | 结果 | 查询).*?(总结 | 分析 | 洞察 | 趋势 | 建议 | 解读 | 说明 | 解释)"
+        "(总结|概述|概括|归纳|分析).*"  // ✅ 以总结/分析类动词开头
     );
 
     private static final Pattern CHART_PATTERN = Pattern.compile(
@@ -84,6 +83,7 @@ public class IntentClassifier {
         }
 
         String normalizedMessage = userMessage.toLowerCase().trim();
+        log.info("[IntentClassifier] 原始消息: {}, 归一化后: {}", userMessage, normalizedMessage);
 
         // ✅ 步骤 1: 检查显式标记（前端传入的 [INTENT:xxx]）
         IntentType explicitIntent = detectExplicitIntent(userMessage);
@@ -100,13 +100,13 @@ public class IntentClassifier {
         // ✅ 步骤 2: 规则匹配
         IntentClassification ruleResult = matchByRules(normalizedMessage);
         if (ruleResult.getConfidence() >= 0.8) {
-            log.debug("[IntentClassifier] 规则匹配成功：{} (confidence={})",
-                ruleResult.getType(), ruleResult.getConfidence());
+            log.info("[IntentClassifier] 规则匹配成功：{} (confidence={}), message={}",
+                ruleResult.getType(), ruleResult.getConfidence(), userMessage);
             return ruleResult;
         }
 
         // ✅ 步骤 3: 默认意图为 QUERY
-        log.debug("[IntentClassifier] 规则未命中，默认为 QUERY 意图");
+        log.info("[IntentClassifier] 规则未命中，默认为 QUERY 意图, message={}", userMessage);
         return IntentClassification.of(
             IntentType.QUERY,
             0.6,
@@ -141,22 +141,24 @@ public class IntentClassifier {
      * 基于规则匹配意图
      */
     private IntentClassification matchByRules(String message) {
-        // 检查是否为 COMPLEX 意图（优先于 SUMMARY）
+        // ✅ 检查是否为总结意图（优先于 COMPLEX，因为"总结+趋势"应走 AI 分析）
+        if (SUMMARY_PATTERN.matcher(message).find()) {
+            log.info("[IntentClassifier] SUMMARY_PATTERN 匹配成功: {}", message);
+            return IntentClassification.of(
+                IntentType.SUMMARY,
+                0.9,
+                "匹配总结关键词",
+                message
+            );
+        }
+        log.debug("[IntentClassifier] SUMMARY_PATTERN 未匹配: {}", message);
+
+        // 检查是否为 COMPLEX 意图（多表 JOIN/多维度，但不含"总结"）
         if (COMPLEX_PATTERN.matcher(message).find()) {
             return IntentClassification.of(
                 IntentType.COMPLEX,
                 0.85,
                 "匹配复杂分析关键词",
-                message
-            );
-        }
-
-        // 检查是否为总结意图
-        if (SUMMARY_PATTERN.matcher(message).find()) {
-            return IntentClassification.of(
-                IntentType.SUMMARY,
-                0.9,
-                "匹配总结关键词",
                 message
             );
         }

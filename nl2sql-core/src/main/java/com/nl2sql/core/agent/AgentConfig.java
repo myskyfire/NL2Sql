@@ -8,7 +8,7 @@ import com.nl2sql.core.agent.worker.Worker;
 import com.nl2sql.core.cache.QueryCacheService;
 import com.nl2sql.core.llm.LLMService;
 import com.nl2sql.core.service.SessionContextManager;
-import com.nl2sql.core.tracing.LangSmithTracingService;
+import com.nl2sql.core.tracing.TracingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -75,7 +75,7 @@ public class AgentConfig {
     private AssembleResultTool assembleResultTool;
 
     @Autowired(required = false)
-    private LangSmithTracingService tracingService;
+    private TracingService tracingService;
 
     @Autowired
     private ToolRegistry toolRegistry;

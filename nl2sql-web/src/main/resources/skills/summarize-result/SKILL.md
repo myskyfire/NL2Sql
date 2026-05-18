@@ -3,19 +3,39 @@ workflow:
   name: summarize-result
   description: 对SQL查询结果进行智能分析和总结，提取关键洞察
   steps:
+    - id: execute_query
+      type: call_workflow
+      skill: execute_standard_query
+      input:
+        question: "{{question}}"
+        datasourceId: "{{datasourceId}}"
+        userId: "{{userId}}"
+        username: "{{username}}"
+      output_var: query_result
+    - id: check_success
+      action: condition
+      condition: "${query_result.success}==true"
+      on_true: summarize
+      on_false: respond_error
     - id: summarize
       action: call_tool
       tool: summarize_result
+      on_next: respond
       input:
         userQuery: "{{question}}"
-        sql: "{{sql}}"
-        dataJson: "{{dataJson}}"
+        sql: "{{query_result.sql}}"
+        dataJson: "{{query_result.data}}"
       output_var: summary_result
     - id: respond
       action: respond
       output:
         type: summary
         data: "{{summary_result}}"
+    - id: respond_error
+      action: respond
+      output:
+        success: false
+        error: "{{query_result.error}}"
 ---
 
 # Summarize Result Skill
@@ -30,19 +50,13 @@ workflow:
 
 ## 执行流程
 
-### Step 1: 调用 summarize_result Tool
+### Workflow 步骤
 
-```groovy
-def result = context.callTool("summarize_result", [
-    userQuery: question,
-    sql: sql,
-    dataJson: dataJson
-])
-```
-
-### Step 2: 返回总结结果
-
-直接返回Tool的执行结果。
+1. **retrieve_schema**: 调用 `retrieveSchema` Tool 检索相关表结构
+2. **generate_sql**: 调用 `generateSQL` Tool 生成 SQL
+3. **execute_sql**: 调用 `executeSQL` Tool 执行查询（条件：sql_result.success==true）
+4. **summarize**: 调用 `summarize_result` Tool 对结果进行 AI 总结（条件：exec_result.success==true）
+5. **respond**: 返回总结结果
 
 ## 示例
 

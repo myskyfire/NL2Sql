@@ -284,17 +284,19 @@ public class StreamChatService {
     private Map<String, Object> parseAgentResponse(String response) {
         try {
             if (response != null && response.trim().startsWith("{")) {
-                return objectMapper.readValue(response, Map.class);
+                // ✅ 创建可变副本，避免 UnsupportedOperationException
+                Map<String, Object> parsed = objectMapper.readValue(response, Map.class);
+                return new java.util.LinkedHashMap<>(parsed);
             }
         } catch (Exception e) {
             log.warn("解析Agent响应失败，作为文本处理", e);
         }
         
         // 非JSON响应，包装成标准格式
-        return Map.of(
-            "success", false,
-            "error", response != null ? response : "无响应"
-        );
+        Map<String, Object> errorMap = new java.util.LinkedHashMap<>();
+        errorMap.put("success", false);
+        errorMap.put("error", response != null ? response : "无响应");
+        return errorMap;
     }
     
     /**

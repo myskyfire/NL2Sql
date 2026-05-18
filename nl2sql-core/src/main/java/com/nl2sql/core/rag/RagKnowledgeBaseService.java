@@ -8,6 +8,9 @@ import com.nl2sql.core.rag.provider.VectorSearchResult;
 import com.nl2sql.core.rag.provider.VectorStoreManager;
 import com.nl2sql.core.rag.provider.VectorStoreProvider;
 import com.nl2sql.core.rerank.Reranker;
+import com.nl2sql.core.tracing.TraceSpan;
+import com.nl2sql.core.tracing.TracingService;
+import com.nl2sql.core.tracing.TracingContext;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +38,9 @@ public class RagKnowledgeBaseService {
     
     @Autowired(required = false)
     private Reranker reranker;  // Reranker 重排序服务
+    
+    @Autowired(required = false)
+    private TracingService tracingService;
     
     private static final double SIMILARITY_THRESHOLD = 0.9;
     private static final int MAX_EXAMPLES = 5;  // ✅ 电商场景推荐 5 个示例
@@ -85,25 +91,34 @@ public class RagKnowledgeBaseService {
      * 检索相似的问答对（多提供者架构，自动降级 + Reranker 精排）
      */
     public List<KnowledgeItem> searchSimilarQuestions(String question, int maxResults) {
-        // 使用活跃的向量数据库提供者
+        TraceSpan run = startRetrieverTrace(question, maxResults);
+        try {
+            List<KnowledgeItem> results = doSearchSimilarQuestions(question, maxResults);
+            endRetrieverTrace(run, results, null);
+            return results;
+        } catch (Exception e) {
+            endRetrieverTrace(run, null, e.getMessage());
+            throw e;
+        }
+    }
+
+    private List<KnowledgeItem> doSearchSimilarQuestions(String question, int maxResults) {
         VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
         
         if (activeProvider != null) {
             try {
-                // ✅ Step 1: 向量粗排（召回更多候选）
                 int candidateCount = (reranker != null && reranker.isAvailable()) 
                     ? RERANK_CANDIDATE_COUNT 
                     : maxResults;
                 
                 List<VectorSearchResult> candidates = 
-                    activeProvider.searchSimilar(question, candidateCount, 0.7);  // 降低阈值以召回更多
+                    activeProvider.searchSimilar(question, candidateCount, 0.7);
                 
                 if (candidates.isEmpty()) {
                     log.debug("{}向量搜索无结果，降级到MySQL", activeProvider.getName());
                     return searchByMySQL(question, maxResults);
                 }
                 
-                // ✅ Step 2: Reranker 精排（如果启用）
                 if (reranker != null && reranker.isAvailable()) {
                     log.info("[RAG-Rerank] 启动重排序: provider={}, candidates={}", 
                         reranker.getName(), candidates.size());
@@ -118,20 +133,17 @@ public class RagKnowledgeBaseService {
                         log.info("[RAG-Rerank] 重排序完成: top_score={}", 
                             String.format("%.3f", reranked.get(0).getRelevanceScore()));
                         
-                        // 取 Top-K
                         int topK = Math.min(maxResults, reranked.size());
                         List<VectorSearchResult> finalResults = new ArrayList<>();
                         
                         for (int i = 0; i < topK; i++) {
                             Reranker.RerankedDocument doc = reranked.get(i);
-                            // 找到对应的原始结果
                             VectorSearchResult original = candidates.stream()
                                 .filter(c -> c.getQuestion().equals(doc.getContent()))
                                 .findFirst()
                                 .orElse(null);
                             
                             if (original != null) {
-                                // 更新相似度分数为 Reranker 分数
                                 original.setScore(doc.getRelevanceScore());
                                 finalResults.add(original);
                             }
@@ -144,7 +156,6 @@ public class RagKnowledgeBaseService {
                     }
                 }
                 
-                // 未启用 Reranker 或重排序失败，直接返回向量搜索结果
                 log.info("RAG检索成功({}): question={}, found={} items", 
                     activeProvider.getName(), question, candidates.size());
                 return convertFromProviderResults(candidates.subList(0, Math.min(maxResults, candidates.size())));
@@ -157,8 +168,42 @@ public class RagKnowledgeBaseService {
             log.debug("没有可用的向量数据库提供者，直接使用MySQL全文检索");
         }
         
-        // 降级到MySQL全文检索
         return searchByMySQL(question, maxResults);
+    }
+
+    private TraceSpan startRetrieverTrace(String question, int maxResults) {
+        if (tracingService == null || !tracingService.isEnabled()) return null;
+        try {
+            Map<String, Object> inputs = new HashMap<>();
+            inputs.put("question", question);
+            inputs.put("maxResults", maxResults);
+            return tracingService.traceRetriever("RAG检索", inputs, TracingContext.currentRunId());
+        } catch (Exception e) {
+            log.debug("[LangSmith] startRetrieverTrace 失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void endRetrieverTrace(TraceSpan run, List<KnowledgeItem> results, String error) {
+        if (tracingService == null || run == null) return;
+        try {
+            Map<String, Object> outputs = new HashMap<>();
+            outputs.put("resultCount", results != null ? results.size() : 0);
+            if (results != null && !results.isEmpty()) {
+                List<Map<String, Object>> items = new ArrayList<>();
+                for (int i = 0; i < Math.min(3, results.size()); i++) {
+                    KnowledgeItem item = results.get(i);
+                    Map<String, Object> itemMap = new HashMap<>();
+                    itemMap.put("question", item.getQuestion());
+                    itemMap.put("score", item.getRelevance());
+                    items.add(itemMap);
+                }
+                outputs.put("topResults", items);
+            }
+            tracingService.endRun(run, outputs, error);
+        } catch (Exception e) {
+            log.debug("[LangSmith] endRetrieverTrace 失败: {}", e.getMessage());
+        }
     }
     
     /**

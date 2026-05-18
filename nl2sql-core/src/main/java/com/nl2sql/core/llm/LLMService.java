@@ -2,8 +2,8 @@ package com.nl2sql.core.llm;
 
 import com.nl2sql.core.llm.provider.LLMProvider;
 import com.nl2sql.core.llm.provider.LLMProviderManager;
-import com.nl2sql.core.tracing.LangSmithRun;
-import com.nl2sql.core.tracing.LangSmithTracingService;
+import com.nl2sql.core.tracing.TraceSpan;
+import com.nl2sql.core.tracing.TracingService;
 import com.nl2sql.core.tracing.TracingContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +26,7 @@ public class LLMService {
     private com.nl2sql.core.llm.provider.OllamaProvider ollamaCodeProvider;
 
     @Autowired(required = false)
-    private LangSmithTracingService tracingService;
+    private TracingService tracingService;
     
     private LLMProvider activeProvider;
     
@@ -57,7 +57,7 @@ public class LLMService {
     }
     
     public String generateSQL(String prompt) {
-        LangSmithRun run = startLlmTrace("generateSQL", Map.of("prompt", truncate(prompt, 500)));
+        TraceSpan run = startLlmTrace("generateSQL", Map.of("prompt", truncate(prompt, 500)));
         try {
             log.debug("发送提示词到LLM: {}", prompt);
             LLMProvider codeProvider = (ollamaCodeProvider != null) ? ollamaCodeProvider : activeProvider;
@@ -73,9 +73,9 @@ public class LLMService {
     }
     
     public String summarizeResult(String query, Object result) {
-        String systemPrompt = "用3句话总结查询结果。";
+        String systemPrompt = "用3句话总结查询结果。请以JSON格式返回，包含summary字段。";
         String userPrompt = String.format("问题: %s\n查询结果: %s", query, result.toString());
-        LangSmithRun run = startLlmTrace("summarizeResult", Map.of("query", query));
+        TraceSpan run = startLlmTrace("summarizeResult", Map.of("query", query));
         try {
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
             String response = reasoningProvider.generateJson(systemPrompt, userPrompt, 0.7).trim();
@@ -91,7 +91,7 @@ public class LLMService {
     public String clarifyQuestion(String query, String missingInfo) {
         String systemPrompt = "友好地追问缺失信息。";
         String userPrompt = String.format("用户问题: %s\n缺少信息: %s", query, missingInfo);
-        LangSmithRun run = startLlmTrace("clarifyQuestion", Map.of("query", query, "missingInfo", missingInfo));
+        TraceSpan run = startLlmTrace("clarifyQuestion", Map.of("query", query, "missingInfo", missingInfo));
         try {
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
             String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.7).trim();
@@ -107,7 +107,7 @@ public class LLMService {
     public String classifyIntent(String query) {
         String systemPrompt = "分类: QUERY/CREATE/UPDATE/DELETE/OTHER，只返回类型。";
         String userPrompt = "用户问题: " + query;
-        LangSmithRun run = startLlmTrace("classifyIntent", Map.of("query", query));
+        TraceSpan run = startLlmTrace("classifyIntent", Map.of("query", query));
         try {
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
             String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.0).trim().toUpperCase();
@@ -121,7 +121,7 @@ public class LLMService {
     }
     
     public String generateAnswer(String prompt) {
-        LangSmithRun run = startLlmTrace("generateAnswer", Map.of("prompt", truncate(prompt, 500)));
+        TraceSpan run = startLlmTrace("generateAnswer", Map.of("prompt", truncate(prompt, 500)));
         try {
             log.debug("发送提示词到LLM: {}", prompt);
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
@@ -137,7 +137,7 @@ public class LLMService {
     }
     
     public Map<String, Object> generateWithTools(List<Map<String, Object>> messages, double temperature, List<Map<String, Object>> tools) {
-        LangSmithRun run = startLlmTrace("generateWithTools", Map.of("messageCount", messages != null ? messages.size() : 0, "toolCount", tools != null ? tools.size() : 0));
+        TraceSpan run = startLlmTrace("generateWithTools", Map.of("messageCount", messages != null ? messages.size() : 0, "toolCount", tools != null ? tools.size() : 0));
         try {
             log.debug("[LLMService] 调用原生 Tool Calling，工具数量: {}", tools != null ? tools.size() : 0);
             
@@ -162,7 +162,7 @@ public class LLMService {
     }
     
     public String generate(String systemPrompt, String userPrompt, String fullPrompt) {
-        LangSmithRun run = startLlmTrace("generate", Map.of("systemPrompt", truncate(systemPrompt, 200), "userPrompt", truncate(userPrompt, 200)));
+        TraceSpan run = startLlmTrace("generate", Map.of("systemPrompt", truncate(systemPrompt, 200), "userPrompt", truncate(userPrompt, 200)));
         try {
             LLMProvider reasoningProvider = (ollamaReasoningProvider != null) ? ollamaReasoningProvider : activeProvider;
             String response = reasoningProvider.generate(systemPrompt + "\n\n" + userPrompt, 0.7).trim();
@@ -176,7 +176,7 @@ public class LLMService {
     }
 
     public String generateWithJsonSchema(String systemPrompt, String userPrompt, Class<?> targetClass) {
-        LangSmithRun run = startLlmTrace("generateWithJsonSchema", Map.of("targetClass", targetClass.getSimpleName(), "userPrompt", truncate(userPrompt, 200)));
+        TraceSpan run = startLlmTrace("generateWithJsonSchema", Map.of("targetClass", targetClass.getSimpleName(), "userPrompt", truncate(userPrompt, 200)));
         try {
             String schemaHint = generateJsonSchemaHint(targetClass);
             String fullSystemPrompt = systemPrompt + "\n\n## JSON Schema\n" + schemaHint;
@@ -230,7 +230,7 @@ public class LLMService {
         return providerManager.healthCheck();
     }
 
-    private LangSmithRun startLlmTrace(String name, Map<String, Object> inputs) {
+    private TraceSpan startLlmTrace(String name, Map<String, Object> inputs) {
         if (tracingService == null || !tracingService.isEnabled()) return null;
         try {
             return tracingService.traceLlm(name, inputs, TracingContext.currentRunId());
@@ -240,7 +240,7 @@ public class LLMService {
         }
     }
 
-    private void endLlmTrace(LangSmithRun run, Map<String, Object> outputs, String error) {
+    private void endLlmTrace(TraceSpan run, Map<String, Object> outputs, String error) {
         if (tracingService == null || run == null) return;
         try {
             tracingService.endRun(run, outputs, error);

@@ -1,7 +1,7 @@
 package com.nl2sql.metadata.service;
 
 import com.nl2sql.core.llm.MultiModelService;
-import com.nl2sql.core.mapper.MetadataCollectorMapper;
+import com.nl2sql.metadata.mapper.MetadataCollectorMapper;
 import com.nl2sql.metadata.entity.ColumnMetadata;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.entity.TableMetadata;

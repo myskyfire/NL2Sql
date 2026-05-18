@@ -9,6 +9,7 @@ steps:
     onConditionFalse: retrieve_schema
 
   - id: retrieve_schema
+    type: call_tool
     action: call_tool
     tool: retrieveSchema
     toolInput:
@@ -18,6 +19,7 @@ steps:
     onNext: generate_sql
 
   - id: generate_sql
+    type: call_tool
     action: call_tool
     tool: generateSQL
     toolInput:
@@ -27,21 +29,23 @@ steps:
     onNext: assess_risk
 
   - id: assess_risk
+    type: call_tool
     action: call_tool
     tool: analyzeSQLRisk
     condition: "${sql_result.success == true}"
     toolInput:
-      sql: "${sql_result.sql}"
+      sql: "${sql_result.data.sql}"
       datasourceId: "${datasourceId}"
     outputVar: risk_result
     onNext: execute_sql
 
   - id: execute_sql
+    type: call_tool
     action: call_tool
     tool: executeSQL
     condition: "${risk_result.riskLevel != HIGH}"
     toolInput:
-      sql: "${sql_result.sql}"
+      sql: "${sql_result.data.sql}"
       datasourceId: "${datasourceId}"
     outputVar: exec_result
     onNext: parallel_branch

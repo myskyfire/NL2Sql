@@ -11,7 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import com.nl2sql.core.service.TableSelectionOrchestrator;
+
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Schema检索工具 - 根据用户问题检索相关表结构信息
@@ -81,6 +85,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
             
             if (cachedTables != null && !cachedTables.isEmpty()) {
                 log.info("[SchemaRetriever] ⚡ L2缓存命中(高分反馈): query='{}', tables={}", query, cachedTables);
+                TableSelectionOrchestrator.setPreRetrievedTables(cachedTables);
                 return buildTableSchemaInfo(cachedTables, datasourceId);
             }
             
@@ -89,6 +94,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
             
             if (cachedTables != null && !cachedTables.isEmpty()) {
                 log.info("[SchemaRetriever] ⚡ L3语义索引命中: query='{}', tables={}", query, cachedTables);
+                TableSelectionOrchestrator.setPreRetrievedTables(cachedTables);
                 return buildTableSchemaInfo(cachedTables, datasourceId);
             }
         }
@@ -100,6 +106,10 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
         if (tables.isEmpty()) {
             return "ERROR: 未找到任何相关表";
         }
+        
+        // ✅ 等效于 Groovy extractTableNamesFromSchema：将检索到的表名设置到 ThreadLocal 供后续复用
+        TableSelectionOrchestrator.setPreRetrievedTables(tables);
+        log.info("[SchemaRetriever] ⚡ 已设置预检索表列表: {}", tables);
         
         // 构建schema信息
         return buildTableSchemaInfo(tables, datasourceId);

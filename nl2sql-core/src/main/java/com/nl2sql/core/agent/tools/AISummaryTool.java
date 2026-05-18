@@ -26,16 +26,16 @@ public class AISummaryTool {
      * 
      * @param userQuery 用户原始问题
      * @param sql 执行的SQL
-     * @param dataJson 查询结果数据JSON字符串
+     * @param data 查询结果数据（可以是JSON字符串或List<Map>对象）
      * @return AI生成的总结文本
      */
     @Tool(name = "summarize_result", value = "对SQL查询结果进行智能分析和总结，提取关键洞察")
-    public String summarize(String userQuery, String sql, String dataJson) {
+    public String summarize(String userQuery, String sql, Object data) {
         try {
-            List<Map<String, Object>> data = parseDataJson(dataJson);
-            log.info("[AISummaryTool] 开始生成总结: data行数={}", data != null ? data.size() : 0);
+            List<Map<String, Object>> dataList = parseData(data);
+            log.info("[AISummaryTool] 开始生成总结: data行数={}", dataList != null ? dataList.size() : 0);
             
-            if (data == null || data.isEmpty()) {
+            if (dataList == null || dataList.isEmpty()) {
                 return "查询结果为空，无法生成总结。";
             }
             
@@ -50,18 +50,18 @@ public class AISummaryTool {
                 promptBuilder.append("SQL：\n").append(sql).append("\n\n");
             }
             
-            promptBuilder.append("结果：共").append(data.size()).append("行\n\n");
+            promptBuilder.append("结果：共").append(dataList.size()).append("行\n\n");
             
             // 以表格形式展示数据
-            Set<String> columns = data.get(0).keySet();
+            Set<String> columns = dataList.get(0).keySet();
             String header = String.join(" | ", columns);
             promptBuilder.append(header).append("\n");
             promptBuilder.append(String.join("-|-", java.util.Collections.nCopies(columns.size(), "---"))).append("\n");
             
             // 最多显示 15 行
-            int displayRows = Math.min(15, data.size());
+            int displayRows = Math.min(15, dataList.size());
             for (int i = 0; i < displayRows; i++) {
-                Map<String, Object> row = data.get(i);
+                Map<String, Object> row = dataList.get(i);
                 List<String> values = new ArrayList<>();
                 for (String col : columns) {
                     Object value = row.get(col);
@@ -70,8 +70,8 @@ public class AISummaryTool {
                 promptBuilder.append(String.join(" | ", values)).append("\n");
             }
             
-            if (data.size() > 15) {
-                promptBuilder.append("... 还有 ").append(data.size() - 15).append(" 行\n");
+            if (dataList.size() > 15) {
+                promptBuilder.append("... 还有 ").append(dataList.size() - 15).append(" 行\n");
             }
             promptBuilder.append("\n");
             
@@ -86,6 +86,29 @@ public class AISummaryTool {
             log.error("[AISummaryTool] 生成总结失败", e);
             return "总结生成失败：" + e.getMessage();
         }
+    }
+    
+    /**
+     * 解析数据（支持JSON字符串或List<Map>对象）
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseData(Object data) {
+        if (data == null) {
+            return new ArrayList<>();
+        }
+        
+        // 如果已经是 List 类型，直接返回
+        if (data instanceof List) {
+            return (List<Map<String, Object>>) data;
+        }
+        
+        // 如果是 String 类型，尝试解析 JSON
+        if (data instanceof String) {
+            return parseDataJson((String) data);
+        }
+        
+        log.warn("[AISummaryTool] 不支持的数据类型: {}", data.getClass().getName());
+        return new ArrayList<>();
     }
     
     /**

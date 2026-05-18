@@ -14,13 +14,17 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Cross-Encoder Reranker - 使用 Ollama bge-reranker 进行本地精排
+ * Cross-Encoder Reranker - 使用 HuggingFace TEI (Text Embeddings Inference) 进行本地精排
  * 
  * 工作原理:
  * 1. 接收 Query 和候选文档列表
  * 2. 将 (Query, Doc) 对送入 Cross-Encoder 模型
  * 3. 模型输出相关性分数 (0-1)
  * 4. 按分数降序排序，返回 Top-K
+ * 
+ * 支持的服务:
+ * - HuggingFace TEI (Docker): ghcr.io/huggingface/text-embeddings-inference
+ * - Ollama bge-reranker (未来扩展)
  */
 @Slf4j
 public class CrossEncoderReranker implements Reranker {
@@ -32,6 +36,9 @@ public class CrossEncoderReranker implements Reranker {
     
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    // 缓存可用性检查结果
+    private Boolean cachedAvailable = null;
     
     public CrossEncoderReranker(String baseUrl, String rerankerModel, int topK, double threshold) {
         this.baseUrl = baseUrl;
@@ -47,16 +54,29 @@ public class CrossEncoderReranker implements Reranker {
     
     @Override
     public boolean isAvailable() {
+        if (cachedAvailable != null) {
+            return cachedAvailable;
+        }
+        
         try {
+            // 尝试 HuggingFace TEI 健康检查端点
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/tags"))
+                .uri(URI.create(baseUrl + "/health"))
                 .GET()
                 .build();
             HttpResponse<String> response = httpClient.send(
                 request, HttpResponse.BodyHandlers.ofString()
             );
-            return response.statusCode() == 200;
+            cachedAvailable = response.statusCode() == 200;
+            if (cachedAvailable) {
+                log.info("[CrossEncoderReranker] ✅ 服务可用: baseUrl={}, model={}", baseUrl, rerankerModel);
+            } else {
+                log.warn("[CrossEncoderReranker] ❌ 服务不可用: health端点返回 {}", response.statusCode());
+            }
+            return cachedAvailable;
         } catch (Exception e) {
+            log.warn("[CrossEncoderReranker] ❌ 服务不可用: health端点检查失败: {}", e.getMessage());
+            cachedAvailable = false;
             return false;
         }
     }

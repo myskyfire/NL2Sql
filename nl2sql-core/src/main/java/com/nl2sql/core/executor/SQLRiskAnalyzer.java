@@ -256,6 +256,7 @@ public class SQLRiskAnalyzer {
         
         for (Map<String, Object> row : explainResult) {
             String type = (String) row.get("type");
+            String key = (String) row.get("key");  // 实际使用的索引
             String extra = (String) row.get("extra");
             Object tableObj = row.get("table");
             
@@ -264,6 +265,7 @@ public class SQLRiskAnalyzer {
             
             TableStats stats = tableStatsMap.get(table);
             long rowCount = stats != null ? stats.getRowCount() : 0;
+            List<IndexInfo> indexes = stats != null ? stats.getIndexes() : Collections.emptyList();
             
             // 风险1: 全表扫描
             if ("ALL".equals(type)) {
@@ -275,19 +277,37 @@ public class SQLRiskAnalyzer {
                 risks.add(String.format("⚠️ 高危: 大表[%s]全表扫描(%d行)，可能导致性能问题", table, rowCount));
             }
             
-            // 风险3: 未使用索引
+            // 风险3: 有索引但未使用
+            if ("ALL".equals(type) && !indexes.isEmpty()) {
+                String indexNames = indexes.stream()
+                    .map(IndexInfo::getIndexName)
+                    .filter(name -> !name.equals("PRIMARY"))
+                    .limit(3)
+                    .collect(java.util.stream.Collectors.joining(", "));
+                
+                if (!indexNames.isEmpty()) {
+                    risks.add(String.format("表[%s]有可用索引[%s]但EXPLAIN未使用", table, indexNames));
+                }
+            }
+            
+            // 风险4: 未使用索引
             if (extra != null && extra.contains("Using filesort")) {
                 risks.add(String.format("表[%s]需要文件排序，可能影响性能", table));
             }
             
-            // 风险4: 临时表
+            // 风险5: 临时表
             if (extra != null && extra.contains("Using temporary")) {
                 risks.add(String.format("表[%s]需要使用临时表，可能消耗较多内存", table));
             }
             
-            // 风险5: JOIN无索引
+            // 风险6: JOIN无索引
             if ("ALL".equals(type) && explainResult.size() > 1) {
                 risks.add(String.format("JOIN操作中表[%s]未使用索引", table));
+            }
+            
+            // 风险7: 索引扫描但行数过多
+            if ("index".equals(type) && rowCount > 500000) {
+                risks.add(String.format("表[%s]进行索引全扫描(行数:%d)，可能效率低下", table, rowCount));
             }
         }
         
@@ -329,21 +349,58 @@ public class SQLRiskAnalyzer {
         }
         
         for (String risk : risks) {
-            if (risk.contains("全表扫描")) {
+            if (risk.contains("全表扫描") && !risk.contains("有可用索引")) {
                 suggestions.add("💡 建议添加合适的WHERE条件或使用索引");
             }
+            if (risk.contains("有可用索引") && risk.contains("但EXPLAIN未使用")) {
+                // 提取表名和索引信息
+                String table = extractTableNameFromRisk(risk);
+                TableStats stats = tableStatsMap.get(table);
+                if (stats != null && !stats.getIndexes().isEmpty()) {
+                    String indexColumns = stats.getIndexes().stream()
+                        .filter(idx -> !idx.getIndexName().equals("PRIMARY"))
+                        .map(idx -> idx.getColumns().get(0))
+                        .limit(2)
+                        .collect(java.util.stream.Collectors.joining(", "));
+                    
+                    if (!indexColumns.isEmpty()) {
+                        suggestions.add(String.format("💡 检查WHERE条件是否匹配现有索引字段: [%s]，或调整查询条件以利用索引", indexColumns));
+                    }
+                }
+            }
             if (risk.contains("文件排序")) {
-                suggestions.add("💡 建议在ORDER BY字段上创建索引");
+                String table = extractTableNameFromRisk(risk);
+                suggestions.add(String.format("💡 建议在ORDER BY字段上创建索引（表: %s）", table));
             }
             if (risk.contains("临时表")) {
                 suggestions.add("💡 建议优化GROUP BY或DISTINCT操作");
             }
             if (risk.contains("JOIN") && risk.contains("未使用索引")) {
-                suggestions.add("💡 建议在JOIN字段上创建索引");
+                String table = extractTableNameFromRisk(risk);
+                suggestions.add(String.format("💡 建议在JOIN字段上创建索引（表: %s）", table));
+            }
+            if (risk.contains("索引全扫描")) {
+                suggestions.add("💡 索引全扫描效率低，建议添加WHERE条件缩小扫描范围");
             }
         }
         
         return suggestions;
+    }
+    
+    /**
+     * 从风险信息中提取表名
+     */
+    private String extractTableNameFromRisk(String risk) {
+        try {
+            int start = risk.indexOf("[") + 1;
+            int end = risk.indexOf("]");
+            if (start > 0 && end > start) {
+                return risk.substring(start, end);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return "unknown";
     }
     
     /**

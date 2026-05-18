@@ -15,34 +15,34 @@ import java.util.*;
 
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "tracing.provider", havingValue = "langsmith", matchIfMissing = true)
-public class LangSmithTracingService implements TracingService {
+@ConditionalOnProperty(name = "tracing.provider", havingValue = "langfuse")
+public class LangfuseTracingService implements TracingService {
 
     private final TracingConfig config;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    private static final String RUNS_ENDPOINT = "/runs";
-    private static final String FEEDBACK_ENDPOINT = "/v1/feedback";
+    private static final String API_INGEST_ENDPOINT = "/api/public/ingestion";
+    private static final String API_SCORE_ENDPOINT = "/api/public/scores";
 
     @Autowired
-    public LangSmithTracingService(TracingConfig config) {
+    public LangfuseTracingService(TracingConfig config) {
         this.config = config;
         this.objectMapper = new ObjectMapper();
         this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(config.getLangsmith().getTimeout()))
+            .connectTimeout(Duration.ofSeconds(config.getLangfuse().getTimeout()))
             .build();
 
-        if (config.isEnabled() && "langsmith".equalsIgnoreCase(config.getProvider())) {
-            log.info("[LangSmith] Tracing 已启用, project={}, baseUrl={}", config.getProject(), config.getLangsmith().getBaseUrl());
+        if (config.isEnabled() && "langfuse".equalsIgnoreCase(config.getProvider())) {
+            log.info("[Langfuse] Tracing 已启用, project={}, baseUrl={}", config.getProject(), config.getLangfuse().getBaseUrl());
         } else {
-            log.info("[LangSmith] Tracing 未启用");
+            log.info("[Langfuse] Tracing 未启用");
         }
     }
 
     @Override
     public boolean isEnabled() {
-        return config.isEnabled() && "langsmith".equalsIgnoreCase(config.getProvider());
+        return config.isEnabled() && "langfuse".equalsIgnoreCase(config.getProvider());
     }
 
     @Override
@@ -79,7 +79,7 @@ public class LangSmithTracingService implements TracingService {
             .tags(tags)
             .build();
 
-        sendRunCreate(span);
+        sendCreateEvent(span);
         return span;
     }
 
@@ -98,7 +98,7 @@ public class LangSmithTracingService implements TracingService {
             run.setError(error);
         }
 
-        sendRunEnd(run);
+        sendUpdateEvent(run);
     }
 
     @Override
@@ -121,64 +121,88 @@ public class LangSmithTracingService implements TracingService {
         return startRun(name, TraceSpan.RunType.retriever, inputs, parentRunId);
     }
 
-    private void sendRunCreate(TraceSpan span) {
+    private void sendCreateEvent(TraceSpan span) {
         try {
-            Map<String, Object> body = span.toCreateMap();
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("id", span.getId().toString());
+            body.put("traceId", span.getId().toString());
+            body.put("name", span.getName());
+            body.put("type", "span");
+            if (span.getParentRunId() != null) {
+                body.put("parentObservationId", span.getParentRunId().toString());
+            }
+            body.put("startTime", span.getStartTime().toString());
+            if (span.getInputs() != null) {
+                body.put("input", span.getInputs());
+            }
+
             String json = objectMapper.writeValueAsString(body);
 
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(config.getLangsmith().getBaseUrl() + RUNS_ENDPOINT))
+                .uri(URI.create(config.getLangfuse().getBaseUrl() + API_INGEST_ENDPOINT))
                 .header("Content-Type", "application/json")
-                .header("X-Api-Key", config.getLangsmith().getApiKey())
-                .timeout(Duration.ofSeconds(config.getLangsmith().getTimeout()))
+                .header("Authorization", buildBasicAuth())
+                .timeout(Duration.ofSeconds(config.getLangfuse().getTimeout()))
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
             httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
                     if (response.statusCode() >= 400) {
-                        log.warn("[LangSmith] 创建 Run 失败: status={}, body={}",
+                        log.warn("[Langfuse] 创建 Span 失败: status={}, body={}",
                             response.statusCode(),
                             response.body().substring(0, Math.min(200, response.body().length())));
                     }
                 })
                 .exceptionally(e -> {
-                    log.warn("[LangSmith] 创建 Run 异步请求失败: {}", e.getMessage());
+                    log.warn("[Langfuse] 创建 Span 异步请求失败: {}", e.getMessage());
                     return null;
                 });
 
         } catch (Exception e) {
-            log.warn("[LangSmith] 创建 Run 失败: {}", e.getMessage());
+            log.warn("[Langfuse] 创建 Span 失败: {}", e.getMessage());
         }
     }
 
-    private void sendRunEnd(TraceSpan span) {
+    private void sendUpdateEvent(TraceSpan span) {
         try {
-            Map<String, Object> body = span.toEndMap();
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("id", span.getId().toString());
+            body.put("traceId", span.getId().toString());
+            body.put("type", "span");
+            if (span.getOutputs() != null) {
+                body.put("output", span.getOutputs());
+            }
+            body.put("endTime", span.getEndTime().toString());
+            if (span.getError() != null) {
+                body.put("level", "ERROR");
+                body.put("statusMessage", span.getError());
+            }
+
             String json = objectMapper.writeValueAsString(body);
 
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(config.getLangsmith().getBaseUrl() + RUNS_ENDPOINT + "/" + span.getId()))
+                .uri(URI.create(config.getLangfuse().getBaseUrl() + API_INGEST_ENDPOINT))
                 .header("Content-Type", "application/json")
-                .header("X-Api-Key", config.getLangsmith().getApiKey())
-                .timeout(Duration.ofSeconds(config.getLangsmith().getTimeout()))
-                .method("PATCH", HttpRequest.BodyPublishers.ofString(json))
+                .header("Authorization", buildBasicAuth())
+                .timeout(Duration.ofSeconds(config.getLangfuse().getTimeout()))
+                .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
             httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
                     if (response.statusCode() >= 400) {
-                        log.warn("[LangSmith] 结束 Run 失败: status={}, runId={}",
+                        log.warn("[Langfuse] 更新 Span 失败: status={}, runId={}",
                             response.statusCode(), span.getId());
                     }
                 })
                 .exceptionally(e -> {
-                    log.warn("[LangSmith] 结束 Run 异步请求失败: {}", e.getMessage());
+                    log.warn("[Langfuse] 更新 Span 异步请求失败: {}", e.getMessage());
                     return null;
                 });
 
         } catch (Exception e) {
-            log.warn("[LangSmith] 结束 Run 失败: {}", e.getMessage());
+            log.warn("[Langfuse] 更新 Span 失败: {}", e.getMessage());
         }
     }
 
@@ -187,9 +211,9 @@ public class LangSmithTracingService implements TracingService {
         if (!isEnabled() || runId == null) return;
         try {
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("run_id", runId.toString());
-            body.put("key", key);
-            body.put("score", score);
+            body.put("traceId", runId.toString());
+            body.put("name", key);
+            body.put("value", score);
             if (comment != null && !comment.isEmpty()) {
                 body.put("comment", comment);
             }
@@ -197,30 +221,30 @@ public class LangSmithTracingService implements TracingService {
             String json = objectMapper.writeValueAsString(body);
             
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(config.getLangsmith().getBaseUrl() + FEEDBACK_ENDPOINT))
+                .uri(URI.create(config.getLangfuse().getBaseUrl() + API_SCORE_ENDPOINT))
                 .header("Content-Type", "application/json")
-                .header("X-Api-Key", config.getLangsmith().getApiKey())
-                .timeout(Duration.ofSeconds(config.getLangsmith().getTimeout()))
+                .header("Authorization", buildBasicAuth())
+                .timeout(Duration.ofSeconds(config.getLangfuse().getTimeout()))
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
 
             httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
                     if (response.statusCode() >= 400) {
-                        log.warn("[LangSmith] 发送反馈失败: status={}, body={}",
+                        log.warn("[Langfuse] 发送反馈失败: status={}, body={}",
                             response.statusCode(),
                             response.body().substring(0, Math.min(200, response.body().length())));
                     } else {
-                        log.info("[LangSmith] 反馈已发送: runId={}, key={}, score={}", runId, key, score);
+                        log.info("[Langfuse] 反馈已发送: traceId={}, name={}, value={}", runId, key, score);
                     }
                 })
                 .exceptionally(e -> {
-                    log.warn("[LangSmith] 发送反馈异步请求失败: {}", e.getMessage());
+                    log.warn("[Langfuse] 发送反馈异步请求失败: {}", e.getMessage());
                     return null;
                 });
 
         } catch (Exception e) {
-            log.warn("[LangSmith] 发送反馈失败: {}", e.getMessage());
+            log.warn("[Langfuse] 发送反馈失败: {}", e.getMessage());
         }
     }
 
@@ -232,5 +256,10 @@ public class LangSmithTracingService implements TracingService {
     @Override
     public void sendThumbsDown(UUID runId, String comment) {
         sendFeedback(runId, "user_score", 0.0, comment);
+    }
+
+    private String buildBasicAuth() {
+        String credentials = config.getLangfuse().getPublicKey() + ":" + config.getLangfuse().getSecretKey();
+        return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes());
     }
 }

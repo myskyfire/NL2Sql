@@ -2,6 +2,7 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
+import com.nl2sql.core.tracing.TracingService;
 import com.nl2sql.web.service.AgentChatService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Agent 对话控制器
@@ -30,6 +32,9 @@ public class AgentController {
     
     @Autowired
     private AgentChatService agentChatService;
+    
+    @Autowired(required = false)
+    private TracingService langSmithTracingService;
     
     /**
      * Agent 对话接口 - 测试版本（无需认证）
@@ -107,5 +112,54 @@ public class AgentController {
         }
         
         return agentChatService.handleSqlApproval(approvalId, approved, userInfo);
+    }
+    
+    /**
+     * LangSmith 反馈接口（用户点赞/点踩）
+     * 
+     * @param request 包含 runId, rating(1=好评, 0=差评), comment
+     */
+    @PostMapping("/feedback")
+    public Result<Map<String, Object>> feedback(
+        @RequestBody Map<String, Object> request,
+        HttpServletRequest httpRequest
+    ) {
+        String runIdStr = (String) request.get("runId");
+        Object ratingObj = request.get("rating");
+        String comment = (String) request.get("comment");
+        
+        if (runIdStr == null || runIdStr.isEmpty()) {
+            return Result.error(400, "缺少runId参数");
+        }
+        
+        if (ratingObj == null) {
+            return Result.error(400, "缺少rating参数");
+        }
+        
+        double rating;
+        try {
+            rating = Double.parseDouble(String.valueOf(ratingObj));
+        } catch (NumberFormatException e) {
+            return Result.error(400, "rating参数格式错误");
+        }
+        
+        try {
+            UUID runId = UUID.fromString(runIdStr);
+            
+            if (langSmithTracingService != null && langSmithTracingService.isEnabled()) {
+                if (rating >= 1.0) {
+                    langSmithTracingService.sendThumbsUp(runId, comment);
+                } else {
+                    langSmithTracingService.sendThumbsDown(runId, comment);
+                }
+                log.info("[LangSmith反馈] 反馈已发送: runId={}, rating={}, comment={}", runId, rating, comment);
+            } else {
+                log.warn("[LangSmith反馈] LangSmith未启用，反馈已忽略");
+            }
+            
+            return Result.success(Map.of("success", true, "message", "反馈已提交"));
+        } catch (IllegalArgumentException e) {
+            return Result.error(400, "runId格式错误: " + e.getMessage());
+        }
     }
 }

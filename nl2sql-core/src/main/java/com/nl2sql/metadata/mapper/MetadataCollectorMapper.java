@@ -1,4 +1,4 @@
-package com.nl2sql.core.mapper;
+package com.nl2sql.metadata.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

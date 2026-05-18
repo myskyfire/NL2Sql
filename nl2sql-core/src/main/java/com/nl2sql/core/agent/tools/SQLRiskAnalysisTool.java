@@ -385,6 +385,8 @@ public class SQLRiskAnalysisTool {
             response.put("success", true);
             response.put("riskLevel", "HIGH");
             response.put("needsHumanApproval", true);
+            // ✅ 等效于 Groovy createHumanApprovalRequiredResult：生成唯一 approvalId
+            response.put("approvalId", "risk_" + System.currentTimeMillis());
 
             if (explainResult.getRisks() != null && !explainResult.getRisks().isEmpty()) {
                 response.put("risks", explainResult.getRisks());
@@ -415,5 +417,85 @@ public class SQLRiskAnalysisTool {
     private String escapeJson(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    /**
+     * ✅ 等效于 Groovy staticRiskAssessment：静态 SQL 风险评估（无需连库，适用于离线模式/sqlOnly模式）
+     */
+    public String staticRiskAssessment(String sql) {
+        try {
+            if (sql == null || sql.isEmpty()) {
+                return buildSimpleResponse("LOW", "空 SQL", null);
+            }
+
+            String upperSql = sql.toUpperCase().trim();
+            List<String> risks = new ArrayList<>();
+            String riskLevel = "LOW";
+
+            if (upperSql.startsWith("SELECT") && !upperSql.contains("WHERE")) {
+                if (!upperSql.contains("LIMIT")) {
+                    risks.add("⚠️ 无 WHERE 条件且无 LIMIT，可能导致全表扫描");
+                    riskLevel = "MEDIUM";
+                }
+            }
+
+            int joinCount = 0;
+            if (upperSql.contains(" JOIN ")) {
+                joinCount = upperSql.split(" JOIN ").length - 1;
+                if (joinCount >= 3) {
+                    risks.add("🔴 多表 JOIN（" + joinCount + "个），性能风险高");
+                    riskLevel = "HIGH";
+                } else if (joinCount >= 2) {
+                    risks.add("⚠️ 多表 JOIN（" + joinCount + "个），建议优化");
+                    if ("MEDIUM".compareTo(riskLevel) > 0) {
+                        riskLevel = "MEDIUM";
+                    }
+                }
+            }
+
+            int selectCount = 0;
+            for (int i = 0; i < upperSql.length(); i++) {
+                if (upperSql.substring(i).startsWith("SELECT")) {
+                    selectCount++;
+                }
+            }
+            if (selectCount >= 3) {
+                risks.add("🔴 多层子查询嵌套（" + selectCount + "层），性能差");
+                riskLevel = "HIGH";
+            } else if (selectCount == 2) {
+                risks.add("⚠️ 包含子查询，建议优化为 JOIN");
+                if ("MEDIUM".compareTo(riskLevel) > 0) {
+                    riskLevel = "MEDIUM";
+                }
+            }
+
+            if (upperSql.contains("DROP ") || upperSql.contains("TRUNCATE ") ||
+                upperSql.contains("DELETE FROM") || upperSql.contains("UPDATE ")) {
+                risks.add("🔴 包含数据修改/删除操作，禁止执行");
+                riskLevel = "HIGH";
+            }
+
+            if ((joinCount >= 2 || selectCount >= 2) && !upperSql.contains("LIMIT")) {
+                risks.add("⚠️ 复杂查询无 LIMIT，可能返回大量数据");
+                if ("MEDIUM".compareTo(riskLevel) > 0) {
+                    riskLevel = "MEDIUM";
+                }
+            }
+
+            String reason = risks.isEmpty() ? "静态校验通过" : String.join("; ", risks);
+            log.info("[SQLRiskAnalysisTool] [静态校验] riskLevel={}, risks={}", riskLevel, risks.size());
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("success", true);
+            response.put("riskLevel", riskLevel);
+            response.put("reason", reason);
+            response.put("needsHumanApproval", "HIGH".equals(riskLevel));
+            if (!risks.isEmpty()) {
+                response.put("risks", risks);
+            }
+            return objectMapper.writeValueAsString(response);
+        } catch (Exception e) {
+            return buildSimpleResponse("LOW", "静态校验异常: " + e.getMessage(), null);
+        }
     }
 }

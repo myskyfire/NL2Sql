@@ -1,7 +1,11 @@
 package com.nl2sql.core.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.tracing.TraceSpan;
+import com.nl2sql.core.tracing.TracingService;
+import com.nl2sql.core.tracing.TracingContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -17,6 +21,9 @@ public class ToolRegistry implements ApplicationListener<ContextRefreshedEvent> 
 
     private final ApplicationContext applicationContext;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Autowired(required = false)
+    private TracingService tracingService;
 
     private final Map<String, ToolDescriptor> tools = new ConcurrentHashMap<>();
     
@@ -108,13 +115,52 @@ public class ToolRegistry implements ApplicationListener<ContextRefreshedEvent> 
             throw new IllegalArgumentException("未注册的 Tool: " + toolName);
         }
 
+        TraceSpan run = startToolTrace(toolName, arguments);
         try {
             Object[] args = buildArguments(descriptor, arguments);
             Object result = descriptor.getMethod().invoke(descriptor.getBean(), args);
+            endToolTrace(run, result, null);
             return result;
         } catch (Exception e) {
+            endToolTrace(run, null, e.getMessage());
             log.error("[ToolRegistry] 调用 Tool 失败: {}", toolName, e);
             throw new RuntimeException("调用 Tool 失败: " + toolName, e);
+        }
+    }
+
+    private TraceSpan startToolTrace(String toolName, Map<String, Object> arguments) {
+        if (tracingService == null || !tracingService.isEnabled()) return null;
+        try {
+            Map<String, Object> inputs = new LinkedHashMap<>();
+            inputs.put("toolName", toolName);
+            if (arguments != null) {
+                arguments.forEach((k, v) -> {
+                    if (v instanceof String) {
+                        String s = (String) v;
+                        inputs.put(k, s.length() > 500 ? s.substring(0, 500) + "..." : s);
+                    } else {
+                        inputs.put(k, v);
+                    }
+                });
+            }
+            return tracingService.traceTool(toolName, inputs, TracingContext.currentRunId());
+        } catch (Exception e) {
+            log.debug("[LangSmith] startToolTrace 失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void endToolTrace(TraceSpan run, Object result, String error) {
+        if (tracingService == null || run == null) return;
+        try {
+            Map<String, Object> outputs = new LinkedHashMap<>();
+            if (result != null) {
+                String resultStr = result instanceof String ? (String) result : String.valueOf(result);
+                outputs.put("result", resultStr.length() > 1000 ? resultStr.substring(0, 1000) + "..." : resultStr);
+            }
+            tracingService.endRun(run, outputs, error);
+        } catch (Exception e) {
+            log.debug("[LangSmith] endToolTrace 失败: {}", e.getMessage());
         }
     }
 
