@@ -640,9 +640,23 @@ public class HelpController {
      */
     @GetMapping("/feedback/list")
     public Result<List<Map<String, Object>>> getFeedbackList(
+            @RequestHeader(value = "Authorization", required = false) String token,
             @RequestParam(required = false) String docId,
             @RequestParam(defaultValue = "50") int limit) {
         try {
+            String userRole = "user";
+
+            if (token != null && !token.isEmpty()) {
+                AuthService.UserInfo userInfo = authService.validateToken(token);
+                if (userInfo != null && userInfo.getRole() != null) {
+                    userRole = userInfo.getRole();
+                }
+            }
+
+            if (!"admin".equals(userRole)) {
+                log.warn("非管理员用户尝试访问反馈列表: role={}", userRole);
+                return Result.error("权限不足，仅管理员可访问反馈列表");
+            }
             List<Map<String, Object>> feedbackList;
             
             synchronized (FEEDBACK_STORE) {

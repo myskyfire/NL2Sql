@@ -5,6 +5,7 @@ import com.nl2sql.core.agent.tool.BaseTool;
 import com.nl2sql.core.agent.tool.ToolContext;
 import com.nl2sql.core.agent.tool.ToolResult;
 import com.nl2sql.core.error.ErrorClassifier;
+import com.nl2sql.core.error.ErrorType;
 import com.nl2sql.core.validation.ParameterValidator;
 import com.nl2sql.core.executor.SQLRiskAnalyzer;
 import com.nl2sql.core.llm.LLMService;
@@ -556,11 +557,12 @@ public class ExecuteSQLTool implements BaseTool {
                     log.info("[ExecuteSQLTool] 🔄 第{}次重试...", attempt);
                 }
                 
-                // 执行查询
+                long queryStartTime = System.currentTimeMillis();
                 List<Map<String, Object>> results = jdbcTemplate.queryForList(currentSql);
+                long executionTime = System.currentTimeMillis() - queryStartTime;
                 
                 return new ExecutionResult(true, results, results.size(), 
-                    System.currentTimeMillis(), null, currentSql, false, null);
+                    executionTime, null, currentSql, false, null);
                 
             } catch (Exception e) {
                 log.error("[ExecuteSQLTool] 执行失败 (attempt={}): {}", attempt + 1, e.getMessage());
@@ -569,14 +571,7 @@ public class ExecuteSQLTool implements BaseTool {
                 if (attempt < maxRetries) {
                     log.info("[ExecuteSQLTool] 尝试自动修正 (第{}次)", attempt + 1);
                     
-                    // ✅ 关键修复：检测是否为离线连接异常
-                    boolean isOfflineError = e.getMessage() != null && (
-                        e.getMessage().contains("Communications link failure") ||
-                        e.getMessage().contains("Connection refused") ||
-                        e.getMessage().contains("Connect timed out") ||
-                        e.getMessage().contains("Unknown host") ||
-                        e.getMessage().contains("Cannot create PoolableConnectionFactory")
-                    );
+                    boolean isOfflineError = errorClassifier.classify(e) == ErrorType.DATABASE_CONNECTION_ERROR;
                     
                     if (isOfflineError) {
                         log.warn("[ExecuteSQLTool] [离线模式] 无法连接远程数据库，返回生成的SQL");

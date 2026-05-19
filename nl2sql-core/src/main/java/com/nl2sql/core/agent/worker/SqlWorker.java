@@ -223,7 +223,7 @@ public class SqlWorker implements Worker {
     private String generateSql(String description, QueryPlan plan, Long datasourceId, String userQuestion) {
         try {
             if (retrieveTableSchemaTool != null && !plan.getTables().isEmpty()) {
-                String schema = retrieveTableSchemaTool.execute(buildSchemaQuery(plan), datasourceId);
+                String schema = retrieveTableSchemaTool.execute(userQuestion, datasourceId);
                 return nl2sqlService.generateSQLWithSchema(userQuestion, schema, datasourceId);
             } else {
                 return nl2sqlService.generateSQL(userQuestion, datasourceId);
@@ -710,15 +710,6 @@ public class SqlWorker implements Worker {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private String buildSchemaQuery(QueryPlan plan) {
-        StringBuilder sb = new StringBuilder();
-        for (QueryPlan.TablePlan table : plan.getTables()) {
-            if (sb.length() > 0) sb.append(", ");
-            sb.append(table.getTableName());
-        }
-        return sb.toString();
     }
 
     private String extractErrorMessage(String json) {

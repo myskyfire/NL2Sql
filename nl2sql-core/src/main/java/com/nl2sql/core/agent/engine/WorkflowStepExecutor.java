@@ -387,6 +387,7 @@ public class WorkflowStepExecutor {
         ExecutorService executor = Executors.newFixedThreadPool(Math.min(branchIds.size(), 4));
         List<Future<Worker.WorkerResult>> futures = new ArrayList<>();
         List<String> branchWorkerTypes = new ArrayList<>();
+        List<String> submittedBranchIds = new ArrayList<>();
 
         for (String branchId : branchIds) {
             WorkflowStep branchStep = stepMap.get(branchId);
@@ -401,6 +402,7 @@ public class WorkflowStepExecutor {
                 continue;
             }
 
+            submittedBranchIds.add(branchId);
             branchWorkerTypes.add(branchStep.getWorker());
             Worker.WorkerContext workerContext = buildWorkerContext(ctx);
 
@@ -421,7 +423,7 @@ public class WorkflowStepExecutor {
         for (int i = 0; i < futures.size(); i++) {
             try {
                 Worker.WorkerResult result = futures.get(i).get(60, TimeUnit.SECONDS);
-                String branchId = branchIds.get(i);
+                String branchId = submittedBranchIds.get(i);
                 String workerType = branchWorkerTypes.get(i);
                 ctx.workerResults.put(branchId, result);
                 ctx.previousResults.put(branchId, result);
