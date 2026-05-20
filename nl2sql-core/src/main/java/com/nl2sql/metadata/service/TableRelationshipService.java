@@ -1327,8 +1327,7 @@ public class TableRelationshipService {
                 return "";
             }
             
-            // ✅ 关键修复：不再二次过滤，保留所有与已选表相关的关联关系
-            // 这样LLM能看到 orders.user_id -> users.id，即使users不在初始表中
+            // ✅ 保留所有与已选表相关的关联关系（包括涉及未选表的关系，用于表选择回溯）
             List<Map<String, Object>> filteredRelationships = relationships;
             
             StringBuilder sb = new StringBuilder("\n\n表之间的关联关系：\n");
@@ -1354,6 +1353,77 @@ public class TableRelationshipService {
             return result;
         } catch (Exception e) {
             log.warn("获取关联关系失败: {}", e.getMessage());
+            return "";
+        }
+    }
+    
+    /**
+     * ✅ 新增：专为SQL生成阶段过滤关联关系
+     * 只返回源表和目标表都在指定表列表中的关联关系
+     * 
+     * @param datasourceId 数据源ID
+     * @param tables 相关表列表（必须是最终确定的表集合）
+     * @return 过滤后的关联关系描述字符串
+     */
+    public String getFilteredRelationshipsForSQLGeneration(Long datasourceId, List<String> tables) {
+        if (datasourceId == null || tables == null || tables.isEmpty()) {
+            return "";
+        }
+        
+        try {
+            // 先获取所有相关关系
+            String allRelationships = getRelationshipsForPrompt(datasourceId, tables);
+            if (allRelationships.isEmpty()) {
+                return "";
+            }
+            
+            // 重新查询原始数据以便过滤
+            String tableList = tables.stream()
+                .map(t -> "'" + t.replace("'", "''") + "'")
+                .collect(Collectors.joining(", "));
+            
+            String sql = String.format(
+                "SELECT source_table, source_column, target_table, target_column, relationship_type, description " +
+                "FROM table_relationships " +
+                "WHERE datasource_id = %d AND is_active = 1 " +
+                "AND (source_table IN (%s) OR target_table IN (%s))",
+                datasourceId, tableList, tableList
+            );
+            
+            List<Map<String, Object>> relationships = jdbcTemplate.queryForList(sql);
+            
+            // ✅ 关键过滤：只保留源表和目标表都在表列表中的关系
+            Set<String> tableSet = new HashSet<>(tables);
+            List<Map<String, Object>> filteredRelationships = relationships.stream()
+                .filter(rel -> {
+                    String sourceTable = (String) rel.get("source_table");
+                    String targetTable = (String) rel.get("target_table");
+                    return tableSet.contains(sourceTable) && tableSet.contains(targetTable);
+                })
+                .collect(Collectors.toList());
+            
+            log.info("[TableRelationship] SQL生成阶段关联关系过滤: {} 条 → {} 条", 
+                relationships.size(), filteredRelationships.size());
+            
+            if (filteredRelationships.isEmpty()) {
+                return "";
+            }
+            
+            StringBuilder sb = new StringBuilder("\n\n表之间的关联关系：\n");
+            for (Map<String, Object> rel : filteredRelationships) {
+                sb.append(String.format("- %s.%s -> %s.%s (%s): %s\n",
+                    rel.get("source_table"),
+                    rel.get("source_column"),
+                    rel.get("target_table"),
+                    rel.get("target_column"),
+                    rel.get("relationship_type"),
+                    rel.get("description") != null ? rel.get("description") : ""
+                ));
+            }
+            
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("[TableRelationship] 过滤关联关系失败: {}", e.getMessage());
             return "";
         }
     }

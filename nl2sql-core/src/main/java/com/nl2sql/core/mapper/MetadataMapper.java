@@ -25,4 +25,9 @@ public interface MetadataMapper {
      */
     String getTableComment(@Param("datasourceId") Long datasourceId,
                           @Param("tableName") String tableName);
+    
+    /**
+     * 获取数据源的数据库类型（MySQL, Oracle, DM, PostgreSQL等）
+     */
+    String getDbType(@Param("datasourceId") Long datasourceId);
 }

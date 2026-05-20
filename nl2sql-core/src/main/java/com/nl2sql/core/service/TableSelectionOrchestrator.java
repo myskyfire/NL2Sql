@@ -3,11 +3,15 @@ package com.nl2sql.core.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.common.util.MarkdownUtils;
+import com.nl2sql.core.cache.IndustryTargetExtractor;
 import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.cache.QueryCacheService;
+import com.nl2sql.core.cache.QueryStructureExtractor;
+import com.nl2sql.core.cache.SQLTemplateFiller;
 import com.nl2sql.core.llm.ModelRouterService;
 import com.nl2sql.core.llm.SynonymService;
 import com.nl2sql.core.mapper.MetadataMapper;
+import com.nl2sql.core.rerank.Reranker;
 import com.nl2sql.core.retriever.VectorRetriever;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +58,9 @@ public class TableSelectionOrchestrator {
     
     @Autowired(required = false)
     private com.nl2sql.metadata.service.TableRelationshipService tableRelationshipService;
+    
+    @Autowired(required = false)
+    private Reranker reranker;
     
     // ✅ 新增：ThreadLocal用于传递已检索的表列表（避免重复L3检索）
     private static final ThreadLocal<List<String>> preRetrievedTables = new ThreadLocal<>();
@@ -123,13 +130,13 @@ public class TableSelectionOrchestrator {
             // ✅ P0优化：优先从QueryCache获取5分SQL模板
             if (queryCacheService != null) {
                 String normalizedQuery = schemaRetrievalService.normalizeQueryForCache(query);
-                com.nl2sql.core.cache.QueryCacheService.CachedResult cached = 
+                QueryCacheService.CachedResult cached =
                     queryCacheService.getFromNormalizedQuery(normalizedQuery);  // ✅ 修复：使用规范化查询文本检索
                 
                 if (cached != null && cached.getUserRating() != null && cached.getUserRating() == 5) {
                     // ✅ 关键修复：使用SQLTemplateFiller填充模板（注入行业提取器）
-                    com.nl2sql.core.cache.QueryStructureExtractor extractor = 
-                        new com.nl2sql.core.cache.QueryStructureExtractor();
+                    QueryStructureExtractor extractor =
+                        new QueryStructureExtractor();
                     
                     // ✅ 设置数据源信息（用于查询行业表）
                     if (schemaRetrievalService != null) {
@@ -141,17 +148,17 @@ public class TableSelectionOrchestrator {
                     
                     // ✅ 根据数据源注入行业提取器（仅用于特殊逻辑）
                     if (extractorFactory != null) {
-                        com.nl2sql.core.cache.IndustryTargetExtractor industryExtractor = 
+                        IndustryTargetExtractor industryExtractor =
                             extractorFactory.getExtractor(datasourceId);
                         if (industryExtractor != null) {
                             extractor.setIndustryTargetExtractor(industryExtractor);
                         }
                     }
                     
-                    com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+                    QueryStructureExtractor.QueryStructure structure =
                         extractor.extract(query);
-                    com.nl2sql.core.cache.SQLTemplateFiller filler = 
-                        new com.nl2sql.core.cache.SQLTemplateFiller();
+                    SQLTemplateFiller filler =
+                        new SQLTemplateFiller();
                     String finalSQL = filler.fill(cached.getSql(), structure);
                     
                     log.info("[TableSelection] ⚡⚡⚡ 5分SQL模板命中: question='{}', sql={}", 
@@ -166,12 +173,12 @@ public class TableSelectionOrchestrator {
                     return result;
                 }
             }
-            
+
             // ✅ 关键优化：尝试从缓存获取 SQL（避免 LLM 非确定性）
             if (queryCacheService != null) {
                 try {
                     // 1. 先尝试L1精确匹配
-                    com.nl2sql.core.cache.QueryCacheService.CachedResult cached = 
+                    QueryCacheService.CachedResult cached =
                         queryCacheService.getFromCache(query);
                     
                     if (cached != null && cached.getData() != null && !cached.getData().isEmpty()) {
@@ -191,13 +198,13 @@ public class TableSelectionOrchestrator {
                     
                     // 2. ✅ 新增：L2归一化模板匹配
                     String normalizedQuery = schemaRetrievalService.normalizeQueryForCache(query);
-                    com.nl2sql.core.cache.QueryCacheService.CachedResult templateCached = 
+                    QueryCacheService.CachedResult templateCached =
                         queryCacheService.getFromNormalizedQuery(normalizedQuery);
                     
                     if (templateCached != null && templateCached.getUserRating() != null && templateCached.getUserRating() >= 4) {
                         // ✅ 使用SQLTemplateFiller填充模板（注入行业提取器）
-                        com.nl2sql.core.cache.QueryStructureExtractor extractor = 
-                            new com.nl2sql.core.cache.QueryStructureExtractor();
+                        QueryStructureExtractor extractor =
+                            new QueryStructureExtractor();
                         
                         // ✅ 设置数据源信息（用于查询行业表）
                         if (schemaRetrievalService != null) {
@@ -209,17 +216,17 @@ public class TableSelectionOrchestrator {
                         
                         // ✅ 根据数据源注入行业提取器（仅用于特殊逻辑）
                         if (extractorFactory != null) {
-                            com.nl2sql.core.cache.IndustryTargetExtractor industryExtractor = 
+                            IndustryTargetExtractor industryExtractor =
                                 extractorFactory.getExtractor(datasourceId);
                             if (industryExtractor != null) {
                                 extractor.setIndustryTargetExtractor(industryExtractor);
                             }
                         }
                         
-                        com.nl2sql.core.cache.QueryStructureExtractor.QueryStructure structure = 
+                        QueryStructureExtractor.QueryStructure structure =
                             extractor.extract(query);
-                        com.nl2sql.core.cache.SQLTemplateFiller filler = 
-                            new com.nl2sql.core.cache.SQLTemplateFiller();
+                        SQLTemplateFiller filler =
+                            new SQLTemplateFiller();
                         String filledSQL = filler.fill(templateCached.getSql(), structure);
                         
                         log.info("[TableSelection] ⚡⚡ L2模板命中: original='{}', normalized='{}', rating={}", 
@@ -309,6 +316,50 @@ public class TableSelectionOrchestrator {
                 }
             }
             
+            // ✅ Reranker精排：对向量检索返回的候选表按语义相关性重排序
+            if (initialTables.size() > 1 && reranker != null && reranker.isAvailable()) {
+                try {
+                    log.info("[TableSelection] 🔄 Reranker 精排候选表: candidates={}", initialTables.size());
+                    
+                    // 构建表描述文本（表名 + 注释），用于CrossEncoder语义匹配
+                    Map<String, String> descToTable = new LinkedHashMap<>();
+                    for (String tableName : initialTables) {
+                        String comment = "";
+                        try {
+                            comment = metadataMapper.getTableComment(datasourceId, tableName);
+                        } catch (Exception e) {
+                            log.debug("[TableSelection] 获取表注释失败: table={}", tableName);
+                        }
+                        String desc = comment != null && !comment.isEmpty()
+                            ? tableName + " - " + comment
+                            : tableName;
+                        descToTable.put(desc, tableName);
+                    }
+                    
+                    // 用原始自然语言query对表描述做CrossEncoder精排
+                    List<Reranker.RerankedDocument> reranked = reranker.rerank(query,
+                        new ArrayList<>(descToTable.keySet()));
+                    
+                    // 重建有序表列表：精排高分在前，未通过阈值的保持原序追加
+                    Set<String> orderedTables = new LinkedHashSet<>();
+                    for (Reranker.RerankedDocument doc : reranked) {
+                        orderedTables.add(descToTable.get(doc.getContent()));
+                    }
+                    // 追加未被精排选中的表（低于阈值）
+                    orderedTables.addAll(initialTables);
+                    
+                    initialTables = new ArrayList<>(orderedTables);
+                    
+                    double avgScore = reranked.stream()
+                        .mapToDouble(Reranker.RerankedDocument::getRelevanceScore)
+                        .average().orElse(0);
+                    log.info("[TableSelection] ✅ Reranker 精排完成: reranked={}, total={}, avgScore={:.3f}",
+                        reranked.size(), initialTables.size(), avgScore);
+                } catch (Exception e) {
+                    log.error("[TableSelection] ❌ Reranker 精排失败，保持原序: {}", e.getMessage(), e);
+                }
+            }
+            
             if (initialTables.isEmpty()) {
                 TableSelectionResult result = new TableSelectionResult();
                 result.setError("ERROR: 未找到任何相关表，请检查元数据是否已加载");
@@ -333,7 +384,6 @@ public class TableSelectionOrchestrator {
             
             // 2. 迭代式表发现 + 回溯机制
             Set<String> allTables = new HashSet<>(initialTables);
-            boolean needsClarification = false;
             String clarificationMessage = "";
             String lastLlmResponse = null;
                         
@@ -465,30 +515,13 @@ public class TableSelectionOrchestrator {
                         }
                     }
                     
-                    // ✅ 关键修复：JSON解析成功但未匹配预期字段，说明LLM响应格式错误
-                    if (!handled) {
-                        log.warn("[TableSelection] JSON格式不符合预期，缺少selected_tables或missing_tables字段");
-                        log.warn("[TableSelection] LLM原始响应: {}", llmResponse);
-                        // 不执行传统解析，直接中断迭代
-                        break;
-                    }
-                    
                 } catch (Exception e) {
                     log.warn("[TableSelection] JSON解析失败，使用传统方式: {}", e.getMessage());
-                    // JSON解析失败才执行传统解析
                 }
             }
             
             log.info("[TableSelection] 最终确定 {} 个表: {}", allTables.size(), allTables);
-            
-            // 3. 如果仍然需要澄清，返回澄清信号
-            if (needsClarification) {
-                TableSelectionResult result = new TableSelectionResult();
-                result.setNeedsClarification(true);
-                result.setClarificationMessage(clarificationMessage);
-                return result;
-            }
-            
+
             // 4. 如果表数量过多（>10），让用户选择
             if (allTables.size() > 10) {
                 StringBuilder tableList = new StringBuilder();

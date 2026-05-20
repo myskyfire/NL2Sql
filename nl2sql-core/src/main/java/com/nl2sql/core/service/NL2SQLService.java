@@ -223,9 +223,9 @@ public class NL2SQLService {
                 log.info("[NL2SQLService] 检测到LLM请求缺失表，启用智能扩展");
             }
             
-            // 第一次：基于LLM选的表获取关联关系
+            // 第一次：获取表关联关系（始终获取，不再受shouldExpand条件限制）
             String fullRelationshipInfo = relationshipInfo;
-            if (fullRelationshipInfo.isEmpty() && shouldExpand) {
+            if (fullRelationshipInfo.isEmpty()) {
                 fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
                     datasourceId, new ArrayList<>(allTables));
             }
@@ -263,7 +263,8 @@ public class NL2SQLService {
             
             // ⚠️ 关键：基于扩展后的表重新获取完整的关联关系
             if (expandedTables.size() > allTables.size()) {
-                fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                // ✅ SQL生成阶段：使用过滤后的关联关系（只包含源表和目标表都在expandedTables中的关系）
+                fullRelationshipInfo = relationshipService.getFilteredRelationshipsForSQLGeneration(
                     datasourceId, new ArrayList<>(expandedTables));
             }
             
@@ -320,10 +321,18 @@ public class NL2SQLService {
             // ✅ 关键：明确列出可用表清单，分级提示（不再硬性限制）
             String availableTablesList = String.join(", ", expandedTables);
             
+            // ✅ 获取数据源对应的数据库类型
+            String dbType = metadataMapper.getDbType(datasourceId);
+            if (dbType == null || dbType.isEmpty()) {
+                dbType = "MySQL";
+            }
+            String dialectTitle = dbType.toUpperCase() + " SQL";
+            
             sessionContextManager.publishProgress(this, "generating_final_sql", "🤖 生成最终SQL...");
             
             String sqlPrompt = String.format(
-                "你是MySQL SQL专家。根据数据库结构和用户问题生成SQL。\n\n" +
+                "你是" + dialectTitle + "专家。请根据数据库结构和用户问题生成" + dbType.toUpperCase() + " SQL。\n\n" +
+                "数据库类型：" + dbType.toUpperCase() + "\n\n" +
                 "可用表（%d张）：%s\n\n" +
                 "表结构：\n%s\n\n" +
                 "%s" +
@@ -338,7 +347,7 @@ public class NL2SQLService {
                 "3. 所有SELECT字段用AS指定中文别名\n" +
                 "4. 需要GROUP BY的场景：统计/汇总/平均/趋势/对比/分布/排名/每天/每月/各X等聚合查询；不需要GROUP BY的场景：查详情/查列表/查具体某天的数据\n" +
                 "5. JOIN必须用ID字段，禁止子查询，一对多需加过滤条件\n" +
-                "6. 按天/月统计用DATE_FORMAT(created_at, '%%Y-%%m-%%d')\n" +
+                "6. 按天/月统计请使用该数据库对应的日期格式化函数\n" +
                 "7. GROUP BY和ORDER BY必须使用与SELECT相同的原始表达式，禁止用中文别名或数字位置\n" +
                 "8. 相同语义查询保持SQL结构一致\n" +
                 "SQL：",
@@ -374,7 +383,8 @@ public class NL2SQLService {
                 // 补充缺失表的schema
                 expandedTables.addAll(missingTables);
                 String updatedSchemaInfo = buildTableSchemaInfo(new ArrayList<>(expandedTables), datasourceId);
-                String updatedRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                // ✅ SQL生成阶段：使用过滤后的关联关系
+                String updatedRelationshipInfo = relationshipService.getFilteredRelationshipsForSQLGeneration(
                     datasourceId, new ArrayList<>(expandedTables));
                 
                 log.info("[NL2SQLService] 已补充表schema，重新生成SQL");
@@ -383,7 +393,8 @@ public class NL2SQLService {
                 // 重新构建Prompt
                 String updatedAvailableTablesList = String.join(", ", expandedTables);
                 String updatedSqlPrompt = String.format(
-                    "你是MySQL SQL专家。根据数据库结构和用户问题生成SQL。\n\n" +
+                    "你是" + dialectTitle + "专家。请根据数据库结构和用户问题生成" + dbType.toUpperCase() + " SQL。\n\n" +
+                    "数据库类型：" + dbType.toUpperCase() + "\n\n" +
                     "可用表（%d张）：%s\n\n" +
                     "表结构：\n%s\n\n" +
                     "%s" +
@@ -398,7 +409,7 @@ public class NL2SQLService {
                     "3. 所有SELECT字段用AS指定中文别名\n" +
                     "4. 需要GROUP BY的场景：统计/汇总/平均/趋势/对比/分布/排名/每天/每月/各X等聚合查询；不需要GROUP BY的场景：查详情/查列表/查具体某天的数据\n" +
                     "5. JOIN必须用ID字段，禁止子查询，一对多需加过滤条件\n" +
-                    "6. 按天/月统计用DATE_FORMAT(created_at, '%%Y-%%m-%%d')\n" +
+                    "6. 按天/月统计请使用该数据库对应的日期格式化函数\n" +
                     "7. GROUP BY和ORDER BY必须使用与SELECT相同的原始表达式，禁止用中文别名或数字位置\n" +
                     "8. 相同语义查询保持SQL结构一致\n" +
                     "SQL：",
@@ -466,7 +477,8 @@ public class NL2SQLService {
                 Set<String> allTablesForCorrection = new HashSet<>(expandedTables);
                 allTablesForCorrection.addAll(missingTablesForCorrection);
                 correctionSchemaInfo = buildTableSchemaInfo(new ArrayList<>(allTablesForCorrection), datasourceId);
-                correctionRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                // ✅ SQL验证阶段：使用过滤后的关联关系
+                correctionRelationshipInfo = relationshipService.getFilteredRelationshipsForSQLGeneration(
                     datasourceId, new ArrayList<>(allTablesForCorrection));
                 
                 log.info("[NL2SQLService] 已补充纠错用 schema，包含 {} 张表", allTablesForCorrection.size());
@@ -638,8 +650,14 @@ public class NL2SQLService {
                 log.info("[NL2SQLService] 已加载 {} 张表的 schema: {}", tablesInSQL.size(), tablesInSQL);
             }
             
+            String autoFixDbType = metadataMapper.getDbType(datasourceId);
+            if (autoFixDbType == null || autoFixDbType.isEmpty()) {
+                autoFixDbType = "MySQL";
+            }
+            
             String fixPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL执行失败，请根据表结构修正。\n\n" +
+                "你是" + autoFixDbType.toUpperCase() + " SQL专家。以下SQL执行失败，请根据表结构修正。\n\n" +
+                "数据库类型：" + autoFixDbType.toUpperCase() + "\n\n" +
                 "%s" +
                 "失败的SQL:\n%s\n\n" +
                 "错误信息:\n%s\n\n" +
@@ -680,8 +698,13 @@ public class NL2SQLService {
             }
             
             // 构建 Prompt
+            String dbTypeExt = metadataMapper.getDbType(datasourceId);
+            if (dbTypeExt == null || dbTypeExt.isEmpty()) {
+                dbTypeExt = "MySQL";
+            }
             String prompt = String.format(
-                "请根据以下表结构和用户问题生成 SQL 语句。\n\n" +
+                "你是" + dbTypeExt.toUpperCase() + " SQL专家。根据以下表结构和用户问题生成" + dbTypeExt.toUpperCase() + " SQL 语句。\n\n" +
+                "数据库类型：" + dbTypeExt.toUpperCase() + "\n\n" +
                 "表结构信息：\n%s\n\n" +
                 "用户问题：%s\n\n" +
                 "要求：\n" +
