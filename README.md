@@ -1,4 +1,4 @@
-# DataMind AI
+﻿# DataMind AI
 
 <div align="center">
 
@@ -231,7 +231,7 @@ graph TB
 
 #### SupervisorAgent — 总指挥大脑
 
-[SupervisorAgent.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/SupervisorAgent.java)
+[SupervisorAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/SupervisorAgent.java)
 
 系统总入口，采用 **Plan-and-Execute + Multi-Agent** 架构，是整个系统的核心调度中枢：
 
@@ -260,7 +260,7 @@ graph LR
 
 #### PlannerAgent — 结构规划师
 
-[PlannerAgent.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/PlannerAgent.java)
+[PlannerAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/PlannerAgent.java)
 
 将模糊的自然语言问题转化为结构化的 `QueryPlan`（JSON 格式），是 Plan-and-Execute 架构中"Plan"的核心：
 
@@ -301,7 +301,7 @@ graph LR
 
 #### WorkflowEngine — 执行指挥官
 
-[WorkflowEngine.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowEngine.java)
+[WorkflowEngine.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowEngine.java)
 
 **纯 Java 实现**（不依赖 Groovy 脚本），解析 `SKILL.md` 中的 YAML 工作流配置，按步骤调用底层 Tool。是 Plan-and-Execute 架构中"Execute"的执行中枢：
 
@@ -430,14 +430,14 @@ flowchart TD
 
 | 组件 | 职责 | 决策方式 | 文件 |
 |------|------|---------|------|
-| **SupervisorAgent** | 意图分类、路由分发、全局调度、缓存检查 | 规则 + LLM | [SupervisorAgent.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/SupervisorAgent.java) |
-| **IntentClassifier** | 识别 QUERY/CHART/REPORT/CLARIFY 意图 | 关键词匹配 + LLM | [IntentClassifier.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/intent/IntentClassifier.java) |
-| **SkillRouter** | 匹配最合适的 Skill（6 个内置 Skill） | 规则引擎 + LLM 辅助 | [SkillRouter.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/routing/SkillRouter.java) |
-| **PlannerAgent** | 三级复杂度评估 + 生成结构化 QueryPlan | LLM (JSON 结构化输出) | [PlannerAgent.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/PlannerAgent.java) |
-| **WorkflowEngine** | 解析 SKILL.md YAML，编排 Tool 执行链 | YAML 声明式 | [WorkflowEngine.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowEngine.java) |
-| **SqlWorker** | SQL 生成、校验、修正、执行一体化 | 专用逻辑 + LLM | [SqlWorker.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SqlWorker.java) |
-| **ChartWorker** | 图表意图检测、ECharts 配置生成 | 规则 + LLM | [ChartWorker.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/ChartWorker.java) |
-| **SummaryWorker** | AI 驱动数据洞察总结 | LLM | [SummaryWorker.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SummaryWorker.java) |
+| **SupervisorAgent** | 意图分类、路由分发、全局调度、缓存检查 | 规则 + LLM | [SupervisorAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/SupervisorAgent.java) |
+| **IntentClassifier** | 识别 QUERY/CHART/REPORT/CLARIFY 意图 | 关键词匹配 + LLM | [IntentClassifier.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/intent/IntentClassifier.java) |
+| **SkillRouter** | 匹配最合适的 Skill（6 个内置 Skill） | 规则引擎 + LLM 辅助 | [SkillRouter.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/routing/SkillRouter.java) |
+| **PlannerAgent** | 三级复杂度评估 + 生成结构化 QueryPlan | LLM (JSON 结构化输出) | [PlannerAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/PlannerAgent.java) |
+| **WorkflowEngine** | 解析 SKILL.md YAML，编排 Tool 执行链 | YAML 声明式 | [WorkflowEngine.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowEngine.java) |
+| **SqlWorker** | SQL 生成、校验、修正、执行一体化 | 专用逻辑 + LLM | [SqlWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SqlWorker.java) |
+| **ChartWorker** | 图表意图检测、ECharts 配置生成 | 规则 + LLM | [ChartWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/ChartWorker.java) |
+| **SummaryWorker** | AI 驱动数据洞察总结 | LLM | [SummaryWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SummaryWorker.java) |
 
 **架构演进历程：**
 
@@ -460,13 +460,13 @@ timeline
   │     └─ SQL 语义 MD5 哈希 → 完整查询结果 (List<Map>)
   │     └─ 命中率 ~40%，延迟 <1ms
   │     └─ TTL: 30 分钟自动过期
-  │     └─ 实现: [QueryCacheService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryCacheService.java)
-  │              [QueryResultCache.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryResultCache.java)
+  │     └─ 实现: [QueryCacheService.java](nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryCacheService.java)
+  │              [QueryResultCache.java](nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryResultCache.java)
   │
   ├─ L2: SQL 模板填充
-  │     └─ [QueryStructureExtractor.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryStructureExtractor.java)
+  │     └─ [QueryStructureExtractor.java](nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryStructureExtractor.java)
   │         提取查询结构（SELECT/WHERE/GROUP BY 骨架）
-  │     └─ [SQLTemplateFiller.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/cache/SQLTemplateFiller.java)
+  │     └─ [SQLTemplateFiller.java](nl2sql-core/src/main/java/com/nl2sql/core/cache/SQLTemplateFiller.java)
   │         填充业务参数（时间词/人名/地点替换）
   │     └─ 行业提取器：电商(`EcommerceTargetExtractor`)、金融(`FinanceTargetExtractor`) 等
   │     └─ 命中率 ~15%，延迟 ~5ms
@@ -478,7 +478,7 @@ timeline
         └─ Jaccard 相似度二次校验（防误匹配）
         └─ 命中率 ~10%，延迟 ~50ms
         └─ ChromaDB 不可用时自动降级到 Jaccard 纯文本匹配
-        └─ 实现: [QueryCacheVectorService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryCacheVectorService.java)
+        └─ 实现: [QueryCacheVectorService.java](nl2sql-core/src/main/java/com/nl2sql/core/cache/QueryCacheVectorService.java)
 ```
 
 **缓存性能指标：**
@@ -542,17 +542,17 @@ RAG 工作流程
 
 | 特性 | 说明 | 实现 |
 |------|------|------|
-| **双层向量检索** | 表级 + 字段级，bge-m3 嵌入模型（1024维，中文优化） | [ChromaVectorService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/ChromaVectorService.java) |
-| **自动入库** | 5 星评分的 SQL 自动解析并存入向量库（质量评分 >0.7） | [RagAutoLearner.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/RagAutoLearner.java) |
-| **三级降级** | ChromaDB → MySQL 向量 → MySQL 全文检索 | [MySqlVectorService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/MySqlVectorService.java) |
-| **多向量库后端** | 统一 `VectorStoreProvider` 接口，支持 4 种后端：ChromaDB / MySQL / Milvus / Qdrant，一行配置切换 | [VectorStoreManager.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/provider/VectorStoreManager.java) |
-| **Prompt 学习** | 低分反馈触发的 Prompt 模板自动优化 | [PromptLearningService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) |
-| **低分过滤** | 自动识别并过滤低质量 RAG 示例 | [LowRatingExampleService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/LowRatingExampleService.java) |
-| **A/B 测试** | 支持 RAG 策略 A/B 对比测试 | [ABTestRequest.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/dto/ABTestRequest.java) |
+| **双层向量检索** | 表级 + 字段级，bge-m3 嵌入模型（1024维，中文优化） | [ChromaVectorService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/ChromaVectorService.java) |
+| **自动入库** | 5 星评分的 SQL 自动解析并存入向量库（质量评分 >0.7） | [RagAutoLearner.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/RagAutoLearner.java) |
+| **三级降级** | ChromaDB → MySQL 向量 → MySQL 全文检索 | [MySqlVectorService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/MySqlVectorService.java) |
+| **多向量库后端** | 统一 `VectorStoreProvider` 接口，支持 4 种后端：ChromaDB / MySQL / Milvus / Qdrant，一行配置切换 | [VectorStoreManager.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/provider/VectorStoreManager.java) |
+| **Prompt 学习** | 低分反馈触发的 Prompt 模板自动优化 | [PromptLearningService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) |
+| **低分过滤** | 自动识别并过滤低质量 RAG 示例 | [LowRatingExampleService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/LowRatingExampleService.java) |
+| **A/B 测试** | 支持 RAG 策略 A/B 对比测试 | [ABTestRequest.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/dto/ABTestRequest.java) |
 
 ### 4. 多模型智能路由
 
-[ModelRouterService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/llm/ModelRouterService.java)
+[ModelRouterService.java](nl2sql-core/src/main/java/com/nl2sql/core/llm/ModelRouterService.java)
 
 自动评估查询复杂度，动态选择最优 LLM 模型，兼顾效果与成本：
 
@@ -617,13 +617,13 @@ graph LR
 | **JinaReranker** | jina-reranker-v2 | Jina AI API (云端) | 无需 GPU、快速接入、按量付费 |
 
 **核心实现类：**
-- [CrossEncoderReranker.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rerank/CrossEncoderReranker.java) — 本地 TEI 精排
-- [JinaReranker.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rerank/JinaReranker.java) — 云端 Jina API
-- [RerankerConfig.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rerank/RerankerConfig.java) — 自动配置与降级，TEI 不可用时自动切换 Jina
+- [CrossEncoderReranker.java](nl2sql-core/src/main/java/com/nl2sql/core/rerank/CrossEncoderReranker.java) — 本地 TEI 精排
+- [JinaReranker.java](nl2sql-core/src/main/java/com/nl2sql/core/rerank/JinaReranker.java) — 云端 Jina API
+- [RerankerConfig.java](nl2sql-core/src/main/java/com/nl2sql/core/rerank/RerankerConfig.java) — 自动配置与降级，TEI 不可用时自动切换 Jina
 
 ### 6. SQL 自动纠错与 Self-Correction
 
-[ErrorClassifier.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/error/ErrorClassifier.java)
+[ErrorClassifier.java](nl2sql-core/src/main/java/com/nl2sql/core/error/ErrorClassifier.java)
 
 智能错误识别 + 差异化重试策略，支持 **6 种错误类型**的自动分类：
 
@@ -660,11 +660,11 @@ flowchart TD
 
 | 错误类型 | 检测模式 | 重试策略 | 处理文件 |
 |---------|---------|---------|---------|
-| 表不存在 | `table.*doesn't exist` | 重新检索 Schema → 重新生成 SQL | [ErrorClassifier.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/error/ErrorClassifier.java) |
-| 列不存在（幻觉列） | `Unknown column` | Schema 白名单校验 → 移除幻觉列 → 重新生成 | [SQLCorrectionService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/service/SQLCorrectionService.java) |
-| SQL 语法错误 | `syntax error` | 调用 LLM 语法修正 | [SQLAutoFixTool.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/SQLAutoFixTool.java) |
-| 歧义列 | `ambiguous` | 自动添加表前缀 | [CorrectSqlTool.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/CorrectSqlTool.java) |
-| 死锁 | `deadlock` | 等待 1s 后重试（最多 3 次） | [RetryableExecutor.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/error/RetryableExecutor.java) |
+| 表不存在 | `table.*doesn't exist` | 重新检索 Schema → 重新生成 SQL | [ErrorClassifier.java](nl2sql-core/src/main/java/com/nl2sql/core/error/ErrorClassifier.java) |
+| 列不存在（幻觉列） | `Unknown column` | Schema 白名单校验 → 移除幻觉列 → 重新生成 | [SQLCorrectionService.java](nl2sql-core/src/main/java/com/nl2sql/core/service/SQLCorrectionService.java) |
+| SQL 语法错误 | `syntax error` | 调用 LLM 语法修正 | [SQLAutoFixTool.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/SQLAutoFixTool.java) |
+| 歧义列 | `ambiguous` | 自动添加表前缀 | [CorrectSqlTool.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/CorrectSqlTool.java) |
+| 死锁 | `deadlock` | 等待 1s 后重试（最多 3 次） | [RetryableExecutor.java](nl2sql-core/src/main/java/com/nl2sql/core/error/RetryableExecutor.java) |
 | 超时 | `timeout` | 添加 LIMIT 限制 → 重试 | `RetryableExecutor` |
 
 **安全保障：**
@@ -719,9 +719,9 @@ flowchart TD
 ```
 
 **核心实现类：**
-- [SQLSecurityValidator.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-security/src/main/java/com/nl2sql/security/SQLSecurityValidator.java) — AST 级别安全校验
-- [ColumnPermissionService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-security/src/main/java/com/nl2sql/security/ColumnPermissionService.java) — 列级权限与脱敏
-- [AuthService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/auth/service/AuthService.java) — JWT 认证服务
+- [SQLSecurityValidator.java](nl2sql-security/src/main/java/com/nl2sql/security/SQLSecurityValidator.java) — AST 级别安全校验
+- [ColumnPermissionService.java](nl2sql-security/src/main/java/com/nl2sql/security/ColumnPermissionService.java) — 列级权限与脱敏
+- [AuthService.java](nl2sql-core/src/main/java/com/nl2sql/auth/service/AuthService.java) — JWT 认证服务
 
 ### 8. 行业语义理解
 
@@ -736,15 +736,15 @@ flowchart TD
 | 🏭 **制造业** | 产品、产线、工单、质检、库存 | "良品率" → `SUM(quality='OK')/COUNT(*)` |
 
 **核心能力：**
-- **同义词词典**：[SynonymService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/llm/SynonymService.java) 自动识别业务术语（订单/定单、用户/客户），从 `industry_concept` 表动态加载
-- **行业概念字典**：[IndustryConceptDictionary.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/llm/IndustryConceptDictionary.java) 五大行业映射，支持管理后台在线编辑
+- **同义词词典**：[SynonymService.java](nl2sql-core/src/main/java/com/nl2sql/core/llm/SynonymService.java) 自动识别业务术语（订单/定单、用户/客户），从 `industry_concept` 表动态加载
+- **行业概念字典**：[IndustryConceptDictionary.java](nl2sql-core/src/main/java/com/nl2sql/core/llm/IndustryConceptDictionary.java) 五大行业映射，支持管理后台在线编辑
 - **语义映射扩展**：可插拔 `SemanticMappingExtension` 接口，新增行业只需添加一个实现类
 - **行业 Prompt 注入**：`IndustryConceptExtension` 四层扩展（术语理解 → SQL 干预 → 语义校验 → 持续学习）
-- **时间表达式解析**：[TimeExpressionParser.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/preprocessing/TimeExpressionParser.java) 智能解析"昨天"、"最近 7 天"、"上个月"、"本季度"等
-- **地理位置语义**：[LocationSemanticService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/llm/LocationSemanticService.java) "华东" → `region IN ('上海','江苏','浙江','安徽')`
-- **智能术语建议**：[TermSuggestionController.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/java/com/nl2sql/web/controller/TermSuggestionController.java) 用户输入时自动补全行业术语，基于 HanLP 分词 + Caffeine L1 + Redis L2 缓存，毫秒级响应
-- **术语自动生成**：[TermAutoGenerateService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/metadata/service/TermAutoGenerateService.java) 三层架构自动爬库生成术语——底层从 `information_schema` 提取结构 → 中层 LLM 扩词（DDL→同义词/口语） → 上层前端选词约束
-- **列名智能翻译**：[TranslationController.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/java/com/nl2sql/web/controller/TranslationController.java) 英文列名自动翻译为中文，支持批量翻译 + Caffeine/Redis 两级缓存，翻译结果自动入库供下次复用
+- **时间表达式解析**：[TimeExpressionParser.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/preprocessing/TimeExpressionParser.java) 智能解析"昨天"、"最近 7 天"、"上个月"、"本季度"等
+- **地理位置语义**：[LocationSemanticService.java](nl2sql-core/src/main/java/com/nl2sql/core/llm/LocationSemanticService.java) "华东" → `region IN ('上海','江苏','浙江','安徽')`
+- **智能术语建议**：[TermSuggestionController.java](nl2sql-web/src/main/java/com/nl2sql/web/controller/TermSuggestionController.java) 用户输入时自动补全行业术语，基于 HanLP 分词 + Caffeine L1 + Redis L2 缓存，毫秒级响应
+- **术语自动生成**：[TermAutoGenerateService.java](nl2sql-core/src/main/java/com/nl2sql/metadata/service/TermAutoGenerateService.java) 三层架构自动爬库生成术语——底层从 `information_schema` 提取结构 → 中层 LLM 扩词（DDL→同义词/口语） → 上层前端选词约束
+- **列名智能翻译**：[TranslationController.java](nl2sql-web/src/main/java/com/nl2sql/web/controller/TranslationController.java) 英文列名自动翻译为中文，支持批量翻译 + Caffeine/Redis 两级缓存，翻译结果自动入库供下次复用
 
 ### 9. 全链路可观测性
 
@@ -789,14 +789,14 @@ graph TB
 - **反馈关联**：用户评分自动上报到 LangSmith，支持线上评估与持续优化
 
 **核心实现类：**
-- [LangSmithTracingService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/tracing/LangSmithTracingService.java) — LangSmith REST API 集成
-- [LangfuseTracingService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/tracing/LangfuseTracingService.java) — Langfuse 集成
-- [TracingConfig.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/tracing/TracingConfig.java) — 配置管理
-- [WorkflowTracingHelper.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowTracingHelper.java) — Workflow 步骤级追踪
+- [LangSmithTracingService.java](nl2sql-core/src/main/java/com/nl2sql/core/tracing/LangSmithTracingService.java) — LangSmith REST API 集成
+- [LangfuseTracingService.java](nl2sql-core/src/main/java/com/nl2sql/core/tracing/LangfuseTracingService.java) — Langfuse 集成
+- [TracingConfig.java](nl2sql-core/src/main/java/com/nl2sql/core/tracing/TracingConfig.java) — 配置管理
+- [WorkflowTracingHelper.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowTracingHelper.java) — Workflow 步骤级追踪
 
 ### 10. 反馈学习闭环
 
-[FeedbackLearningService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/FeedbackLearningService.java)
+[FeedbackLearningService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/FeedbackLearningService.java)
 
 形成"用户反馈 → 错误分析 → 知识修正 → 效果提升"的完整闭环，系统越用越准：
 
@@ -826,11 +826,11 @@ flowchart TD
 
 | 节点 | 触发条件 | 执行动作 | 实现文件 |
 |------|---------|---------|---------|
-| **正向学习** | 评分 = 5 星 | SQL 自动解析入库（向量 + 模板），质量评分 >0.7 | [RagAutoLearner.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/RagAutoLearner.java) |
-| **负向学习** | 评分 = 1-2 星 | 关键词提取 → 错误分类 → 知识权重调整 → 表级 LLM 增强 | [FeedbackLearningService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/FeedbackLearningService.java) |
-| **自动评分** | SQL 执行完成 | AI 自动评估 SQL 质量（语法正确性 + 结果合理性） | [SQLAutoRatingService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/SQLAutoRatingService.java) |
-| **Prompt 优化** | 低分反馈积累 | Prompt 模板参数微调 | [PromptLearningService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) |
-| **低分示例过滤** | 入库前检查 | 过滤历史低质量 RAG 示例，避免污染知识库 | [LowRatingExampleService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/LowRatingExampleService.java) |
+| **正向学习** | 评分 = 5 星 | SQL 自动解析入库（向量 + 模板），质量评分 >0.7 | [RagAutoLearner.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/RagAutoLearner.java) |
+| **负向学习** | 评分 = 1-2 星 | 关键词提取 → 错误分类 → 知识权重调整 → 表级 LLM 增强 | [FeedbackLearningService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/FeedbackLearningService.java) |
+| **自动评分** | SQL 执行完成 | AI 自动评估 SQL 质量（语法正确性 + 结果合理性） | [SQLAutoRatingService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/SQLAutoRatingService.java) |
+| **Prompt 优化** | 低分反馈积累 | Prompt 模板参数微调 | [PromptLearningService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) |
+| **低分示例过滤** | 入库前检查 | 过滤历史低质量 RAG 示例，避免污染知识库 | [LowRatingExampleService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/LowRatingExampleService.java) |
 
 ### 11. SKILL.md 声明式工作流
 
@@ -838,12 +838,12 @@ flowchart TD
 
 | Skill 名称 | 分类 | 功能说明 | 工作流步骤 | 文件 |
 |-----------|:---:|---------|-----------|------|
-| `standard-query` | query | 标准数据查询，覆盖完整 NL2SQL 链路 | 参数校验 → 图表检测 → Schema检索 → SQL生成 → 风险评估 → 人机协同 → SQL执行 → 结果组装 | [SKILL.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/resources/skills/standard-query/SKILL.md) |
-| `report-with-insights` | analysis | 报表与洞察，标准查询 + AI总结 + 图表推荐 | 标准查询 → AI总结 → 图表推荐 | [SKILL.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/resources/skills/report-with-insights/SKILL.md) |
-| `sql-validate-execute` | validation | SQL 校验与安全执行 | Schema检索 → SQL校验 → 风险评估 → SQL执行 | [SKILL.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/resources/skills/sql-validate-execute/SKILL.md) |
-| `sql-performance-analysis` | optimization | SQL 性能分析，慢查询诊断 | 索引检查 → 执行计划分析 → 优化建议 | [SKILL.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/resources/skills/sql-performance-analysis/SKILL.md) |
-| `summarize-result` | postprocess | 结果总结，AI 提炼数据洞察 | 数据分析 → AI总结生成 | [SKILL.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/resources/skills/summarize-result/SKILL.md) |
-| `hybrid-example` | demo | 混合示例，演示多种 Tool 组合 | 组合多种 Tool 类型 | [SKILL.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/resources/skills/hybrid-example/SKILL.md) |
+| `standard-query` | query | 标准数据查询，覆盖完整 NL2SQL 链路 | 参数校验 → 图表检测 → Schema检索 → SQL生成 → 风险评估 → 人机协同 → SQL执行 → 结果组装 | [SKILL.md](nl2sql-web/src/main/resources/skills/standard-query/SKILL.md) |
+| `report-with-insights` | analysis | 报表与洞察，标准查询 + AI总结 + 图表推荐 | 标准查询 → AI总结 → 图表推荐 | [SKILL.md](nl2sql-web/src/main/resources/skills/report-with-insights/SKILL.md) |
+| `sql-validate-execute` | validation | SQL 校验与安全执行 | Schema检索 → SQL校验 → 风险评估 → SQL执行 | [SKILL.md](nl2sql-web/src/main/resources/skills/sql-validate-execute/SKILL.md) |
+| `sql-performance-analysis` | optimization | SQL 性能分析，慢查询诊断 | 索引检查 → 执行计划分析 → 优化建议 | [SKILL.md](nl2sql-web/src/main/resources/skills/sql-performance-analysis/SKILL.md) |
+| `summarize-result` | postprocess | 结果总结，AI 提炼数据洞察 | 数据分析 → AI总结生成 | [SKILL.md](nl2sql-web/src/main/resources/skills/summarize-result/SKILL.md) |
+| `hybrid-example` | demo | 混合示例，演示多种 Tool 组合 | 组合多种 Tool 类型 | [SKILL.md](nl2sql-web/src/main/resources/skills/hybrid-example/SKILL.md) |
 
 **SKILL.md 核心语法：**
 ```yaml
@@ -862,7 +862,7 @@ workflow:
 
 ### 12. 动态 Prompt 工程
 
-[PromptModule.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/prompt/PromptModule.java)
+[PromptModule.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/prompt/PromptModule.java)
 
 模块化 Prompt 构建器，根据用户意图动态组装最精简的 System Prompt，避免冗余 Token 消耗：
 
@@ -948,13 +948,13 @@ graph TB
 
 | 监控维度 | 采集方式 | 指标 | 实现文件 |
 |---------|---------|------|---------|
-| **Skill 执行监控** | AOP 切面自动拦截 | 每个 Skill 的 QPS、成功率、平均耗时、P95 耗时 | [SkillMetricsAspect.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/monitoring/SkillMetricsAspect.java) |
-| **Tool 性能度量** | 代码埋点 + 原子计数器 | 46 个 Tool 的调用次数、成功率、平均耗时 | [PerformanceMonitor.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/monitor/PerformanceMonitor.java) |
+| **Skill 执行监控** | AOP 切面自动拦截 | 每个 Skill 的 QPS、成功率、平均耗时、P95 耗时 | [SkillMetricsAspect.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/monitoring/SkillMetricsAspect.java) |
+| **Tool 性能度量** | 代码埋点 + 原子计数器 | 46 个 Tool 的调用次数、成功率、平均耗时 | [PerformanceMonitor.java](nl2sql-core/src/main/java/com/nl2sql/core/monitor/PerformanceMonitor.java) |
 | **SQL 生成质量** | 生成前后拦截 | 一次生成成功率、修正后成功率、平均修正次数 | `PerformanceMonitor` |
 | **缓存效果追踪** | 三级缓存命中埋点 | L1/L2/L3 各级命中率、缓存写入率 | `PerformanceMonitor` |
-| **全链路上下文** | ThreadLocal 传递 | sessionId / userId / cacheLevel / generatedSql / executionTime | [MonitoringContext.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/service/MonitoringContext.java) |
-| **异步事件持久化** | Spring Event + @Async | 查询日志写入 MySQL（不阻塞主链路） | [QueryMonitoringEventListener.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/event/QueryMonitoringEventListener.java) |
-| **执行追踪** | 内存 Trace 树 | 完整执行链路记录、阶段耗时、错误定位 | [ExecutionTracer.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/observability/ExecutionTracer.java) |
+| **全链路上下文** | ThreadLocal 传递 | sessionId / userId / cacheLevel / generatedSql / executionTime | [MonitoringContext.java](nl2sql-core/src/main/java/com/nl2sql/core/service/MonitoringContext.java) |
+| **异步事件持久化** | Spring Event + @Async | 查询日志写入 MySQL（不阻塞主链路） | [QueryMonitoringEventListener.java](nl2sql-core/src/main/java/com/nl2sql/core/event/QueryMonitoringEventListener.java) |
+| **执行追踪** | 内存 Trace 树 | 完整执行链路记录、阶段耗时、错误定位 | [ExecutionTracer.java](nl2sql-core/src/main/java/com/nl2sql/core/observability/ExecutionTracer.java) |
 
 **核心设计思想：**
 - **非侵入采集**：AOP 切面 + ThreadLocal 上下文，对业务代码零侵入
@@ -1034,13 +1034,13 @@ flowchart TB
 | **数据源选择** | LLM 匹配置信度 < 80%，或用户未指定数据源 | `DatasourceClarificationTool` | 展示所有可用数据源列表，用户手动选择 |
 | **表名确认** | `IterativeTableDiscovery` 多轮搜索仍找不到目标表 | `IterativeTableDiscovery` + `TableSelectionOrchestrator` | 返回 `needsClarification` + 澄清问题，用户确认或手动指定表名 |
 
-关键实现：[DatasourceClarificationTool.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/DatasourceClarificationTool.java) 调用 LLM 根据用户问题推断数据源领域，低置信度时返回完整列表。
+关键实现：[DatasourceClarificationTool.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/DatasourceClarificationTool.java) 调用 LLM 根据用户问题推断数据源领域，低置信度时返回完整列表。
 
 #### 14.2 表关系澄清
 
 当多表 JOIN 场景下系统无法确定表之间的关联关系时，`TableRelationshipClarificationTool` 自动生成澄清问题让用户指定关联字段，避免生成错误的 JOIN 条件。
 
-关键实现：[TableRelationshipClarificationTool.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/TableRelationshipClarificationTool.java)
+关键实现：[TableRelationshipClarificationTool.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/TableRelationshipClarificationTool.java)
 
 #### 14.3 高风险 SQL 人工确认
 
@@ -1066,7 +1066,7 @@ flowchart TB
 - `Worker.waitingForApproval()` 工厂方法创建待审批状态，`WorkflowResultAssembler` 将审批信息组装到最终响应中
 - 审批通过后前端携带 `approvalId` 重新发起执行请求
 
-**实现链路：** [SQLRiskAnalysisTool.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/SQLRiskAnalysisTool.java) → [SqlWorker.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SqlWorker.java) → [WorkflowStepExecutor.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowStepExecutor.java) → [WorkflowResultAssembler.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowResultAssembler.java)
+**实现链路：** [SQLRiskAnalysisTool.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/SQLRiskAnalysisTool.java) → [SqlWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SqlWorker.java) → [WorkflowStepExecutor.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowStepExecutor.java) → [WorkflowResultAssembler.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowResultAssembler.java)
 
 ### 15. Prompt A/B 测试与版本管理
 
@@ -1117,11 +1117,11 @@ flowchart TB
 
 | 能力 | 说明 | 实现文件 |
 |------|------|---------|
-| **Prompt 版本管理** | 创建、编辑、列表、激活 Prompt 版本，支持按类型分组（QUERY/CHART/REPORT） | [PromptLearningService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) |
+| **Prompt 版本管理** | 创建、编辑、列表、激活 Prompt 版本，支持按类型分组（QUERY/CHART/REPORT） | [PromptLearningService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) |
 | **A/B 测试创建** | 指定两个版本 + 流量分配比例 + 最少样本数，`sessionId` hash 自动分流 | `PromptLearningService.createABTest()` |
 | **实时路由** | 按 `sessionId % 100` 哈希分流，同一会话始终使用同一版本，保证体验一致 | `PromptLearningService.routeABTest()` |
 | **自动决策** | 测试结束后自动统计对比各组 SQL 成功率 + 用户评分，**自动激活优胜版本** | `PromptLearningService.stopABTest()` |
-| **管理后台** | 完整 REST API（12 个端点），支持前端可视化操作 | [PromptLearningController.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/java/com/nl2sql/web/controller/PromptLearningController.java) |
+| **管理后台** | 完整 REST API（12 个端点），支持前端可视化操作 | [PromptLearningController.java](nl2sql-web/src/main/java/com/nl2sql/web/controller/PromptLearningController.java) |
 | **使用追踪** | 每次 Prompt 调用自动记录版本 ID + sessionId + 用户评分，积累评估数据 | `prompt_usage_log` 表 |
 
 **设计亮点：**
@@ -1130,7 +1130,7 @@ flowchart TB
 - **低风险上线**：新 Prompt 先在小流量验证（如 10%），确认有效后再全量切换
 - **与反馈学习联动**：A/B 测试数据可用于 `FeedbackLearningService` 的低分分析和知识修正
 
-关键实现：[PromptLearningService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) | [PromptLearningController.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/java/com/nl2sql/web/controller/PromptLearningController.java)
+关键实现：[PromptLearningService.java](nl2sql-core/src/main/java/com/nl2sql/core/rag/PromptLearningService.java) | [PromptLearningController.java](nl2sql-web/src/main/java/com/nl2sql/web/controller/PromptLearningController.java)
 
 ### 16. 监控 Dashboard 与 SQL 审计
 
@@ -1213,7 +1213,7 @@ CREATE TABLE sql_execution_logs (
 - **ECharts 就绪**：`query-trend` / `response-time-distribution` 等接口直接返回前端图表所需的数据结构（`{dates, counts}` / `{ranges, counts}`），无需二次处理
 - **MyBatis + JdbcTemplate 双降级**：`ExecutionLogMapper` 可用时走 MyBatis，不可用时自动降级 JdbcTemplate，保证日志写入的鲁棒性
 
-关键实现：[MonitorController.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/java/com/nl2sql/web/controller/MonitorController.java) | [ExecutionLogController.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-web/src/main/java/com/nl2sql/web/controller/ExecutionLogController.java) | [SQLExecutionLogService.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/executor/SQLExecutionLogService.java) | [QueryMonitoringEventListener.java](file:///d:/WorkSpace/idea%20workspace/NL2Sql/nl2sql-core/src/main/java/com/nl2sql/core/event/QueryMonitoringEventListener.java)
+关键实现：[MonitorController.java](nl2sql-web/src/main/java/com/nl2sql/web/controller/MonitorController.java) | [ExecutionLogController.java](nl2sql-web/src/main/java/com/nl2sql/web/controller/ExecutionLogController.java) | [SQLExecutionLogService.java](nl2sql-core/src/main/java/com/nl2sql/core/executor/SQLExecutionLogService.java) | [QueryMonitoringEventListener.java](nl2sql-core/src/main/java/com/nl2sql/core/event/QueryMonitoringEventListener.java)
 
 ---
 
@@ -1451,7 +1451,7 @@ docker-compose up -d
 - `docker-compose --profile gpu up -d` — 基础服务 + GPU 服务（Ollama + TEI Reranker）
 - `docker-compose --profile full up -d` — 全部服务
 
-详细说明见 [docker/README.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/docker/README.md)
+详细说明见 [docker/README.md](docker/README.md)
 
 ---
 
@@ -1730,7 +1730,7 @@ MCP Server 基于 `spring-ai-starter-mcp-server` 构建，Spring Boot 自动装�
 
 - [ ] **自动化异常检测** — 定时扫描数据，检测异常趋势并通过企业微信/钉钉推送告警
 - [ ] **知识图谱增强** — 基于图数据库存储实体关系，提升复杂关联查询的语义理解能力
-- [ ] **Sub-Agent 架构演进** — 参考 [SUB_AGENT_ROADMAP.md](file:///d:/WorkSpace/idea%20workspace/NL2Sql/SUB_AGENT_ROADMAP.md)，演进为 Master Agent + 6 个专用 Sub-Agent 协作模式
+- [ ] **Sub-Agent 架构演进** — 参考 [SUB_AGENT_ROADMAP.md](SUB_AGENT_ROADMAP.md)，演进为 Master Agent + 6 个专用 Sub-Agent 协作模式
 
 ---
 

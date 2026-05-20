@@ -120,6 +120,13 @@
             <version>4.0.21</version>
         </dependency>
         
+        <!-- MCP Client -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>0.10.0</version>
+        </dependency>
+        
         <!-- Caffeine Cache for local caching -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
