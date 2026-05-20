@@ -111,7 +111,7 @@ public class AgentChatService {
             }
             
             try {
-                // 6. 调用 ReAct Agent
+                // 6. 调用 Agent
                 String agentResponse = executeAgent(fullMessage, request, userInfo);
                 
                 long executionTime = System.currentTimeMillis() - startTime;

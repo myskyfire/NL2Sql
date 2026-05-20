@@ -167,7 +167,7 @@ reranker:
     model: jina-reranker-v2-base-multilingual
   # Cross-Encoder 本地模型配置（Docker 部署的 BGE-Reranker 服务）
   cross-encoder:
-    base-url: http://localhost:8081/v1  # ✅ Docker 容器映射端口
+    base-url: http://localhost:8081  # ✅ Docker 容器映射端口
     model: BAAI/bge-reranker-v2-m3
 
 # MyBatis Plus Configuration
