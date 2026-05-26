@@ -82,15 +82,19 @@ public class DatasourceClarificationTool {
                     return buildMediumConfidenceRecommendation(matchedDs, confidence, 
                         String.valueOf(matchResult.get("reason")), datasources);
                 } else {
-                    // 低置信度（<0.6）：直接列出所有数据源供选择
-                    log.info("[DatasourceClarification] 低置信度({})，返回所有数据源", confidence);
-                    return buildDatasourceSelectionResponse(datasources);
+                    // 低置信度（<0.6）：返回候选集供选择（而非所有数据源）
+                    log.info("[DatasourceClarification] 低置信度({})，返回候选集", confidence);
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> candidates = (List<Map<String, Object>>) matchResult.get("candidates");
+                    return buildDatasourceSelectionResponse(candidates != null ? candidates : datasources);
                 }
             }
             
-            // ✅ 情况3：LLM无法确定或置信度不足，返回所有候选让用户选择
-            log.info("[DatasourceClarification] LLM未能高置信度匹配，返回所有数据源供用户选择");
-            return buildDatasourceSelectionResponse(datasources);
+            // ✅ 情况3：LLM无法确定或置信度不足，返回候选集让用户选择
+            log.info("[DatasourceClarification] LLM未能高置信度匹配，返回候选集供用户选择");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> candidates = (List<Map<String, Object>>) matchResult.get("candidates");
+            return buildDatasourceSelectionResponse(candidates != null ? candidates : datasources);
                 
         } catch (Exception e) {
             log.error("[DatasourceClarification] 处理失败", e);
@@ -109,6 +113,7 @@ public class DatasourceClarificationTool {
     
     /**
      * 使用LLM智能匹配数据源（动态分层策略）
+     * @return Map包含: datasource(匹配的数据源), confidence(置信度), reason(推荐理由), candidates(候选集，用于降级)
      */
     private Map<String, Object> llmIntelligentMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
@@ -118,7 +123,11 @@ public class DatasourceClarificationTool {
                 return twoLayerMatch(userQuery, datasources);
             } else {
                 log.info("[DatasourceClarification] 数据源数量={}，使用单层策略", datasources.size());
-                return singleLayerMatch(userQuery, datasources);
+                Map<String, Object> result = singleLayerMatch(userQuery, datasources);
+                if (result != null) {
+                    result.put("candidates", datasources);  // 单层策略的候选集就是全部
+                }
+                return result;
             }
         } catch (Exception e) {
             log.error("[DatasourceClarification] LLM匹配失败", e);
@@ -186,8 +195,7 @@ public class DatasourceClarificationTool {
                 "你是数据源选择专家。根据用户问题和表结构，匹配最相关的数据源。\n\n" +
                 "用户问题：%s\n\n" +
                 "可用数据源（含核心表）：\n%s\n\n" +
-                "任务：分析用户问题涉及的表，找到最匹配的数据源。无法确定则返回null。\n\n" +
-                "输出标准JSON格式，包含字段：matched_datasource_id, confidence, reason",
+                "请返回JSON格式：{\"matched_datasource_id\": 整数, \"confidence\": 0.0-1.0, \"reason\": \"字符串\"}",
                 userQuery,
                 datasourceInfo.toString()
             );
@@ -294,8 +302,7 @@ public class DatasourceClarificationTool {
                 "你是数据源选择助手。根据用户问题和数据源列表，筛选最相关的2-3个候选数据源。\n\n" +
                 "用户问题：%s\n\n" +
                 "可用数据源：\n%s\n\n" +
-                "任务：分析意图和业务领域，返回候选数据源ID列表。\n\n" +
-                "输出标准JSON格式，包含字段：candidate_ids（整数数组）, reason",
+                "请返回JSON格式：{\"candidate_ids\": [整数数组], \"reason\": \"字符串\"}",
                 userQuery,
                 basicInfo.toString()
             );
@@ -328,7 +335,11 @@ public class DatasourceClarificationTool {
             log.info("[DatasourceClarification] 第一层筛选结果: {} 个候选数据源", candidates.size());
             
             // 第二层：展示候选集的完整表列表，精确匹配
-            return singleLayerMatch(userQuery, candidates);
+            Map<String, Object> result = singleLayerMatch(userQuery, candidates);
+            if (result != null) {
+                result.put("candidates", candidates);  // 保存候选集，用于降级
+            }
+            return result;
             
         } catch (Exception e) {
             log.error("[DatasourceClarification] 双层匹配失败，降级为单层策略", e);
@@ -338,10 +349,73 @@ public class DatasourceClarificationTool {
 
     
     /**
-     * 解析LLM返回的JSON（使用公共工具类）
+     * 解析LLM返回的JSON（使用公共工具类 + YAML容错）
      */
     private Map<String, Object> parseLlmResponse(String response) {
-        return JsonUtils.parseToJsonMap(response);
+        // 尝试直接解析 JSON
+        Map<String, Object> result = JsonUtils.parseToJsonMap(response);
+        if (result != null && !result.isEmpty()) {
+            return result;
+        }
+        
+        // ✅ 容错：如果 JSON 解析失败，尝试将 YAML 格式转换为 JSON
+        log.warn("[DatasourceClarification] JSON解析失败，尝试YAML转JSON: {}", response.substring(0, Math.min(100, response.length())));
+        try {
+            String yamlFixed = convertYamlToJson(response);
+            result = JsonUtils.parseToJsonMap(yamlFixed);
+            if (result != null && !result.isEmpty()) {
+                log.info("[DatasourceClarification] YAML转JSON成功");
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("[DatasourceClarification] YAML转JSON也失败: {}", e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * ✅ 简单YAML转JSON：处理 key: value 格式
+     */
+    private String convertYamlToJson(String yamlText) {
+        StringBuilder json = new StringBuilder("{");
+        String[] lines = yamlText.split("\n");
+        boolean first = true;
+        
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            
+            // 匹配 key: value 格式
+            int colonIndex = line.indexOf(':');
+            if (colonIndex > 0) {
+                String key = line.substring(0, colonIndex).trim();
+                String value = line.substring(colonIndex + 1).trim();
+                
+                if (!first) json.append(",");
+                
+                // 处理值类型
+                if (value.matches("\\d+")) {
+                    // 整数
+                    json.append("\"").append(key).append("\":").append(value);
+                } else if (value.matches("\\d+\\.\\d+")) {
+                    // 浮点数
+                    json.append("\"").append(key).append("\":").append(value);
+                } else if (value.startsWith("[") && value.endsWith("]")) {
+                    // 数组（简单处理）
+                    json.append("\"").append(key).append("\":").append(value);
+                } else {
+                    // 字符串（去除引号）
+                    String cleanValue = value.replaceAll("^['\"]|['\"]$", "");
+                    json.append("\"").append(key).append("\":\"").append(cleanValue).append("\"");
+                }
+                
+                first = false;
+            }
+        }
+        
+        json.append("}");
+        return json.toString();
     }
     
     /**
@@ -422,12 +496,29 @@ public class DatasourceClarificationTool {
             datasourceList.add(dsInfo);
         }
         
+        // ✅ 获取所有激活的数据源（用于兜底）
+        List<Map<String, Object>> allActiveDatasources = getActiveDatasources();
+        int totalDatasourceCount = allActiveDatasources.size();
+        
         // ✅ 构建统一响应
         return ToolResponseBuilder.clarification("datasource_selection")
             .withMessage("📋 请选择数据源：")
-            .withContext(Map.of("availableDatasources", datasourceList))
+            .withContext(Map.of(
+                "availableDatasources", datasourceList,
+                "allDatasources", allActiveDatasources.stream().map(ds -> {
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("id", ds.get("id"));
+                    info.put("name", ds.get("name"));
+                    info.put("db_type", ds.get("db_type"));
+                    info.put("database_name", ds.get("database_name"));
+                    if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
+                        info.put("description", ds.get("description"));
+                    }
+                    return info;
+                }).toList()
+            ))
             .addMetadata("toolName", "clarify_datasource")
-            .addMetadata("datasourceCount", datasources.size())
+            .addMetadata("datasourceCount", totalDatasourceCount)
             .build();
     }
     

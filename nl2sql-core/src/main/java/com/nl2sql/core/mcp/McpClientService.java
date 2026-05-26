@@ -1,5 +1,9 @@
 package com.nl2sql.core.mcp;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.mcp.auth.JwtTokenGenerator;
+import com.nl2sql.core.mcp.proof.ProofGenerator;
+import com.nl2sql.core.mcp.proof.ValidationProof;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -38,6 +43,14 @@ public class McpClientService {
 
     @Autowired
     private McpClientConfig config;
+
+    @Autowired(required = false)
+    private ProofGenerator proofGenerator;
+
+    @Autowired(required = false)
+    private JwtTokenGenerator jwtTokenGenerator;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private io.modelcontextprotocol.client.McpSyncClient client;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -139,20 +152,18 @@ public class McpClientService {
     }
 
     /**
-     * 添加数据源
+     * 列出指定数据源中的所有表
      *
-     * @param name     数据源名称
-     * @param jdbcUrl  JDBC 连接 URL
-     * @param username 用户名
-     * @param password 密码
+     * @param datasourceId  数据源 ID
+     * @param schemaPattern Schema 匹配模式（可选）
      */
-    public String addDatasource(String name, String jdbcUrl, String username, String password) {
-        return callTool("add_datasource", Map.of(
-                "name", name,
-                "jdbc_url", jdbcUrl,
-                "username", username,
-                "password", password
-        ));
+    public String listTables(Long datasourceId, String schemaPattern) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("datasource_id", datasourceId);
+        if (schemaPattern != null) {
+            args.put("schema_pattern", schemaPattern);
+        }
+        return callTool("list_tables", args);
     }
 
     /**
@@ -169,16 +180,75 @@ public class McpClientService {
     }
 
     /**
-     * 执行只读 SQL 查询
+     * 批量查询表结构（用于元数据同步）
+     *
+     * @param datasourceId  数据源 ID
+     * @param tableNames    表名列表（为空则查询所有表）
+     * @param schemaPattern Schema 匹配模式（可选）
+     */
+    public String batchQuerySchema(Long datasourceId, List<String> tableNames, String schemaPattern) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("datasource_id", datasourceId);
+        if (tableNames != null && !tableNames.isEmpty()) {
+            args.put("table_names", tableNames);
+        }
+        if (schemaPattern != null) {
+            args.put("schema_pattern", schemaPattern);
+        }
+        return callTool("batch_query_schema", args);
+    }
+
+    /**
+     * 执行只读 SQL 查询（带安全凭证）
+     *
+     * @param datasourceId    数据源 ID
+     * @param sql             SQL 语句
+     * @param riskLevel       风险等级（LOW/MEDIUM）
+     * @param validationSteps 已执行的校验步骤
+     * @param sessionId       会话 ID
+     * @param userId          用户 ID
+     */
+    public String executeSqlWithProof(Long datasourceId, String sql, String riskLevel,
+                                      List<String> validationSteps, String sessionId, Long userId) {
+        String proofJson = null;
+
+        // 如果 ProofGenerator 可用，生成校验凭证
+        if (proofGenerator != null) {
+            try {
+                ValidationProof proof = proofGenerator.generate(
+                        sql, riskLevel, validationSteps, sessionId, userId, datasourceId
+                );
+                proofJson = objectMapper.writeValueAsString(proof);
+                log.debug("[McpClient] 已生成校验凭证: sqlHash={}", proof.getSqlHash());
+            } catch (Exception e) {
+                log.warn("[McpClient] 生成校验凭证失败，将不带凭证执行 SQL", e);
+            }
+        }
+
+        return executeSql(datasourceId, sql, proofJson);
+    }
+
+    /**
+     * 执行只读 SQL 查询（内部方法，支持传入 proof）
+     */
+    private String executeSql(Long datasourceId, String sql, String proofJson) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("datasource_id", datasourceId);
+        args.put("sql", sql);
+        if (proofJson != null) {
+            args.put("validation_proof", proofJson);
+        }
+        return callTool("execute_sql", args);
+    }
+
+    /**
+     * 执行只读 SQL 查询（无凭证，向后兼容）
      *
      * @param datasourceId 数据源 ID
      * @param sql          SQL 语句
      */
     public String executeSql(Long datasourceId, String sql) {
-        return callTool("execute_sql", Map.of(
-                "datasource_id", datasourceId,
-                "sql", sql
-        ));
+        return executeSql(datasourceId, sql, null);
     }
 
     /**
@@ -221,15 +291,18 @@ public class McpClientService {
     // ==================== 内部方法 ====================
 
     /**
-     * 调用 MCP Tool
+     * 调用 MCP Tool（自动注入 JWT Token）
      */
     private String callTool(String toolName, Map<String, Object> arguments) {
         checkInitialized();
 
         try {
-            log.debug("[McpClient] 调用 Tool: {}，参数: {}", toolName, arguments);
+            // 注入 JWT Token（如果启用）
+            Map<String, Object> argsWithAuth = injectJwtToken(arguments);
 
-            CallToolRequest request = new CallToolRequest(toolName, arguments);
+            log.debug("[McpClient] 调用 Tool: {}，参数: {}", toolName, argsWithAuth);
+
+            CallToolRequest request = new CallToolRequest(toolName, argsWithAuth);
             CallToolResult result = client.callTool(request);
 
             if (result.isError()) {
@@ -248,6 +321,25 @@ public class McpClientService {
             log.error("[McpClient] Tool 调用异常: {}", toolName, e);
             throw new McpToolException("MCP Tool 调用异常 [" + toolName + "]: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 向请求参数中注入 JWT Token（如果启用）
+     */
+    private Map<String, Object> injectJwtToken(Map<String, Object> arguments) {
+        if (jwtTokenGenerator == null) {
+            return arguments;
+        }
+
+        Map<String, Object> argsWithAuth = new HashMap<>(arguments);
+        try {
+            String token = jwtTokenGenerator.generateDefault(null);
+            argsWithAuth.put("_jwt_token", token);
+            log.debug("[McpClient] 已注入 JWT Token");
+        } catch (Exception e) {
+            log.warn("[McpClient] 生成 JWT Token 失败，将不带 Token 调用", e);
+        }
+        return argsWithAuth;
     }
 
     /**

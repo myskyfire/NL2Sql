@@ -27,7 +27,7 @@ public class AISummaryTool {
      * @param userQuery 用户原始问题
      * @param sql 执行的SQL
      * @param data 查询结果数据（可以是JSON字符串或List<Map>对象）
-     * @return AI生成的总结文本
+     * @return AI生成的总结文本（JSON格式，包含 type 和 message 字段）
      */
     @Tool(name = "summarize_result", value = "对SQL查询结果进行智能分析和总结，提取关键洞察")
     public String summarize(String userQuery, String sql, Object data) {
@@ -36,7 +36,8 @@ public class AISummaryTool {
             log.info("[AISummaryTool] 开始生成总结: data行数={}", dataList != null ? dataList.size() : 0);
             
             if (dataList == null || dataList.isEmpty()) {
-                return "查询结果为空，无法生成总结。";
+                // ✅ 返回标准JSON格式，包含 type 字段
+                return "{\"type\":\"summary\",\"message\":\"查询结果为空，无法生成总结。\"}";
             }
             
             StringBuilder promptBuilder = new StringBuilder();
@@ -80,11 +81,21 @@ public class AISummaryTool {
             String summary = modelRouter.getMultiModelService().summarizeResult(promptBuilder.toString());
             
             log.info("[AISummaryTool] 总结生成完成");
-            return summary != null ? summary : "无法生成总结";
+            
+            // ✅ 返回标准JSON格式，前端通过 type='summary' 识别并显示
+            String resultSummary = summary != null ? summary : "无法生成总结";
+            // 转义JSON特殊字符
+            resultSummary = resultSummary.replace("\\", "\\\\")
+                                        .replace("\"", "\\\"")
+                                        .replace("\n", "\\n")
+                                        .replace("\r", "\\r")
+                                        .replace("\t", "\\t");
+            
+            return "{\"type\":\"summary\",\"message\":\"" + resultSummary + "\"}";
             
         } catch (Exception e) {
             log.error("[AISummaryTool] 生成总结失败", e);
-            return "总结生成失败：" + e.getMessage();
+            return "{\"type\":\"summary\",\"message\":\"总结生成失败：" + e.getMessage().replace("\"", "\\\"") + "\"}";
         }
     }
     

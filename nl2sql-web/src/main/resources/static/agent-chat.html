@@ -480,6 +480,134 @@
                 throw error;
             }
         }
+        // ✅ 追问意图检测：业界标准 2 层架构（规则引擎）
+        function detectFollowUpIntent(message) {
+            if (!currentContext?.data || currentContext.data.length === 0) {
+                return false;  // 没有数据，不可能是追问
+            }
+            
+            const lowerMsg = message.toLowerCase().trim();
+            
+            // ========== L1: 显式信号检测 ==========
+            
+            // ❌ 新话题信号词（confidence=1.0 -> 新查询）
+            const newTopicSignals = [
+                /统计|查询|查看|获取|列出|显示|找出|检索/,
+                /最近|上周|上月|今年|去年|本周|本月|前\d+天/,
+                /每个|所有|全部|整个|总共/
+            ];
+            
+            const isNewTopic = newTopicSignals.some(pattern => pattern.test(message));
+            if (isNewTopic && message.length > 8) {
+                console.log('[L1] 检测到新话题信号，非追问');
+                return false;
+            }
+            
+            // ✅ 延续信号词（confidence=0.95 -> 追问）
+            const continuationSignals = [
+                '总结', '概括', '概述', '分析一下', '帮我看看', '解读',
+                '图表', '画图', '可视化', '柱状图', '折线图', '饼图',
+                '下载', '导出', 'excel', 'csv',
+                '排序', '过滤', '筛选', '分组'
+            ];
+            
+            const hasContinuationSignal = continuationSignals.some(keyword => lowerMsg.includes(keyword));
+            if (hasContinuationSignal) {
+                console.log('[L1] 检测到延续信号，是追问');
+                return true;
+            }
+            
+            // ✅ 指代词检测（confidence=0.95 -> 追问）
+            const pronounPatterns = [
+                /^按|^按照|^根据|^以/,      // "按地区"、"按照时间"
+                /^只|^仅|^只要|^只要看/,    // "只看北京"、"仅显示"
+                /^对比|^比较|^和.*比/,      // "对比一下"、"和上月比"
+                /^最大|^最小|^最高|^最低/,  // "最大的"、"最小值"
+                /^平均|^总计|^合计|^总和/,  // "平均值"、"总计多少"
+                /^前\d+|^后\d+/             // "前5个"、"后10条"
+            ];
+            
+            const isPronounPattern = pronounPatterns.some(pattern => pattern.test(message));
+            if (isPronounPattern) {
+                console.log('[L1] 检测到指代模式，是追问');
+                return true;
+            }
+            
+            // ========== L2: 边界区域处理 ==========
+            
+            // ✅ 滑动窗口衰减：计算与历史消息的相关性
+            const historyMessages = window.chatHistory || [];  // 假设全局存储了对话历史
+            const contextRelevance = calculateContextRelevance(message, historyMessages.slice(-5));  // 只看最近5条
+            
+            if (contextRelevance > 0.15) {
+                console.log(`[L2] 上下文相关性 ${contextRelevance.toFixed(2)} > 0.15，是追问`);
+                return true;
+            }
+            
+            // 降级方案：实体重叠度检测
+            const lastQuery = currentContext.lastQuery || '';
+            const entityOverlap = calculateEntityOverlap(message, lastQuery);
+            
+            if (entityOverlap > 0.3) {
+                console.log(`[L2] 实体重叠度 ${entityOverlap.toFixed(2)} > 0.3，是追问`);
+                return true;
+            }
+            
+            // 极短消息且无主语，默认视为追问
+            const isVeryShort = message.length < 10;
+            const hasSubject = /我|你|他|她|它|我们|你们|他们/.test(message);
+            
+            if (isVeryShort && !hasSubject) {
+                console.log('[L2] 极短消息且无主语，视为追问');
+                return true;
+            }
+            
+            console.log('[L2] 默认视为新查询');
+            return false;
+        }
+        
+        // ✅ 计算两个消息的实体重叠度（简单版：基于分词）
+        function calculateEntityOverlap(msg1, msg2) {
+            if (!msg1 || !msg2) return 0;
+            
+            // 简单分词：按字符分割（中文场景）
+            const words1 = new Set(msg1.split('').filter(c => /[\u4e00-\u9fa5a-zA-Z0-9]/.test(c)));
+            const words2 = new Set(msg2.split('').filter(c => /[\u4e00-\u9fa5a-zA-Z0-9]/.test(c)));
+            
+            if (words1.size === 0 || words2.size === 0) return 0;
+            
+            // 计算交集
+            let intersection = 0;
+            words1.forEach(word => {
+                if (words2.has(word)) intersection++;
+            });
+            
+            // Jaccard 相似度
+            const union = words1.size + words2.size - intersection;
+            return intersection / union;
+        }
+        
+        // ✅ 滑动窗口衰减：计算历史消息的相关性分数
+        function calculateContextRelevance(currentMessage, historyMessages) {
+            if (!historyMessages || historyMessages.length === 0) return 0;
+            
+            let maxRelevance = 0;
+            
+            // 遍历历史消息，计算加权相关性
+            historyMessages.forEach((msg, index) => {
+                // 1. 时间衰减因子（越近的消息权重越高）
+                const timeWeight = Math.exp(-0.3 * (historyMessages.length - 1 - index));
+                
+                // 2. 实体重叠度
+                const overlap = calculateEntityOverlap(currentMessage, msg.content || msg);
+                
+                // 3. 综合得分
+                const relevance = timeWeight * overlap;
+                maxRelevance = Math.max(maxRelevance, relevance);
+            });
+            
+            return maxRelevance;
+        }
         
         // 发送消息
         async function sendMessage(customMessage = null) {
@@ -536,6 +664,10 @@
             followUpState.containerId = null;
             followUpState.availableActions = [];
             
+            // ✅ 追问意图检测：判断当前输入是否为追问
+            const isFollowUpIntent = detectFollowUpIntent(message);
+            console.log('[sendMessage] 追问意图检测:', isFollowUpIntent ? '是追问' : '新查询');
+            
             // 显示用户消息
             addMessage(message, 'user');
             input.value = '';
@@ -553,7 +685,12 @@
                     body: JSON.stringify({
                         message: message,
                         sessionId: sessionId,
-                        datasourceId: currentContext?.datasourceId ? parseInt(currentContext.datasourceId) : null  // ✅ 传递当前上下文中的数据源ID
+                        datasourceId: currentContext?.datasourceId ? parseInt(currentContext.datasourceId) : null,  // ✅ 传递当前上下文中的数据源ID
+                        // ✅ 追问上下文标识（只有检测到追问意图才传）
+                        contextId: isFollowUpIntent ? (currentContext?.queryId || null) : null,
+                        hasData: isFollowUpIntent ? !!(currentContext?.data && currentContext.data.length > 0) : false,
+                        // ✅ 追问场景：携带上次查询的数据（避免后端重新查询）
+                        followUpData: isFollowUpIntent && currentContext?.data && currentContext.data.length > 0 ? currentContext.data : null
                     })
                 });
                 
@@ -585,8 +722,8 @@
             console.log('[Agent响应] generatedSQL:', data.generatedSQL || data.sql || '无');
             console.log('[Agent响应] success:', data.success);
             
-            // ⚠️ 重要：保留原有的 sql/generatedSQL，只更新其他字段
-            const preservedFields = ['sql', 'generatedSQL'];
+            // ⚠️ 重要：保留原有的 sql/generatedSQL/data，只更新其他字段
+            const preservedFields = ['sql', 'generatedSQL', 'data'];  // ✅ 新增 data 字段
             const preservedData = {};
             preservedFields.forEach(field => {
                 if (currentContext && currentContext[field]) {
@@ -601,10 +738,20 @@
                 currentContext.datasourceId = data.datasourceId;
             }
             
-            // ✅ 关键修复：确保 data 字段被正确保存（用于图表和Excel下载）
-            if (data.data && Array.isArray(data.data)) {
+            // ✅ 连续追问支持：只有新查询才更新 data，追问场景保持原始数据
+            const isFollowUp = data.type === 'summary' || data.type === 'chart';
+            if (!isFollowUp && data.data && Array.isArray(data.data)) {
+                // 新查询：更新 data 并生成 queryId
                 currentContext.data = data.data;
                 console.log('[Agent响应] 已保存 data 字段:', data.data.length, '条记录');
+                
+                if (!currentContext.queryId) {
+                    currentContext.queryId = 'query_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                    console.log('[Agent响应] 生成 queryId:', currentContext.queryId);
+                }
+            } else if (isFollowUp) {
+                // 追问场景：保持 currentContext.data 不变
+                console.log('[Agent响应] 追问场景，保持原始 data 不变');
             }
             
             // 保存最后一次的查询问题（用于AI总结等场景）
@@ -788,9 +935,8 @@
                 addMessage(html, 'agent');
                 
                 // ✅ 图表生成后，重新渲染剩余追问按钮
-                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    renderRemainingFromCache();
-                }
+                // 注意：图表响应已经更新了 currentContext.data，所以可以直接调用
+                renderRemainingFromCache();
                 return;
             }
             
@@ -876,9 +1022,7 @@
                 addMessage(html, 'agent');
                 
                 // ✅ 图表生成后，重新渲染剩余追问按钮（基于原始查询数据）
-                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    renderRemainingFromCache();
-                }
+                renderRemainingFromCache();
                 return;
             }
             
@@ -1000,7 +1144,14 @@
             else if (data.clarificationType === 'datasource_selection' && data.availableDatasources) {
                 // ✅ 保存数据源列表，用于自然语言选择
                 pendingDatasourceList = data.availableDatasources;
-                console.log('[handleClarification] 保存数据源列表:', pendingDatasourceList.length, '个');
+                
+                // ✅ 保存完整数据源列表（兜底用）
+                if (data.allDatasources) {
+                    window.allDatasourcesBackup = data.allDatasources;
+                    console.log('[handleClarification] 保存完整数据源列表:', window.allDatasourcesBackup.length, '个');
+                }
+                
+                console.log('[handleClarification] 保存候选数据源列表:', pendingDatasourceList.length, '个');
                 
                 // ✅ 启动3分钟超时定时器，自动清空列表（防止用户偏离话题后误匹配）
                 if (window.datasourceListTimeout) {
@@ -1009,6 +1160,7 @@
                 window.datasourceListTimeout = setTimeout(() => {
                     console.log('[handleClarification] 数据源列表超时，已清空');
                     pendingDatasourceList = [];
+                    window.allDatasourcesBackup = null;
                 }, 3 * 60 * 1000); // 3分钟
                 
                 html += '<div class="clarification-options">';
@@ -1018,6 +1170,16 @@
                     </button>`;
                 });
                 html += '</div>';
+                
+                // ✅ 兜底机制：如果候选集中没有用户需要的数据源，提供查看所有的选项
+                const datasourceCount = data.metadata?.datasourceCount || data.availableDatasources.length;
+                if (data.availableDatasources.length < datasourceCount) {
+                    html += `<div style="margin-top:12px;text-align:center;">
+                        <button class="clarification-btn" onclick="showAllDatasources()" style="background:#fff;border:1px dashed #999;color:#666;">
+                            🔍 当前显示 ${data.availableDatasources.length} 个相关数据源，点击查看全部 ${datasourceCount} 个
+                        </button>
+                    </div>`;
+                }
                 
                 // ✅ 提示用户可以输入新问题（会放弃当前选择）
                 html += '<div style="margin-top:10px;font-size:12px;color:#999;">💡 提示：您也可以直接输入新问题，将放弃当前数据源选择</div>';
@@ -1371,7 +1533,7 @@
             followUpState.containerId = containerId;
             followUpState.availableActions = [];
             if (isStatistical) followUpState.availableActions.push('summary');
-            if (isStatistical && hasNumeric && data.data.length >= 2) followUpState.availableActions.push('chart');
+            if (isStatistical && hasNumeric && data.data.length > 0) followUpState.availableActions.push('chart');  // ✅ 只要有数据即可，不强制 >= 2
             followUpState.availableActions.push('download');
             
             let html = `<div class="follow-up-hints" id="${containerId}" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">`;
@@ -1439,7 +1601,7 @@
                 html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
             }
             
-            if (completedAction !== 'chart' && isStatistical && hasNumeric && currentContext.data.length >= 2) {
+            if (completedAction !== 'chart' && isStatistical && hasNumeric && currentContext.data.length > 0) {  // ✅ 只要有数据即可
                 html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
             }
             
@@ -1590,17 +1752,31 @@
         
         // ✅ 根据缓存渲染剩余按钮
         function renderRemainingFromCache() {
+            console.log('[追问按钮] followUpState:', followUpState);
+            console.log('[追问按钮] currentContext.data:', currentContext?.data);
+            
             if (!followUpState.containerId || followUpState.availableActions.length === 0) {
+                console.log('[追问按钮] 跳过：containerId或availableActions为空');
                 return;
             }
             
-            if (!currentContext || !currentContext.data || !Array.isArray(currentContext.data) || currentContext.data.length === 0) {
+            // ✅ 关键修复：AI总结/图表生成时，不强制要求 currentContext.data
+            // 因为这些操作是基于之前的查询结果，数据已经在 currentContext 中
+            if (!currentContext) {
+                console.log('[追问按钮] 跳过：currentContext为空');
                 return;
             }
             
             const sql = currentContext.sql || currentContext.generatedSQL || '';
             const isStatistical = isStatisticalData(sql);
-            const hasNumeric = hasNumericColumn(currentContext.data);
+            // ✅ 安全获取 hasNumeric，避免 data 为空时报错
+            const hasNumeric = currentContext.data ? hasNumericColumn(currentContext.data) : false;
+            
+            console.log('[追问按钮] SQL:', sql);
+            console.log('[追问按钮] isStatistical:', isStatistical);
+            console.log('[追问按钮] hasNumeric:', hasNumeric);
+            console.log('[追问按钮] data.length:', currentContext.data?.length);
+            console.log('[追问按钮] availableActions:', followUpState.availableActions);
             
             const containerId = 'follow-up-' + Date.now();
             followUpState.containerId = containerId;
@@ -1613,8 +1789,18 @@
                 html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
             }
             
-            if (followUpState.availableActions.includes('chart') && isStatistical && hasNumeric && currentContext.data.length >= 2) {
+            // ✅ 图表按钮需要数据支持，放宽条件：只要有数据即可，不强制 >= 2 行
+            if (followUpState.availableActions.includes('chart') && isStatistical && hasNumeric && currentContext.data && currentContext.data.length > 0) {
+                console.log('[追问按钮] 显示图表按钮');
                 html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
+            } else {
+                console.log('[追问按钮] 不显示图表按钮', {
+                    hasChart: followUpState.availableActions.includes('chart'),
+                    isStatistical,
+                    hasNumeric,
+                    hasData: !!currentContext.data,
+                    dataLength: currentContext.data?.length
+                });
             }
             
             if (followUpState.availableActions.includes('download')) {
@@ -1827,13 +2013,25 @@
         
         // 显示所有数据源
         async function showAllDatasources() {
-            addMessage('❌ 不，我要选择其他数据源', 'user');
-            showTypingIndicator();
+            console.log('[showAllDatasources] 调用，备份列表:', window.allDatasourcesBackup?.length);
             
-            // 发送特殊指令获取所有数据源
-            setTimeout(() => {
-                sendMessage('列出所有数据源');
-            }, 500);
+            if (!window.allDatasourcesBackup || window.allDatasourcesBackup.length === 0) {
+                addMessage('❌ 无法获取完整数据源列表，请重试', 'agent');
+                return;
+            }
+            
+            // ✅ 直接渲染所有数据源，无需再次调用后端
+            let html = '<div class="clarification-options">';
+            window.allDatasourcesBackup.forEach(ds => {
+                html += `<button class="clarification-btn" onclick="selectDatasource(${ds.id}, '${escapeHtml(ds.name)}')">
+                    📊 ${escapeHtml(ds.name)} (${escapeHtml(ds.db_type)}) - ${escapeHtml(ds.database_name)}
+                </button>`;
+            });
+            html += '</div>';
+            
+            html += '<div style="margin-top:10px;font-size:12px;color:#999;">✅ 已显示全部 ' + window.allDatasourcesBackup.length + ' 个数据源</div>';
+            
+            addMessage(html, 'agent');
         }
         
         // 发送消息并指定数据源
@@ -2002,6 +2200,19 @@
             messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            // ✅ 滑动窗口衰减：保存对话历史（最多保留20条）
+            window.chatHistory = window.chatHistory || [];
+            window.chatHistory.push({
+                content: content.replace(/<[^>]*>/g, ''),  // 去除 HTML 标签
+                type: type,
+                timestamp: Date.now()
+            });
+            
+            // 保持最近20条
+            if (window.chatHistory.length > 20) {
+                window.chatHistory = window.chatHistory.slice(-20);
+            }
         }
         
         // 显示加载动画

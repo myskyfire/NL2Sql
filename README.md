@@ -1,4 +1,4 @@
-﻿# DataMind AI
+# DataMind AI
 
 <div align="center">
 
@@ -556,7 +556,43 @@ RAG 工作流程
 
 自动评估查询复杂度，动态选择最优 LLM 模型，兼顾效果与成本：
 
+```mermaid
+flowchart TD
+    Query["用户查询"] --> Assess["ModelRouterService<br/>assessComplexity()"]
+    Assess --> Keywords{"关键词数量 > 10?"}
+    
+    Keywords -->|是| Score1["+2"]
+    Keywords -->|否| Agg{"含聚合函数?"}
+    
+    Agg -->|是| Score2["+2"]
+    Agg -->|否| Join{"含多表关联?"}
+    
+    Join -->|是| Score3["+3"]
+    Join -->|否| Time{"含时间范围?"}
+    
+    Time -->|是| Score4["+1"]
+    Time -->|否| Sort{"含排序/分组?"}
+    
+    Sort -->|是| Score5["+1"]
+    Sort -->|否| Total["计算总分"]
+    
+    Score1 --> Total
+    Score2 --> Total
+    Score3 --> Total
+    Score4 --> Total
+    Score5 --> Total
+    
+    Total --> Decision{"总分"}
+    Decision -->|>=8| Complex["COMPLEX<br/>NLP推理模型<br/>qwen3:8b<br/>思维链 + 长上下文"]
+    Decision -->|4-7| Medium["MEDIUM<br/>Code模型 + RAG<br/>qwen2.5-coder:7b"]
+    Decision -->|<4| Simple["SIMPLE<br/>Code模型<br/>qwen2.5-coder:7b"]
+    
+    style Complex fill:#ff6b6b,color:#fff
+    style Medium fill:#ffd93d
+    style Simple fill:#6bcb77,color:#fff
 ```
+
+**复杂度评分示例：**
 用户查询 "统计各地区销售额，并按季度对比增长率"
                     │
                     ▼
@@ -736,6 +772,40 @@ flowchart TD
 | 🏭 **制造业** | 产品、产线、工单、质检、库存 | "良品率" → `SUM(quality='OK')/COUNT(*)` |
 
 **核心能力：**
+
+```mermaid
+flowchart TB
+    UserInput["用户输入<br/>'统计上个月 GMV'"]
+    
+    subgraph "术语识别层"
+        Synonym["SynonymService<br/>同义词扩展<br/>GMV → 交易总额/销售额"]
+        Industry["IndustryConceptDictionary<br/>行业概念映射<br/>GMV → SUM(actual_amount)"]
+    end
+    
+    subgraph "语义解析层"
+        TimeParser["TimeExpressionParser<br/>时间表达式解析<br/>上个月 → DATE_SUB(NOW(), INTERVAL 1 MONTH)"]
+        Location["LocationSemanticService<br/>地理位置语义<br/>华东 → region IN (...)"]
+    end
+    
+    subgraph "增强注入层"
+        Inject["IndustryConceptExtension<br/>四层扩展<br/>术语理解 → SQL干预 → 语义校验 → 持续学习"]
+    end
+    
+    UserInput --> Synonym
+    UserInput --> Industry
+    UserInput --> TimeParser
+    UserInput --> Location
+    
+    Synonym --> Inject
+    Industry --> Inject
+    TimeParser --> Inject
+    Location --> Inject
+    
+    Inject --> SQLGen["SQL 生成<br/>SELECT SUM(actual_amount) FROM orders<br/>WHERE create_time >= ..."]
+    
+    style Inject fill:#4a90d9,color:#fff
+```
+
 - **同义词词典**：[SynonymService.java](nl2sql-core/src/main/java/com/nl2sql/core/llm/SynonymService.java) 自动识别业务术语（订单/定单、用户/客户），从 `industry_concept` 表动态加载
 - **行业概念字典**：[IndustryConceptDictionary.java](nl2sql-core/src/main/java/com/nl2sql/core/llm/IndustryConceptDictionary.java) 五大行业映射，支持管理后台在线编辑
 - **语义映射扩展**：可插拔 `SemanticMappingExtension` 接口，新增行业只需添加一个实现类
@@ -1026,6 +1096,61 @@ flowchart TB
 #### 14.1 数据源智能发现与选择
 
 系统在查询前自动进行多轮迭代式数据源发现。当低置信度或目标表无法定位时，不会强行猜测，而是降级到人工选择。
+
+**动态分层策略（Token 优化）：**
+
+```mermaid
+flowchart TD
+    Start(["用户提问"]) --> Check{"数据源数量"}
+    
+    Check -->|≤5个| Single["单层策略<br/>━━━━━━━━━━━━━<br/>LLM 匹配全部数据源<br/>含完整表结构"]
+    Check -->|>5个| Double["双层策略<br/>━━━━━━━━━━━━━<br/>第一层: 粗筛候选集<br/>仅基本信息<br/>第二层: 精确匹配<br/>展示候选表结构"]
+    
+    Single --> Score1{"置信度"}
+    Double --> Score2{"置信度"}
+    
+    Score1 -->|>0.8| Auto1["✅ 自动选择"]
+    Score1 -->|0.6-0.8| Recommend1["💡 推荐确认<br/>+ 拒绝后选择其他"]
+    Score1 -->|<0.6| Candidates1["📋 返回候选集<br/>TOP-N 相关数据源"]
+    
+    Score2 -->|>0.8| Auto2["✅ 自动选择"]
+    Score2 -->|0.6-0.8| Recommend2["💡 推荐确认<br/>+ 拒绝后选择其他"]
+    Score2 -->|<0.6| Candidates2["📋 返回候选集<br/>TOP-N 相关数据源"]
+    
+    Candidates1 --> Frontend1["前端渲染候选按钮"]
+    Candidates2 --> Frontend2["前端渲染候选按钮"]
+    
+    Frontend1 --> UserChoice1{"用户是否找到?"}
+    Frontend2 --> UserChoice2{"用户是否找到?"}
+    
+    UserChoice1 -->|是| Select1["点击继续查询"]
+    UserChoice1 -->|否| ShowAll1["🔍 点击查看全部<br/>无需网络请求<br/>瞬间渲染"]
+    ShowAll1 --> Select1
+    
+    UserChoice2 -->|是| Select2["点击继续查询"]
+    UserChoice2 -->|否| ShowAll2["🔍 点击查看全部<br/>无需网络请求<br/>瞬间渲染"]
+    ShowAll2 --> Select2
+    
+    style Auto1 fill:#6bcb77,color:#fff
+    style Auto2 fill:#6bcb77,color:#fff
+    style Recommend1 fill:#ffd93d
+    style Recommend2 fill:#ffd93d
+    style Candidates1 fill:#4a90d9,color:#fff
+    style Candidates2 fill:#4a90d9,color:#fff
+    style ShowAll1 fill:#ff6b6b,color:#fff
+    style ShowAll2 fill:#ff6b6b,color:#fff
+```
+
+**核心设计亮点：**
+
+| 特性 | 说明 | 效果 |
+|------|------|------|
+| **动态分层** | ≤5个数据源用单层策略，>5个用双层策略 | Token 消耗减少 60-70% |
+| **三层置信度分级** | 高(>0.8)自动执行 / 中(0.6-0.8)推荐确认 / 低(<0.6)候选集 | 平衡自动化与准确性 |
+| **兜底机制** | 候选集未命中时提供"查看全部"按钮，前端备份完整列表 | 保证用户总能找到目标 |
+| **零延迟展开** | "查看全部"直接渲染备份数据，无需网络请求 | 用户体验流畅无卡顿 |
+
+**关键实现类：** [DatasourceClarificationTool.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/tools/DatasourceClarificationTool.java)
 
 **两阶段澄清机制：**
 
@@ -1710,27 +1835,35 @@ MCP Server 基于 `spring-ai-starter-mcp-server` 构建，Spring Boot 自动装�
 
 ## 🗺️ Roadmap
 
-### 近期规划 (1-3 个月) — 正在开发中
+### 已完成 ✅
 
-- [ ] **SQL 执行沙箱** — 事务回滚 + 只读副本环境预览 SQL 执行结果，确认后再写入主库
-- [ ] **多数据源联邦查询** — 跨 MySQL / PostgreSQL / ClickHouse 的跨源 JOIN 查询
-- [ ] **前端现代化重构** — Vue 3 + TypeScript + Vite 替换当前 HTML/CSS 静态页面
-- [ ] **Prometheus + Grafana 集成** — 利用现有 PerformanceMonitor 指标数据，接入统一监控大盘
-- [ ] **Milvus 向量数据库支持** — 作为 ChromaDB 的替代方案，适用于大规模向量检索场景
+- [x] **Plan-and-Execute 多智能体架构** — Supervisor + Planner + WorkflowEngine 三层协作
+- [x] **三级缓存体系** — Redis 精确匹配 + SQL 模板填充 + ChromaDB 语义检索
+- [x] **双层 RAG 检索** — 表级 + 字段级向量检索 + CrossEncoder 精排
+- [x] **人机协同机制** — 数据源选择 / 表关系澄清 / 高风险 SQL 审批
+- [x] **反馈学习闭环** — 用户评分驱动知识库自动优化
+- [x] **全链路可观测性** — LangSmith 追踪 + AOP 性能度量 + 事件驱动日志
+- [x] **MCP 协议支持** — 内置 MCP Server，7 个标准化工具对外暴露
+- [x] **Prompt A/B 测试** — 版本管理 + 自动分流 + 数据驱动决策
 
-### 中期规划 (3-6 个月) — 设计阶段
+### 短期规划 (1-3 个月) — 高优先级
 
-- [ ] **查询结果可视化 Dashboard** — 图表自动推荐增强 + 多图表联动 + 下钻分析
-- [ ] **多租户隔离架构** — 企业级多租户方案，数据完全隔离，独立配置
-- [ ] **查询优化建议引擎** — 基于历史慢查询，自动推荐索引优化和 SQL 改写
-- [ ] **自助数据源接入** — 管理后台自助配置 MySQL/PostgreSQL 数据源，无需重启
-- [ ] **Elasticsearch 向量检索支持** — 支持 ES 作为向量存储后端，利用现有 ES 集群
+- [ ] **查询结果导出增强** — Excel/PDF/Word 多格式导出，支持自定义模板
+- [ ] **SQL 执行计划可视化** — EXPLAIN 结果图形化展示，索引建议自动化
+- [ ] **自然语言追问增强** — 当前仅支持数据源选择场景（"选第一个"），需扩展到图表交互/总结等场景
+- [ ] **查询历史智能推荐** — 基于用户行为预测下一个可能查询的问题
 
-### 长期愿景 (6-12 个月) — 规划中
+### 中期规划 (3-6 个月) — 视需求而定
 
-- [ ] **自动化异常检测** — 定时扫描数据，检测异常趋势并通过企业微信/钉钉推送告警
-- [ ] **知识图谱增强** — 基于图数据库存储实体关系，提升复杂关联查询的语义理解能力
-- [ ] **Sub-Agent 架构演进** — 参考 [SUB_AGENT_ROADMAP.md](SUB_AGENT_ROADMAP.md)，演进为 Master Agent + 6 个专用 Sub-Agent 协作模式
+- [ ] **多租户 SaaS 化** — 企业级多租户隔离，独立配置与计费
+- [ ] **实时数据流支持** — Kafka/Flink 集成，支持流式数据 NL2SQL 查询
+- [ ] **移动端适配** — 微信小程序/H5 版本，随时随地查数据
+
+### 长期愿景 (6-12 个月+) — 探索方向
+
+- [ ] **AutoML 集成** — 自动生成预测模型（销量预测、用户流失预警等）
+- [ ] **多模态查询** — 支持图片/表格截图 → 自动生成 SQL
+- [ ] **行业大模型微调** — 针对电商/金融/医疗等行业微调专用 LLM
 
 ---
 

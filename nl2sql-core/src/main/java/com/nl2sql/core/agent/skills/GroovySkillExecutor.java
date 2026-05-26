@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
+@Deprecated
 public class GroovySkillExecutor implements ApplicationContextAware {
     
     private static final String SKILLS_BASE_PATH = "skills/";

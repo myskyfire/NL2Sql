@@ -2,10 +2,12 @@ package com.nl2sql.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.mcp.tool.AddDatasourceTool;
+import com.nl2sql.mcp.tool.BatchQuerySchemaTool;
 import com.nl2sql.mcp.tool.ExecuteSqlTool;
 import com.nl2sql.mcp.tool.GenerateSqlTool;
 import com.nl2sql.mcp.tool.GetTableRelationshipsTool;
 import com.nl2sql.mcp.tool.ListDatasourcesTool;
+import com.nl2sql.mcp.tool.ListTablesTool;
 import com.nl2sql.mcp.tool.QuerySchemaTool;
 import com.nl2sql.mcp.tool.ValidateSqlTool;
 import io.modelcontextprotocol.server.McpServer;
@@ -36,6 +38,8 @@ public class McpServerApplication {
     private final AddDatasourceTool addDatasourceTool;
     private final GenerateSqlTool generateSqlTool;
     private final ValidateSqlTool validateSqlTool;
+    private final ListTablesTool listTablesTool;
+    private final BatchQuerySchemaTool batchQuerySchemaTool;
 
     public McpServerApplication(QuerySchemaTool querySchemaTool, 
                                 ExecuteSqlTool executeSqlTool,
@@ -43,7 +47,9 @@ public class McpServerApplication {
                                 ListDatasourcesTool listDatasourcesTool,
                                 AddDatasourceTool addDatasourceTool,
                                 GenerateSqlTool generateSqlTool,
-                                ValidateSqlTool validateSqlTool) {
+                                ValidateSqlTool validateSqlTool,
+                                ListTablesTool listTablesTool,
+                                BatchQuerySchemaTool batchQuerySchemaTool) {
         this.querySchemaTool = querySchemaTool;
         this.executeSqlTool = executeSqlTool;
         this.getTableRelationshipsTool = getTableRelationshipsTool;
@@ -51,6 +57,8 @@ public class McpServerApplication {
         this.addDatasourceTool = addDatasourceTool;
         this.generateSqlTool = generateSqlTool;
         this.validateSqlTool = validateSqlTool;
+        this.listTablesTool = listTablesTool;
+        this.batchQuerySchemaTool = batchQuerySchemaTool;
     }
 
     public static void main(String[] args) {
@@ -73,15 +81,17 @@ public class McpServerApplication {
             .tools(
                 listDatasourcesTool.buildListDatasourcesTool(),
                 addDatasourceTool.buildAddDatasourceTool(),
+                listTablesTool.buildListTablesTool(),
                 querySchemaTool.buildQuerySchemaTool(),
-                executeSqlTool.buildExecuteSqlTool(),
+                batchQuerySchemaTool.buildBatchQuerySchemaTool(),
                 getTableRelationshipsTool.buildGetTableRelationshipsTool(),
+                executeSqlTool.buildExecuteSqlTool(),
                 generateSqlTool.buildGenerateSqlTool(),
                 validateSqlTool.buildValidateSqlTool()
             )
             .build();
 
-        log.info("MCP Server 启动成功，已注册 7 个 Tools: list_datasources, add_datasource, query_schema, execute_sql, get_table_relationships, generate_sql, validate_sql");
+        log.info("MCP Server 启动成功，已注册 9 个 Tools: list_datasources, add_datasource, list_tables, query_schema, batch_query_schema, get_table_relationships, execute_sql, generate_sql, validate_sql");
         return server;
     }
 }

@@ -50,15 +50,10 @@ public class McpToolAdapter implements BaseTool {
     }
 
     /**
-     * 添加数据源
+     * 添加数据源（暂不支持，MCP Server 未提供此工具）
      */
     public ToolResult addDatasource(String name, String jdbcUrl, String username, String password) {
-        try {
-            String result = mcpClient.addDatasource(name, jdbcUrl, username, password);
-            return ToolResult.success(parseJson(result));
-        } catch (Exception e) {
-            return ToolResult.error("添加数据源失败: " + e.getMessage());
-        }
+        return ToolResult.error("添加数据源功能暂未实现，请通过系统管理界面配置数据源");
     }
 
     // ==================== 数据库操作 ====================

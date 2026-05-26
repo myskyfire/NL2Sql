@@ -276,6 +276,7 @@ public class SupervisorAgent {
                     }
                     args.put("sql", sql != null ? sql : "");
                     
+                    // ✅ 修复：参数名必须与 @Tool 注解中的参数名一致
                     String dataJson = "";
                     if (queryCacheService != null && sql != null && !sql.trim().isEmpty()) {
                         try {
@@ -292,7 +293,7 @@ public class SupervisorAgent {
                             log.warn("[SupervisorAgent] 从缓存读取数据失败", e);
                         }
                     }
-                    args.put("dataJson", dataJson);
+                    args.put("data", dataJson);  // ✅ 参数名改为 data，与 @Tool 定义一致
                     
                     Object result = toolRegistry.callTool("summarize_result", args);
                     if (result instanceof String) {
