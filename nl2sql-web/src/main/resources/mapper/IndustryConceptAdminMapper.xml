@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.web.mapper.IndustryConceptAdminMapper">
+
+    <!-- 删除概念 -->
+    <delete id="deleteConceptById">
+        DELETE FROM industry_concept WHERE id = #{id}
+    </delete>
+
+    <!-- 批量审核概念 -->
+    <update id="batchUpdateStatus">
+        UPDATE industry_concept SET status = #{status}
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 关联数据源到行业（UPSERT） -->
+    <insert id="upsertDatasourceIndustry">
+        INSERT INTO datasource_industry_mapping (datasource_id, industry_code, priority)
+        VALUES (#{datasourceId}, #{industryCode}, #{priority})
+        ON DUPLICATE KEY UPDATE
+            industry_code = VALUES(industry_code),
+            priority = VALUES(priority)
+    </insert>
+
+    <!-- 查询数据源的行业代码 -->
+    <select id="selectIndustryCodeByDatasourceId" resultType="java.lang.String">
+        SELECT industry_code FROM datasource_industry_mapping
+        WHERE datasource_id = #{datasourceId}
+        LIMIT 1
+    </select>
+
+    <!-- 查询数据源的业务类别 -->
+    <select id="selectBusinessCategoryByDatasourceId" resultType="java.lang.String">
+        SELECT business_category FROM datasource_config
+        WHERE id = #{datasourceId}
+    </select>
+
+    <!-- 插入同义词关系（忽略重复） -->
+    <insert id="insertConceptRelationIgnore">
+        INSERT IGNORE INTO concept_relation (industry_code, source_concept_key, target_concept_key)
+        VALUES (#{industryCode}, #{sourceConcept}, #{targetConcept})
+    </insert>
+
+    <!-- 插入待审核概念(重复时合并别名) -->
+    <insert id="insertPendingConcept">
+        INSERT INTO industry_concept (industry_code, concept_type, concept_key, concept_aliases, description, source, status)
+        VALUES (#{industryCode}, 'metric', #{conceptKey}, #{aliases}, #{description}, 'user_feedback', 'pending')
+        ON DUPLICATE KEY UPDATE
+            concept_aliases = CONCAT(IFNULL(concept_aliases, ''), '/', #{aliasToAdd})
+    </insert>
+    
+    <!-- 查询已审核的行业概念（entity/metric） -->
+    <select id="selectApprovedConceptsByType" resultType="java.util.HashMap">
+        SELECT concept_type, concept_key, concept_aliases
+        FROM industry_concept
+        WHERE industry_code = #{industryCode} AND status = 'approved'
+        AND concept_type IN ('entity', 'metric')
+        ORDER BY FIELD(concept_type, 'metric', 'entity'), concept_key
+    </select>
+    
+</mapper>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nl2sql.metadata.mapper.DataSourceConfigMapper">
+    
+    <!-- 插入数据源配置 -->
+    <insert id="insertDataSourceConfig" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO datasource_config (
+            name,
+            db_type,
+            host,
+            port,
+            database_name,
+            username,
+            password_encrypted,
+            description,
+            is_active,
+            created_by,
+            created_at
+        ) VALUES (
+            #{name},
+            #{dbType},
+            #{host},
+            #{port},
+            #{databaseName},
+            #{username},
+            #{passwordEncrypted},
+            #{description},
+            #{isActive},
+            #{createdBy},
+            NOW()
+        )
+    </insert>
+    
+    <!-- 查询最后插入的 ID -->
+    <select id="selectLastInsertId" resultType="java.lang.Long">
+        SELECT LAST_INSERT_ID()
+    </select>
+    
+    <!-- 查询所有激活的数据源配置 -->
+    <select id="selectActiveConfigs" resultType="com.nl2sql.metadata.entity.DataSourceConfig">
+        SELECT * 
+        FROM datasource_config 
+        WHERE is_active = 1 
+        ORDER BY created_at DESC
+    </select>
+    
+    <!-- 根据 ID 查询数据源配置 -->
+    <select id="selectConfigById" resultType="com.nl2sql.metadata.entity.DataSourceConfig">
+        SELECT * 
+        FROM datasource_config 
+        WHERE id = #{id}
+    </select>
+    
+</mapper>

@@ -28,6 +28,7 @@
         FROM rag_feedback
         WHERE question = #{question}
           AND rating &lt;= 2
+          AND generated_sql = #{generatedSql}  -- ✅ 关键修复：必须 SQL 也完全相同
         ORDER BY created_at DESC
         LIMIT 1
     </select>

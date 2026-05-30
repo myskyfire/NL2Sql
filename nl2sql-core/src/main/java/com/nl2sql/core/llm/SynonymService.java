@@ -1,6 +1,7 @@
 package com.nl2sql.core.llm;
 
 import com.nl2sql.core.llm.extension.IndustryConceptExtension;
+import com.nl2sql.metadata.mapper.IndustryConceptAdminMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,6 +27,9 @@ public class SynonymService {
     @Autowired(required = false)
     private List<IndustryConceptExtension> conceptExtensions;
     
+    @Autowired(required = false)
+    private IndustryConceptAdminMapper adminMapper;
+    
     @PostConstruct
     public void init() {
         // 从 industry_concept 表加载同义词（供未来 Prompt 注入使用）
@@ -44,9 +48,14 @@ public class SynonymService {
         }
         
         try {
-            List<Map<String, Object>> concepts = jdbcTemplate.queryForList(
-                "SELECT concept_key, concept_aliases FROM industry_concept WHERE status = 'approved'"
-            );
+            List<Map<String, Object>> concepts = null;
+            if (adminMapper != null) {
+                concepts = adminMapper.selectAllApprovedConceptsWithAliases();
+            } else {
+                concepts = jdbcTemplate.queryForList(
+                    "SELECT concept_key, concept_aliases FROM industry_concept WHERE status = 'approved'"
+                );
+            }
             
             for (Map<String, Object> concept : concepts) {
                 String conceptKey = (String) concept.get("concept_key");
@@ -98,5 +107,11 @@ public class SynonymService {
      */
     public Map<String, List<String>> getAllConcepts() {
         return new HashMap<>(synonymMap);
+    }
+
+    public void reload() {
+        synonymMap.clear();
+        loadSynonymsFromDatabase();
+        log.info("[SynonymService] 同义词缓存已刷新: {}个概念", synonymMap.size());
     }
 }

@@ -2,10 +2,7 @@ package com.nl2sql.core.rerank;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,52 +14,51 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Jina AI Reranker Service - 使用Jina Cloud API进行重排序
+ * Jina AI Reranker - 使用 Jina Cloud API 进行重排序
  * 
  * API文档: https://jina.ai/reranker/
  * 免费额度: 每月200万次请求
  */
 @Slf4j
-@Service
-public class JinaReranker {
+public class JinaReranker implements Reranker {
     
     private static final String JINA_RERANK_URL = "https://api.jina.ai/v1/rerank";
     
-    @Value("${reranker.jina.api-key:}")
-    private String apiKey;
-    
-    @Value("${reranker.jina.model:jina-reranker-v2-base-multilingual}")
-    private String model;
-    
-    @Value("${reranker.top-k:5}")
-    private int topK;
-    
-    @Value("${reranker.threshold:0.5}")
-    private double threshold;
+    private final String apiKey;
+    private final String model;
+    private final int topK;
+    private final double threshold;
     
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    public JinaReranker() {
-        // ✅ 创建支持代理的HttpClient
+    public JinaReranker(String apiKey, String model, int topK, double threshold) {
+        this.apiKey = apiKey;
+        this.model = model;
+        this.topK = topK;
+        this.threshold = threshold;
         this.httpClient = HttpClient.newBuilder()
-            .proxy(java.net.ProxySelector.getDefault())  // 使用系统代理
+            .proxy(java.net.ProxySelector.getDefault())
             .build();
     }
     
-    /**
-     * 重排序主方法
-     * 
-     * @param query 用户查询
-     * @param candidates 候选文档列表
-     * @return 重排序后的Top-K文档
-     */
+    @Override
+    public String getName() {
+        return "jina";
+    }
+    
+    @Override
+    public boolean isAvailable() {
+        return apiKey != null && !apiKey.isEmpty();
+    }
+    
+    @Override
     public List<RerankedDocument> rerank(String query, List<String> candidates) {
         if (candidates == null || candidates.isEmpty()) {
             return new ArrayList<>();
         }
         
-        if (apiKey == null || apiKey.isEmpty()) {
+        if (!isAvailable()) {
             log.warn("[JinaReranker] API Key未配置，跳过重排序");
             return candidates.stream()
                 .limit(topK)
@@ -73,7 +69,6 @@ public class JinaReranker {
         try {
             log.info("[JinaReranker] 开始重排序: query='{}', candidates={}", query, candidates.size());
             
-            // 构建请求体
             String requestBody = objectMapper.writeValueAsString(
                 java.util.Map.of(
                     "model", model,
@@ -83,7 +78,6 @@ public class JinaReranker {
                 )
             );
             
-            // 发送HTTP请求
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(JINA_RERANK_URL))
                 .header("Content-Type", "application/json")
@@ -100,7 +94,6 @@ public class JinaReranker {
                 throw new RuntimeException("Jina API error: " + response.body());
             }
             
-            // 解析响应
             JsonNode root = objectMapper.readTree(response.body());
             JsonNode resultsNode = root.get("results");
             
@@ -108,7 +101,6 @@ public class JinaReranker {
                 throw new RuntimeException("Invalid rerank response from Jina");
             }
             
-            // 转换为RerankedDocument列表
             List<RerankedDocument> ranked = new ArrayList<>();
             for (JsonNode result : resultsNode) {
                 int index = result.get("index").asInt();
@@ -123,10 +115,8 @@ public class JinaReranker {
                 }
             }
             
-            // 按分数降序排序
             ranked.sort(Comparator.comparingDouble(RerankedDocument::getRelevanceScore).reversed());
             
-            // 取Top-K
             List<RerankedDocument> topKResults = ranked.stream()
                 .limit(this.topK)
                 .collect(Collectors.toList());
@@ -139,21 +129,10 @@ public class JinaReranker {
             
         } catch (Exception e) {
             log.error("[JinaReranker] 重排序失败: {}", e.getMessage(), e);
-            // 降级: 返回原始顺序
             return candidates.stream()
                 .limit(topK)
                 .map(doc -> new RerankedDocument(doc, 0.0, 0))
                 .collect(Collectors.toList());
         }
-    }
-    
-    /**
-     * 重排序结果
-     */
-    @Data
-    public static class RerankedDocument {
-        private final String content;
-        private final double relevanceScore;
-        private final int originalPosition;
     }
 }

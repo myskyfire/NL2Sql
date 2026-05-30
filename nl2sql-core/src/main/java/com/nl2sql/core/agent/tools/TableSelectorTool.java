@@ -77,8 +77,8 @@ public class TableSelectorTool extends BaseToolAdapter {
         // 构建Prompt
         String prompt = buildTableCheckPrompt(query, schemaInfo, relationshipInfo, datasourceId);
         
-        // 调用LLM
-        String llmResponse = modelRouter.smartGenerateSQL(prompt, query);
+        // 调用LLM（不使用smartGenerateSQL，避免注入RAG示例污染选表Prompt）
+        String llmResponse = modelRouter.getMultiModelService().generateSQL(prompt);
         
         log.info("[TableSelector] LLM原始响应: {}", llmResponse);
         
@@ -122,35 +122,21 @@ public class TableSelectorTool extends BaseToolAdapter {
         String tableRoleDescription = industryConceptDictionary.generateTableRoleDescription(datasourceId);
         
         return String.format(
-            "你是一个数据库专家。根据用户问题和当前可用的表结构，请选出需要用到的表。\n\n" +
+            "你是数据库专家。根据用户问题和表结构，选择需要的表。\n\n" +
             "用户问题：%s\n" +
             "%s" +
-            "当前可用的表：\n%s" +
+            "可用表：\n%s" +
             "%s\n\n" +
             "要求：\n" +
-            "1. 仔细分析用户问题，只选择真正需要用到的表\n" +
-            "2. **如果需要通过中间表关联，必须包含所有中间表**（如 A.ref_id -> B.id -> C.ref_id，需要选中 A、B、C 三张表）\n" +
-            "3. **关键指标识别规则**：\n" +
-            "   - 涉及%s时，必须选择包含这些字段的业务主表\n" +
-            "   - 不能仅根据维度字段选择表，必须确保所选表包含用户询问的指标字段\n" +
-            "   - 例如：'统计每个%s的数值指标' → 必须选择有数值字段的主表，同时选择有%s字段的维度表\n" +
-            "   - ⚠️ 重要：仔细区分不同维度的概念，根据实际表结构判断\n" +
-            "4. **表角色理解**：%s\n" +
-            "5. **表选择验证规则（重要）**：\n" +
-            "   - 在返回selected_tables之前，必须验证：基于已选表能否生成满足用户问题的SQL？\n" +
-            "   - 检查清单：\n" +
-            "     a) SELECT中的每个字段是否都能在已选表中找到？\n" +
-            "     b) WHERE/GROUP BY中的字段是否都在已选表中？\n" +
-            "     c) 如果需要JOIN，关联字段是否在已选表中？\n" +
-            "   - 如果任何一个检查失败，必须返回missing_tables，而不是selected_tables\n" +
-            "   - 示例：如果查询需要某个表的字段但该表未选中，则必须补充该表\n" +
-            "6. 如果某些表完全用不到，不要包含在结果中\n" +
-            "7. 返回JSON格式：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
-            "8. 如果确实缺少必要的表，返回：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"缺少的表用途说明\"}\n" +
-            "9. 只返回JSON，不要其他内容",
+            "1. 只选真正需要的表\n" +
+            "2. 关联需包含所有中间表（A->B->C则选A,B,C）\n" +
+            "3. %s\n" +
+            "4. %s\n" +
+            "5. 验证：SELECT/WHERE/GROUP BY字段必须在已选表中，否则返回missing_tables\n" +
+            "6. 返回JSON：{\"selected_tables\": [\"表1\"]} 或 {\"missing_tables\": [\"表A\"], \"reason\": \"原因\"}\n" +
+            "7. 只返回JSON",
             query, tablePreferenceHint, schemaInfo, relationshipHint,
-            metricDescription, dimensionDescription.split("，")[0], dimensionDescription.split("，")[0],
-            tableRoleDescription
+            metricDescription, tableRoleDescription
         );
     }
     

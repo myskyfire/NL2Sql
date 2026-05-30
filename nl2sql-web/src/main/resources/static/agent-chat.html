@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 数据助手</title>
     <!-- ECharts -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="lib/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -246,6 +246,71 @@
             transform: translateX(5px);
         }
         
+        /* 人机协同审批对话框 */
+        .approval-dialog {
+            margin-top: 12px;
+            padding: 16px;
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left: 4px solid #ff9800;
+            border-radius: 8px;
+        }
+        
+        .approval-dialog .approval-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e65100;
+            margin-bottom: 12px;
+        }
+        
+        .approval-dialog .approval-info {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        
+        .approval-dialog .approval-info strong {
+            color: #333;
+        }
+        
+        .approval-dialog .approval-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .approval-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .approval-btn.approve {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .approval-btn.approve:hover {
+            background: #388e3c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(76,175,80,0.3);
+        }
+        
+        .approval-btn.reject {
+            background: #f44336;
+            color: white;
+        }
+        
+        .approval-btn.reject:hover {
+            background: #d32f2f;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(244,67,54,0.3);
+        }
+        
         /* 输入区域 */
         .chat-input-area {
             padding: 20px 24px;
@@ -415,6 +480,134 @@
                 throw error;
             }
         }
+        // ✅ 追问意图检测：业界标准 2 层架构（规则引擎）
+        function detectFollowUpIntent(message) {
+            if (!currentContext?.data || currentContext.data.length === 0) {
+                return false;  // 没有数据，不可能是追问
+            }
+            
+            const lowerMsg = message.toLowerCase().trim();
+            
+            // ========== L1: 显式信号检测 ==========
+            
+            // ❌ 新话题信号词（confidence=1.0 -> 新查询）
+            const newTopicSignals = [
+                /统计|查询|查看|获取|列出|显示|找出|检索/,
+                /最近|上周|上月|今年|去年|本周|本月|前\d+天/,
+                /每个|所有|全部|整个|总共/
+            ];
+            
+            const isNewTopic = newTopicSignals.some(pattern => pattern.test(message));
+            if (isNewTopic && message.length > 8) {
+                console.log('[L1] 检测到新话题信号，非追问');
+                return false;
+            }
+            
+            // ✅ 延续信号词（confidence=0.95 -> 追问）
+            const continuationSignals = [
+                '总结', '概括', '概述', '分析一下', '帮我看看', '解读',
+                '图表', '画图', '可视化', '柱状图', '折线图', '饼图',
+                '下载', '导出', 'excel', 'csv',
+                '排序', '过滤', '筛选', '分组'
+            ];
+            
+            const hasContinuationSignal = continuationSignals.some(keyword => lowerMsg.includes(keyword));
+            if (hasContinuationSignal) {
+                console.log('[L1] 检测到延续信号，是追问');
+                return true;
+            }
+            
+            // ✅ 指代词检测（confidence=0.95 -> 追问）
+            const pronounPatterns = [
+                /^按|^按照|^根据|^以/,      // "按地区"、"按照时间"
+                /^只|^仅|^只要|^只要看/,    // "只看北京"、"仅显示"
+                /^对比|^比较|^和.*比/,      // "对比一下"、"和上月比"
+                /^最大|^最小|^最高|^最低/,  // "最大的"、"最小值"
+                /^平均|^总计|^合计|^总和/,  // "平均值"、"总计多少"
+                /^前\d+|^后\d+/             // "前5个"、"后10条"
+            ];
+            
+            const isPronounPattern = pronounPatterns.some(pattern => pattern.test(message));
+            if (isPronounPattern) {
+                console.log('[L1] 检测到指代模式，是追问');
+                return true;
+            }
+            
+            // ========== L2: 边界区域处理 ==========
+            
+            // ✅ 滑动窗口衰减：计算与历史消息的相关性
+            const historyMessages = window.chatHistory || [];  // 假设全局存储了对话历史
+            const contextRelevance = calculateContextRelevance(message, historyMessages.slice(-5));  // 只看最近5条
+            
+            if (contextRelevance > 0.15) {
+                console.log(`[L2] 上下文相关性 ${contextRelevance.toFixed(2)} > 0.15，是追问`);
+                return true;
+            }
+            
+            // 降级方案：实体重叠度检测
+            const lastQuery = currentContext.lastQuery || '';
+            const entityOverlap = calculateEntityOverlap(message, lastQuery);
+            
+            if (entityOverlap > 0.3) {
+                console.log(`[L2] 实体重叠度 ${entityOverlap.toFixed(2)} > 0.3，是追问`);
+                return true;
+            }
+            
+            // 极短消息且无主语，默认视为追问
+            const isVeryShort = message.length < 10;
+            const hasSubject = /我|你|他|她|它|我们|你们|他们/.test(message);
+            
+            if (isVeryShort && !hasSubject) {
+                console.log('[L2] 极短消息且无主语，视为追问');
+                return true;
+            }
+            
+            console.log('[L2] 默认视为新查询');
+            return false;
+        }
+        
+        // ✅ 计算两个消息的实体重叠度（简单版：基于分词）
+        function calculateEntityOverlap(msg1, msg2) {
+            if (!msg1 || !msg2) return 0;
+            
+            // 简单分词：按字符分割（中文场景）
+            const words1 = new Set(msg1.split('').filter(c => /[\u4e00-\u9fa5a-zA-Z0-9]/.test(c)));
+            const words2 = new Set(msg2.split('').filter(c => /[\u4e00-\u9fa5a-zA-Z0-9]/.test(c)));
+            
+            if (words1.size === 0 || words2.size === 0) return 0;
+            
+            // 计算交集
+            let intersection = 0;
+            words1.forEach(word => {
+                if (words2.has(word)) intersection++;
+            });
+            
+            // Jaccard 相似度
+            const union = words1.size + words2.size - intersection;
+            return intersection / union;
+        }
+        
+        // ✅ 滑动窗口衰减：计算历史消息的相关性分数
+        function calculateContextRelevance(currentMessage, historyMessages) {
+            if (!historyMessages || historyMessages.length === 0) return 0;
+            
+            let maxRelevance = 0;
+            
+            // 遍历历史消息，计算加权相关性
+            historyMessages.forEach((msg, index) => {
+                // 1. 时间衰减因子（越近的消息权重越高）
+                const timeWeight = Math.exp(-0.3 * (historyMessages.length - 1 - index));
+                
+                // 2. 实体重叠度
+                const overlap = calculateEntityOverlap(currentMessage, msg.content || msg);
+                
+                // 3. 综合得分
+                const relevance = timeWeight * overlap;
+                maxRelevance = Math.max(maxRelevance, relevance);
+            });
+            
+            return maxRelevance;
+        }
         
         // 发送消息
         async function sendMessage(customMessage = null) {
@@ -471,6 +664,10 @@
             followUpState.containerId = null;
             followUpState.availableActions = [];
             
+            // ✅ 追问意图检测：判断当前输入是否为追问
+            const isFollowUpIntent = detectFollowUpIntent(message);
+            console.log('[sendMessage] 追问意图检测:', isFollowUpIntent ? '是追问' : '新查询');
+            
             // 显示用户消息
             addMessage(message, 'user');
             input.value = '';
@@ -488,7 +685,12 @@
                     body: JSON.stringify({
                         message: message,
                         sessionId: sessionId,
-                        datasourceId: currentContext?.datasourceId || null  // ✅ 传递当前上下文中的数据源ID
+                        datasourceId: currentContext?.datasourceId ? parseInt(currentContext.datasourceId) : null,  // ✅ 传递当前上下文中的数据源ID
+                        // ✅ 追问上下文标识（只有检测到追问意图才传）
+                        contextId: isFollowUpIntent ? (currentContext?.queryId || null) : null,
+                        hasData: isFollowUpIntent ? !!(currentContext?.data && currentContext.data.length > 0) : false,
+                        // ✅ 追问场景：携带上次查询的数据（避免后端重新查询）
+                        followUpData: isFollowUpIntent && currentContext?.data && currentContext.data.length > 0 ? currentContext.data : null
                     })
                 });
                 
@@ -520,8 +722,8 @@
             console.log('[Agent响应] generatedSQL:', data.generatedSQL || data.sql || '无');
             console.log('[Agent响应] success:', data.success);
             
-            // ⚠️ 重要：保留原有的 sql/generatedSQL，只更新其他字段
-            const preservedFields = ['sql', 'generatedSQL'];
+            // ⚠️ 重要：保留原有的 sql/generatedSQL/data，只更新其他字段
+            const preservedFields = ['sql', 'generatedSQL', 'data'];  // ✅ 新增 data 字段
             const preservedData = {};
             preservedFields.forEach(field => {
                 if (currentContext && currentContext[field]) {
@@ -536,10 +738,20 @@
                 currentContext.datasourceId = data.datasourceId;
             }
             
-            // ✅ 关键修复：确保 data 字段被正确保存（用于图表和Excel下载）
-            if (data.data && Array.isArray(data.data)) {
+            // ✅ 连续追问支持：只有新查询才更新 data，追问场景保持原始数据
+            const isFollowUp = data.type === 'summary' || data.type === 'chart';
+            if (!isFollowUp && data.data && Array.isArray(data.data)) {
+                // 新查询：更新 data 并生成 queryId
                 currentContext.data = data.data;
                 console.log('[Agent响应] 已保存 data 字段:', data.data.length, '条记录');
+                
+                if (!currentContext.queryId) {
+                    currentContext.queryId = 'query_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                    console.log('[Agent响应] 生成 queryId:', currentContext.queryId);
+                }
+            } else if (isFollowUp) {
+                // 追问场景：保持 currentContext.data 不变
+                console.log('[Agent响应] 追问场景，保持原始 data 不变');
             }
             
             // 保存最后一次的查询问题（用于AI总结等场景）
@@ -558,11 +770,17 @@
                     }
                 } else if (data.type === 'data') {
                     data.status = 'success';
+                } else if (data.type === 'summary') {
+                    data.status = 'success';
+                } else if (data.type === 'chart') {
+                    data.status = 'success';
                 } else if (data.type === 'error') {
                     data.status = 'error';
                     if (!data.error && data.message) {
                         data.error = data.message;
                     }
+                } else if (data.type === 'human_approval_required') {
+                    data.status = 'human_approval_required';
                 }
             }
             
@@ -613,6 +831,10 @@
                     }
                     
                     addMessage(errorHtml, 'agent');
+                    break;
+                    
+                case 'human_approval_required':
+                    handleHumanApprovalRequired(data);
                     break;
                     
                 default:
@@ -669,6 +891,30 @@
             console.log('[handleQuerySuccess] data.data 类型:', Array.isArray(data.data) ? 'Array' : typeof data.data);
             console.log('[handleQuerySuccess] data.data 长度:', Array.isArray(data.data) ? data.data.length : 'N/A');
             
+            // ✅ 关键修复：解析后端返回的JSON字符串字段
+            if (typeof data.data === 'string') {
+                try {
+                    data.data = JSON.parse(data.data);
+                    console.log('[handleQuerySuccess] data字段已解析为数组');
+                } catch (e) {
+                    console.warn('[handleQuerySuccess] data字段解析失败:', e);
+                }
+            }
+            if (typeof data.followUpSuggestions === 'string') {
+                try {
+                    data.followUpSuggestions = JSON.parse(data.followUpSuggestions);
+                } catch (e) {
+                    console.warn('[handleQuerySuccess] followUpSuggestions解析失败:', e);
+                }
+            }
+            if (typeof data.echartsConfig === 'string') {
+                try {
+                    data.echartsConfig = JSON.parse(data.echartsConfig);
+                } catch (e) {
+                    console.warn('[handleQuerySuccess] echartsConfig解析失败:', e);
+                }
+            }
+            
             let html = '';
             
             // 情况1：AI总结（type=summary）
@@ -677,14 +923,6 @@
                 const formattedSummary = formatAISummary(data.message);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
                 addMessage(html, 'agent');
-                
-                // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
-                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    const followUpHtml = renderRemainingFollowUpHints('summary');
-                    if (followUpHtml) {
-                        addMessage(followUpHtml, 'agent');
-                    }
-                }
                 return;
             }
             
@@ -694,14 +932,6 @@
                 html += await renderDataTable(data.data);
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
                 addMessage(html, 'agent');
-                
-                // ✅ 图表生成后，重新渲染剩余追问按钮
-                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    const followUpHtml = renderRemainingFollowUpHints('chart');
-                    if (followUpHtml) {
-                        addMessage(followUpHtml, 'agent');
-                    }
-                }
                 return;
             }
             
@@ -785,14 +1015,6 @@
                 // 再添加图表
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
                 addMessage(html, 'agent');
-                
-                // ✅ 图表生成后，重新渲染剩余追问按钮（基于原始查询数据）
-                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    const followUpHtml = renderRemainingFollowUpHints('chart');
-                    if (followUpHtml) {
-                        addMessage(followUpHtml, 'agent');
-                    }
-                }
                 return;
             }
             
@@ -866,6 +1088,26 @@
                 </button>`;
                 html += '</div>';
             }
+            // ✅ 中置信度推荐（0.6-0.8：推荐+确认+选择其他）
+            else if (data.clarificationType === 'datasource_medium_confidence') {
+                // 保存推荐的数据源ID
+                pendingDatasourceId = data.recommendedDatasourceId || null;
+                
+                // 保存所有数据源列表
+                if (data.availableDatasources) {
+                    pendingDatasourceList = data.availableDatasources;
+                }
+                
+                // 添加两个按钮：使用推荐 / 选择其他
+                html += '<div class="clarification-options">';
+                html += `<button class="clarification-btn" onclick="confirmDatasource(true)" style="background: #667eea;">
+                    ✅ 使用此数据源
+                </button>`;
+                html += `<button class="clarification-btn" onclick="showAllDatasources()" style="background: #f59e0b;">
+                    📋 选择其他数据源
+                </button>`;
+                html += '</div>';
+            }
             // 数据源确认（LLM生成的确认问句）
             else if (data.clarificationType === 'datasource_confirmation') {
                 // 尝试从上下文中获取 datasourceId
@@ -894,7 +1136,14 @@
             else if (data.clarificationType === 'datasource_selection' && data.availableDatasources) {
                 // ✅ 保存数据源列表，用于自然语言选择
                 pendingDatasourceList = data.availableDatasources;
-                console.log('[handleClarification] 保存数据源列表:', pendingDatasourceList.length, '个');
+                
+                // ✅ 保存完整数据源列表（兜底用）
+                if (data.allDatasources) {
+                    window.allDatasourcesBackup = data.allDatasources;
+                    console.log('[handleClarification] 保存完整数据源列表:', window.allDatasourcesBackup.length, '个');
+                }
+                
+                console.log('[handleClarification] 保存候选数据源列表:', pendingDatasourceList.length, '个');
                 
                 // ✅ 启动3分钟超时定时器，自动清空列表（防止用户偏离话题后误匹配）
                 if (window.datasourceListTimeout) {
@@ -903,6 +1152,7 @@
                 window.datasourceListTimeout = setTimeout(() => {
                     console.log('[handleClarification] 数据源列表超时，已清空');
                     pendingDatasourceList = [];
+                    window.allDatasourcesBackup = null;
                 }, 3 * 60 * 1000); // 3分钟
                 
                 html += '<div class="clarification-options">';
@@ -912,6 +1162,16 @@
                     </button>`;
                 });
                 html += '</div>';
+                
+                // ✅ 兜底机制：如果候选集中没有用户需要的数据源，提供查看所有的选项
+                const datasourceCount = data.metadata?.datasourceCount || data.availableDatasources.length;
+                if (data.availableDatasources.length < datasourceCount) {
+                    html += `<div style="margin-top:12px;text-align:center;">
+                        <button class="clarification-btn" onclick="showAllDatasources()" style="background:#fff;border:1px dashed #999;color:#666;">
+                            🔍 当前显示 ${data.availableDatasources.length} 个相关数据源，点击查看全部 ${datasourceCount} 个
+                        </button>
+                    </div>`;
+                }
                 
                 // ✅ 提示用户可以输入新问题（会放弃当前选择）
                 html += '<div style="margin-top:10px;font-size:12px;color:#999;">💡 提示：您也可以直接输入新问题，将放弃当前数据源选择</div>';
@@ -931,6 +1191,76 @@
             }
             
             addMessage(html, 'agent');
+        }
+        
+        // 处理人机协同审批
+        function handleHumanApprovalRequired(data) {
+            console.log('[人机协同] 收到审批请求:', data);
+            
+            let html = '<div class="approval-dialog">';
+            html += '<div class="approval-title">⚠️ 高风险 SQL 需要人工审批</div>';
+            
+            if (data.message) {
+                html += `<div class="approval-info">${escapeHtml(data.message)}</div>`;
+            }
+            
+            if (data.riskLevel) {
+                const riskColor = data.riskLevel === 'HIGH' ? '#f44336' : '#ff9800';
+                html += `<div class="approval-info"><strong>风险等级：</strong><span style="color:${riskColor};font-weight:600;">${escapeHtml(data.riskLevel)}</span></div>`;
+            }
+            
+            if (data.riskReason) {
+                html += `<div class="approval-info"><strong>风险原因：</strong>${escapeHtml(data.riskReason)}</div>`;
+            }
+            
+            if (data.sql) {
+                html += `<div class="sql-display" style="margin-top:10px;"><strong>📝 待审批 SQL:</strong><br>${escapeHtml(data.sql)}</div>`;
+            }
+            
+            if (data.optimizedSql && data.optimizedSql !== data.sql) {
+                html += `<div class="sql-display" style="margin-top:10px;background:#e8f5e9;border-left-color:#4caf50;"><strong>🔧 优化建议 SQL:</strong><br>${escapeHtml(data.optimizedSql)}</div>`;
+            }
+            
+            if (data.optimizationSuggestion) {
+                html += `<div class="approval-info" style="margin-top:8px;color:#e65100;"><strong>💡 优化建议：</strong>${escapeHtml(data.optimizationSuggestion)}</div>`;
+            }
+            
+            html += '<div class="approval-actions">';
+            html += `<button class="approval-btn approve" onclick="handleSqlApproval('${escapeHtml(data.approvalId || '')}', true)">✅ 批准执行</button>`;
+            html += `<button class="approval-btn reject" onclick="handleSqlApproval('${escapeHtml(data.approvalId || '')}', false)">❌ 拒绝执行</button>`;
+            html += '</div>';
+            html += '</div>';
+            
+            addMessage(html, 'agent');
+        }
+        
+        // 处理 SQL 审批结果
+        async function handleSqlApproval(approvalId, approved) {
+            console.log('[人机协同] 审批结果:', { approvalId, approved });
+            
+            try {
+                const response = await fetch('/api/agent/approve-sql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        approvalId: approvalId,
+                        approved: approved
+                    })
+                });
+                
+                const result = await response.json();
+                console.log('[人机协同] 审批响应:', result);
+                
+                const data = result.data || result;
+                if (result.success || result.code === 200) {
+                    addMessage(data.message || (approved ? '✅ 已批准，请重新发送查询请求' : '❌ 已拒绝执行'), 'agent');
+                } else {
+                    addMessage(`❌ 审批处理失败: ${data.message || result.message || '未知错误'}`, 'agent');
+                }
+            } catch (error) {
+                console.error('[人机协同] 审批请求失败:', error);
+                addMessage('❌ 审批请求发送失败，请重试', 'agent');
+            }
         }
         
         // 处理建议按钮点击
@@ -1016,7 +1346,7 @@
                     body: JSON.stringify({
                         message: answer,
                         sessionId: sessionId,
-                        datasourceId: currentContext ? currentContext.datasourceId : null
+                        datasourceId: currentContext ? parseInt(currentContext.datasourceId) : null
                     })
                 });
                 
@@ -1052,7 +1382,7 @@
                     body: JSON.stringify({
                         message: '执行SQL',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId
+                        datasourceId: parseInt(currentContext.datasourceId)
                     })
                 });
                 
@@ -1097,7 +1427,7 @@
                     body: JSON.stringify({
                         message: '[INTENT:GENERATE_CHART] 请生成图表',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         // ⚠️ 关键修复：传递 context，包含 SQL 信息
                         context: {
                             chartType: null,  // 不指定类型，让后端智能推荐
@@ -1149,7 +1479,7 @@
                     body: JSON.stringify({
                         message: `[INTENT:AI_SUMMARY] 请对以下查询结果进行AI分析总结`,
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         // 传递 context，Controller 会将其拼接到消息中
                         context: {
                             lastQuery: currentContext.lastQuery,
@@ -1195,7 +1525,7 @@
             followUpState.containerId = containerId;
             followUpState.availableActions = [];
             if (isStatistical) followUpState.availableActions.push('summary');
-            if (isStatistical && hasNumeric && data.data.length >= 2) followUpState.availableActions.push('chart');
+            if (isStatistical && hasNumeric && data.data.length > 0) followUpState.availableActions.push('chart');  // ✅ 只要有数据即可，不强制 >= 2
             followUpState.availableActions.push('download');
             
             let html = `<div class="follow-up-hints" id="${containerId}" style="margin-top:15px;padding:12px;background:#f0f7ff;border-radius:8px;border-left:3px solid #2196f3;">`;
@@ -1263,7 +1593,7 @@
                 html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
             }
             
-            if (completedAction !== 'chart' && isStatistical && hasNumeric && currentContext.data.length >= 2) {
+            if (completedAction !== 'chart' && isStatistical && hasNumeric && currentContext.data.length > 0) {  // ✅ 只要有数据即可
                 html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
             }
             
@@ -1315,7 +1645,7 @@
                     body: JSON.stringify({
                         message: '[INTENT:AI_SUMMARY] 请对以上查询结果进行AI分析总结',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         context: {
                             lastQuery: currentContext.lastQuery,
                             generatedSQL: currentContext.sql
@@ -1327,9 +1657,7 @@
                 removeTypingIndicator();
                 
                 if (result.code === 200 && result.data) {
-                    handleAgentResponse(result.data);
-                    
-                    // ✅ AI总结返回后，重新渲染剩余按钮
+                    await handleAgentResponse(result.data);
                     renderRemainingFromCache();
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
@@ -1367,7 +1695,7 @@
                     body: JSON.stringify({
                         message: '[INTENT:GENERATE_CHART] 请生成柱状图',
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         context: {
                             chartType: 'bar',
                             generatedSQL: currentContext.sql
@@ -1379,9 +1707,7 @@
                 removeTypingIndicator();
                 
                 if (result.code === 200 && result.data) {
-                    handleAgentResponse(result.data);
-                    
-                    // ✅ 图表返回后，重新渲染剩余按钮
+                    await handleAgentResponse(result.data);
                     renderRemainingFromCache();
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
@@ -1414,17 +1740,13 @@
         
         // ✅ 根据缓存渲染剩余按钮
         function renderRemainingFromCache() {
-            if (!followUpState.containerId || followUpState.availableActions.length === 0) {
+            console.log('[追问按钮] followUpState:', JSON.stringify(followUpState));
+            console.log('[追问按钮] availableActions:', followUpState.availableActions);
+            
+            if (!followUpState.availableActions || followUpState.availableActions.length === 0) {
+                console.log('[追问按钮] 跳过：availableActions为空');
                 return;
             }
-            
-            if (!currentContext || !currentContext.data || !Array.isArray(currentContext.data) || currentContext.data.length === 0) {
-                return;
-            }
-            
-            const sql = currentContext.sql || currentContext.generatedSQL || '';
-            const isStatistical = isStatisticalData(sql);
-            const hasNumeric = hasNumericColumn(currentContext.data);
             
             const containerId = 'follow-up-' + Date.now();
             followUpState.containerId = containerId;
@@ -1433,11 +1755,11 @@
             html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续:</div>';
             html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
             
-            if (followUpState.availableActions.includes('summary') && isStatistical) {
+            if (followUpState.availableActions.includes('summary')) {
                 html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
             }
             
-            if (followUpState.availableActions.includes('chart') && isStatistical && hasNumeric && currentContext.data.length >= 2) {
+            if (followUpState.availableActions.includes('chart')) {
                 html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
             }
             
@@ -1511,7 +1833,7 @@
                     body: JSON.stringify({
                         message: `[INTENT:GENERATE_CHART] 请生成${typeName}`,
                         sessionId: sessionId,
-                        datasourceId: currentContext.datasourceId,
+                        datasourceId: parseInt(currentContext.datasourceId),
                         // 传递 context，Controller 会将其拼接到消息中
                         context: {
                             chartType: chartType,
@@ -1651,13 +1973,25 @@
         
         // 显示所有数据源
         async function showAllDatasources() {
-            addMessage('❌ 不，我要选择其他数据源', 'user');
-            showTypingIndicator();
+            console.log('[showAllDatasources] 调用，备份列表:', window.allDatasourcesBackup?.length);
             
-            // 发送特殊指令获取所有数据源
-            setTimeout(() => {
-                sendMessage('列出所有数据源');
-            }, 500);
+            if (!window.allDatasourcesBackup || window.allDatasourcesBackup.length === 0) {
+                addMessage('❌ 无法获取完整数据源列表，请重试', 'agent');
+                return;
+            }
+            
+            // ✅ 直接渲染所有数据源，无需再次调用后端
+            let html = '<div class="clarification-options">';
+            window.allDatasourcesBackup.forEach(ds => {
+                html += `<button class="clarification-btn" onclick="selectDatasource(${ds.id}, '${escapeHtml(ds.name)}')">
+                    📊 ${escapeHtml(ds.name)} (${escapeHtml(ds.db_type)}) - ${escapeHtml(ds.database_name)}
+                </button>`;
+            });
+            html += '</div>';
+            
+            html += '<div style="margin-top:10px;font-size:12px;color:#999;">✅ 已显示全部 ' + window.allDatasourcesBackup.length + ' 个数据源</div>';
+            
+            addMessage(html, 'agent');
         }
         
         // 发送消息并指定数据源
@@ -1672,7 +2006,7 @@
                     body: JSON.stringify({
                         message: message,
                         sessionId: sessionId,
-                        datasourceId: datasourceId
+                        datasourceId: parseInt(datasourceId)
                     })
                 });
                 
@@ -1826,6 +2160,19 @@
             messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            // ✅ 滑动窗口衰减：保存对话历史（最多保留20条）
+            window.chatHistory = window.chatHistory || [];
+            window.chatHistory.push({
+                content: content.replace(/<[^>]*>/g, ''),  // 去除 HTML 标签
+                type: type,
+                timestamp: Date.now()
+            });
+            
+            // 保持最近20条
+            if (window.chatHistory.length > 20) {
+                window.chatHistory = window.chatHistory.slice(-20);
+            }
         }
         
         // 显示加载动画

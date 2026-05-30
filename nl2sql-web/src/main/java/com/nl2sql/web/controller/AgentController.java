@@ -2,6 +2,7 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
+import com.nl2sql.core.tracing.TracingService;
 import com.nl2sql.web.service.AgentChatService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Agent 对话控制器
@@ -30,6 +32,9 @@ public class AgentController {
     
     @Autowired
     private AgentChatService agentChatService;
+    
+    @Autowired(required = false)
+    private TracingService langSmithTracingService;
     
     /**
      * Agent 对话接口 - 测试版本（无需认证）
@@ -73,5 +78,88 @@ public class AgentController {
         }
         
         return agentChatService.processChat(request, userInfo);
+    }
+    
+    /**
+     * ✅ 人机协同：确认执行高风险SQL
+     * 
+     * @param approvalId 确认ID（从human_approval_required响应中获取）
+     * @param approved 是否批准(true=执行, false=取消)
+     */
+    @PostMapping("/approve-sql")
+    public Result<Map<String, Object>> approveSql(
+        @RequestBody Map<String, Object> request,
+        HttpServletRequest httpRequest
+    ) {
+        String approvalId = (String) request.get("approvalId");
+        Boolean approved = com.nl2sql.common.util.BooleanUtils.toBoolean(request.get("approved"));
+        
+        log.info("[人机协同] 收到SQL确认请求: approvalId={}, approved={}", approvalId, approved);
+        
+        if (approvalId == null || approvalId.isEmpty()) {
+            return Result.error(400, "缺少approvalId参数");
+        }
+        
+        if (approved == null) {
+            return Result.error(400, "缺少approved参数");
+        }
+        
+        // ✅ 从 request attribute 获取已验证的用户信息
+        AuthService.UserInfo userInfo = (AuthService.UserInfo) httpRequest.getAttribute("userInfo");
+        if (userInfo == null) {
+            log.error("[人机协同] 用户信息缺失");
+            return Result.error(500, "认证服务异常");
+        }
+        
+        return agentChatService.handleSqlApproval(approvalId, approved, userInfo);
+    }
+    
+    /**
+     * LangSmith 反馈接口（用户点赞/点踩）
+     * 
+     * @param request 包含 runId, rating(1=好评, 0=差评), comment
+     */
+    @PostMapping("/feedback")
+    public Result<Map<String, Object>> feedback(
+        @RequestBody Map<String, Object> request,
+        HttpServletRequest httpRequest
+    ) {
+        String runIdStr = (String) request.get("runId");
+        Object ratingObj = request.get("rating");
+        String comment = (String) request.get("comment");
+        
+        if (runIdStr == null || runIdStr.isEmpty()) {
+            return Result.error(400, "缺少runId参数");
+        }
+        
+        if (ratingObj == null) {
+            return Result.error(400, "缺少rating参数");
+        }
+        
+        double rating;
+        try {
+            rating = Double.parseDouble(String.valueOf(ratingObj));
+        } catch (NumberFormatException e) {
+            return Result.error(400, "rating参数格式错误");
+        }
+        
+        try {
+            UUID runId = UUID.fromString(runIdStr);
+            
+            if (langSmithTracingService != null && langSmithTracingService.isEnabled()) {
+                if (rating >= 1.0) {
+                    langSmithTracingService.sendThumbsUp(runId, comment);
+                } else {
+                    langSmithTracingService.sendThumbsDown(runId, comment);
+                }
+                log.info("[LangSmith反馈] 反馈已发送: runId={}, rating={}, comment={}", runId, rating, comment);
+            } else {
+                log.warn("[LangSmith反馈] LangSmith未启用，反馈已忽略");
+            }
+            
+            return Result.success(Map.of("success", true, "message", "反馈已提交"));
+        } catch (IllegalArgumentException e) {
+            return Result.error(400, "runId格式错误: " + e.getMessage());
+        }
     }
 }

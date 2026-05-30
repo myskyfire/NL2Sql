@@ -6,9 +6,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -254,6 +257,176 @@ public class MonitorController {
         } catch (Exception e) {
             log.error("获取低分查询分析失败", e);
             return Result.error("获取分析失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ ECharts新增：查询趋势数据（近N天）
+     */
+    @GetMapping("/query-trend")
+    public Result<Map<String, Object>> getQueryTrend(@RequestParam(defaultValue = "7") int days) {
+        try {
+            Map<String, Object> result = new HashMap<>();
+            
+            if (jdbcTemplate == null) {
+                result.put("dates", new ArrayList<>());
+                result.put("totalQueries", new ArrayList<>());
+                result.put("successQueries", new ArrayList<>());
+                result.put("cacheHits", new ArrayList<>());
+                return Result.success(result);
+            }
+            
+            List<String> dates = new ArrayList<>();
+            List<Integer> totalQueries = new ArrayList<>();
+            List<Integer> successQueries = new ArrayList<>();
+            List<Integer> cacheHits = new ArrayList<>();
+            
+            for (int i = days - 1; i >= 0; i--) {
+                String dateSql = i == 0 ? "CURDATE()" : String.format("DATE_SUB(CURDATE(), INTERVAL %d DAY)", i);
+                
+                String dateQuery = "SELECT " + dateSql;
+                String date = jdbcTemplate.queryForObject(dateQuery, String.class);
+                dates.add(date);
+                
+                Integer total = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM nl2sql_query_log WHERE DATE(created_at) = " + dateSql, 
+                    Integer.class
+                );
+                totalQueries.add(total != null ? total : 0);
+                
+                Integer success = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM nl2sql_query_log WHERE DATE(created_at) = " + dateSql + " AND execution_success = 1", 
+                    Integer.class
+                );
+                successQueries.add(success != null ? success : 0);
+                
+                Integer hits = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM nl2sql_query_log WHERE DATE(created_at) = " + dateSql + " AND cache_hit = 1", 
+                    Integer.class
+                );
+                cacheHits.add(hits != null ? hits : 0);
+            }
+            
+            result.put("dates", dates);
+            result.put("totalQueries", totalQueries);
+            result.put("successQueries", successQueries);
+            result.put("cacheHits", cacheHits);
+            
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("获取查询趋势失败", e);
+            return Result.error("获取趋势失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ ECharts新增：热门表TOP N
+     */
+    @GetMapping("/hot-tables")
+    public Result<Map<String, Object>> getHotTables(@RequestParam(defaultValue = "10") int limit) {
+        try {
+            Map<String, Object> result = new HashMap<>();
+            List<Map<String, Object>> tables = new ArrayList<>();
+            
+            if (jdbcTemplate != null) {
+                try {
+                    String sql = "SELECT table_name as tableName, COUNT(*) as queryCount " +
+                                "FROM nl2sql_query_log " +
+                                "WHERE table_name IS NOT NULL AND table_name != '' " +
+                                "GROUP BY table_name " +
+                                "ORDER BY queryCount DESC " +
+                                "LIMIT " + limit;
+                    
+                    tables = jdbcTemplate.queryForList(sql);
+                } catch (Exception e) {
+                    log.debug("查询热门表失败", e);
+                }
+            }
+            
+            result.put("tables", tables);
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("获取热门表失败", e);
+            return Result.error("获取热门表失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ ECharts新增：查询类型分布
+     */
+    @GetMapping("/query-type-distribution")
+    public Result<Map<String, Object>> getQueryTypeDistribution() {
+        try {
+            Map<String, Object> result = new HashMap<>();
+            List<Map<String, Object>> types = new ArrayList<>();
+            
+            if (jdbcTemplate != null) {
+                try {
+                    String sql = "SELECT query_type as type, COUNT(*) as count " +
+                                "FROM nl2sql_query_log " +
+                                "WHERE query_type IS NOT NULL AND query_type != '' " +
+                                "GROUP BY query_type " +
+                                "ORDER BY count DESC";
+                    
+                    types = jdbcTemplate.queryForList(sql);
+                } catch (Exception e) {
+                    log.debug("查询类型分布失败", e);
+                }
+            }
+            
+            result.put("types", types);
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("获取查询类型分布失败", e);
+            return Result.error("获取查询类型分布失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ ECharts新增：响应时间分布
+     */
+    @GetMapping("/response-time-distribution")
+    public Result<Map<String, Object>> getResponseTimeDistribution() {
+        try {
+            Map<String, Object> result = new HashMap<>();
+            List<String> ranges = List.of("<1s", "1-2s", "2-3s", "3-5s", ">5s");
+            List<Integer> counts = new ArrayList<>();
+            
+            if (jdbcTemplate != null) {
+                try {
+                    Integer lt1s = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM nl2sql_query_log WHERE execution_time_ms < 1000", Integer.class);
+                    counts.add(lt1s != null ? lt1s : 0);
+                    
+                    Integer lt2s = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM nl2sql_query_log WHERE execution_time_ms >= 1000 AND execution_time_ms < 2000", Integer.class);
+                    counts.add(lt2s != null ? lt2s : 0);
+                    
+                    Integer lt3s = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM nl2sql_query_log WHERE execution_time_ms >= 2000 AND execution_time_ms < 3000", Integer.class);
+                    counts.add(lt3s != null ? lt3s : 0);
+                    
+                    Integer lt5s = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM nl2sql_query_log WHERE execution_time_ms >= 3000 AND execution_time_ms < 5000", Integer.class);
+                    counts.add(lt5s != null ? lt5s : 0);
+                    
+                    Integer gt5s = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM nl2sql_query_log WHERE execution_time_ms >= 5000", Integer.class);
+                    counts.add(gt5s != null ? gt5s : 0);
+                } catch (Exception e) {
+                    log.debug("查询响应时间分布失败", e);
+                    counts = List.of(0, 0, 0, 0, 0);
+                }
+            } else {
+                counts = List.of(0, 0, 0, 0, 0);
+            }
+            
+            result.put("ranges", ranges);
+            result.put("counts", counts);
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("获取响应时间分布失败", e);
+            return Result.error("获取响应时间分布失败: " + e.getMessage());
         }
     }
 }

@@ -324,7 +324,7 @@
                         <td>${log.execution_time_ms}</td>
                         <td>${log.row_count || 0}</td>
                         <td><span class="badge ${statusClass}">${statusText}</span></td>
-                        <td>${formatDateTime(log.created_at)}</td>
+                        <td>${formatDateTime(log.createdAt)}</td>
                     </tr>
                 `;
             }).join('');

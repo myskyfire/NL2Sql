@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DataMind AI - 手动执行SQL</title>
+    <script src="lib/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
@@ -202,10 +203,29 @@
             border-color: #667eea; 
         }
         .chart-container { 
-            min-height: 300px; 
+            min-height: 400px; 
             background: white; 
             padding: 16px; 
             border-radius: 6px; 
+        }
+        .chart-container table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .chart-container table th,
+        .chart-container table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        .chart-container table th {
+            background: #f5f7fa;
+            font-weight: 600;
+        }
+        .chart-echarts-container {
+            width: 100%;
+            height: 400px;
         }
     </style>
 </head>
@@ -252,6 +272,8 @@
         const token = localStorage.getItem('token');
         let currentSQL = null;
         let currentData = null;
+        let currentRecommendation = null;
+        let currentChartInstance = null;
         
         // 页面加载时获取数据源列表
         window.onload = async function() {
@@ -484,6 +506,7 @@
             chartTabs.innerHTML = '';
             chartContainer.innerHTML = '';
             
+            currentRecommendation = recommendation;
             const charts = recommendation.charts;
             
             // 创建标签页
@@ -514,9 +537,26 @@
                 tab.classList.toggle('active', i === index);
             });
             
-            const chart = { type: 'TABLE', title: '详细数据', series: currentData };
+            // 销毁之前的图表实例
+            if (currentChartInstance) {
+                currentChartInstance.dispose();
+                currentChartInstance = null;
+            }
             
-            // 简单展示：如果是TABLE类型，直接显示表格
+            const charts = currentRecommendation.charts;
+            const chart = charts[index];
+            
+            if (!chart) return;
+            
+            if (chart.type === 'TABLE') {
+                renderTableChart(chartContainer, chart);
+            } else {
+                renderEChartsChart(chartContainer, chart);
+            }
+        }
+        
+        // 渲染表格图表
+        function renderTableChart(container, chart) {
             let html = `<h4 style="margin-bottom:12px;color:#667eea;">${chart.title}</h4>`;
             html += '<table><thead><tr>';
             
@@ -538,7 +578,199 @@
                 html += '</tbody></table>';
             }
             
-            chartContainer.innerHTML = html;
+            container.innerHTML = html;
+        }
+        
+        // 渲染ECharts图表
+        function renderEChartsChart(container, chart) {
+            // 创建图表容器
+            container.innerHTML = `<h4 style="margin-bottom:12px;color:#667eea;">${chart.title}</h4>`;
+            const chartDiv = document.createElement('div');
+            chartDiv.className = 'chart-echarts-container';
+            container.appendChild(chartDiv);
+            
+            // 初始化ECharts实例
+            currentChartInstance = echarts.init(chartDiv);
+            
+            // 准备图表数据
+            const option = buildChartOption(chart, currentData);
+            
+            // 设置图表配置
+            currentChartInstance.setOption(option);
+            
+            // 响应窗口大小变化
+            window.addEventListener('resize', () => {
+                if (currentChartInstance) {
+                    currentChartInstance.resize();
+                }
+            });
+        }
+        
+        // 构建图表配置
+        function buildChartOption(chart, data) {
+            if (!data || data.length === 0) {
+                return {
+                    title: { text: '暂无数据', left: 'center', top: 'center' }
+                };
+            }
+            
+            const columns = Object.keys(data[0]);
+            
+            switch (chart.type) {
+                case 'BAR':
+                    return buildBarChartOption(chart, data, columns);
+                case 'LINE':
+                    return buildLineChartOption(chart, data, columns);
+                case 'PIE':
+                    return buildPieChartOption(chart, data, columns);
+                default:
+                    return buildBarChartOption(chart, data, columns);
+            }
+        }
+        
+        // 构建柱状图配置
+        function buildBarChartOption(chart, data, columns) {
+            const xAxisColumn = chart.xAxis || columns[0];
+            const seriesColumns = chart.series || columns.slice(1);
+            
+            const categories = data.map(row => row[xAxisColumn]);
+            const series = seriesColumns.map(col => ({
+                name: col,
+                type: 'bar',
+                data: data.map(row => row[col]),
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#667eea' },
+                        { offset: 1, color: '#764ba2' }
+                    ])
+                }
+            }));
+            
+            return {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+                legend: {
+                    data: seriesColumns,
+                    top: 10
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: categories,
+                    axisLabel: {
+                        interval: 0,
+                        rotate: categories.length > 10 ? 30 : 0
+                    }
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: series
+            };
+        }
+        
+        // 构建折线图配置
+        function buildLineChartOption(chart, data, columns) {
+            const xAxisColumn = chart.xAxis || columns[0];
+            const seriesColumns = chart.series || columns.slice(1);
+            
+            const categories = data.map(row => row[xAxisColumn]);
+            const series = seriesColumns.map((col, index) => ({
+                name: col,
+                type: 'line',
+                smooth: true,
+                data: data.map(row => row[col]),
+                itemStyle: {
+                    color: ['#667eea', '#764ba2', '#11998e', '#38ef7d', '#f093fb', '#f5576c'][index % 6]
+                },
+                areaStyle: {
+                    opacity: 0.1
+                }
+            }));
+            
+            return {
+                tooltip: {
+                    trigger: 'axis'
+                },
+                legend: {
+                    data: seriesColumns,
+                    top: 10
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: categories,
+                    axisLabel: {
+                        interval: 0,
+                        rotate: categories.length > 10 ? 30 : 0
+                    }
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: series
+            };
+        }
+        
+        // 构建饼图配置
+        function buildPieChartOption(chart, data, columns) {
+            const nameColumn = chart.nameColumn || columns[0];
+            const valueColumn = chart.valueColumn || columns[1];
+            
+            const pieData = data.map(row => ({
+                name: String(row[nameColumn]),
+                value: row[valueColumn]
+            }));
+            
+            return {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{b}: {c} ({d}%)'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left',
+                    top: 'middle'
+                },
+                series: [{
+                    name: chart.title || '数据分布',
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    avoidLabelOverlap: false,
+                    itemStyle: {
+                        borderRadius: 10,
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    },
+                    label: {
+                        show: false,
+                        position: 'center'
+                    },
+                    emphasis: {
+                        label: {
+                            show: true,
+                            fontSize: 20,
+                            fontWeight: 'bold'
+                        }
+                    },
+                    labelLine: {
+                        show: false
+                    },
+                    data: pieData
+                }]
+            };
         }
         
         // 导出Excel

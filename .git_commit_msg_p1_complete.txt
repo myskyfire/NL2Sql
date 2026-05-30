@@ -1,0 +1,73 @@
+feat(P1): 完成P1阶段核心架构改造（除ReActAgent集成外）
+
+P1阶段架构改造：显式路由、监控指标、工具可见性、统一上下文
+
+## 新增文件
+
+### P1-1: 显式意图路由层
+- RoutingStrategy.java - 路由策略枚举（DIRECT/LLM_ASSISTED/FALLBACK）
+- RoutingResult.java - 路由结果类（含工厂方法）
+- SkillRouter.java - 技能路由器（完整实现）
+
+### P1-2: 分离原子 Tools 和业务 Skills
+- ToolVisibility.java - 工具可见性枚举（PUBLIC/INTERNAL）
+- ReActAgent.ToolExecutor - 添加 getVisibility() 方法
+- ToolDefinitionConverter - 支持过滤 INTERNAL tools
+
+### P1-3: 结构化监控指标
+- pom.xml - 添加 spring-boot-starter-aop 依赖
+- SkillMetricsRecorder.java - 指标记录器（调用次数、成功率、耗时）
+- SkillMetricsAspect.java - AOP切面（自动拦截Skills执行）
+- SkillMetricsController.java - REST API接口（查询和重置指标）
+
+### P1-4: 统一 Context 管理
+- AgentContext.java - 统一上下文对象（userId、username、sessionId等）
+
+## 修改文件
+
+- ReActAgent.java - ToolExecutor接口添加getVisibility()方法
+- ToolDefinitionConverter.java - 支持includeInternal参数过滤tools
+- nl2sql-core/pom.xml - 添加Spring AOP依赖
+
+## 技术细节
+
+1. **路由策略**
+   - 高置信度(>=0.8) → DIRECT直接调用
+   - 中等置信度(0.5-0.8) → LLM_ASSISTED辅助决策
+   - 低置信度(<0.5) → FALLBACK降级到完整ReAct
+
+2. **工具可见性**
+   - PUBLIC: 对LLM可见（高层Skills）
+   - INTERNAL: 对LLM不可见（原子Tools）
+   - ToolDefinitionConverter默认过滤INTERNAL tools
+
+3. **监控指标**
+   - 使用AOP自动拦截com.nl2sql.core.agent.skills..*.execute()
+   - 记录totalCalls、successRate、averageExecutionTimeMs等
+   - 提供GET /api/admin/skill-metrics查询接口
+
+4. **统一上下文**
+   - AgentContext贯穿整个执行流程
+   - 提供metadata扩展机制
+   - 替代分散的SessionContext/SkillContext
+
+## 影响范围
+
+- 新增9个文件，共约600行代码
+- 修改3个现有文件
+- 编译通过，无破坏性变更
+
+## 待实施
+
+- P1-1 ReActAgent集成（需要谨慎重构，单独处理）
+  - 修改ReActAgent构造函数注入SkillRouter
+  - 修改execute()方法集成路由逻辑
+  - 添加executeDirectSkill()等方法
+
+## 预期效果
+
+- 直接路由场景响应时间 < 100ms（跳过LLM）
+- LLM辅助场景Token消耗降低50-70%
+- 工具选择准确率提升至95%+
+- 实时监控所有Skill执行情况
+- 清晰的架构分层，便于维护和扩展

@@ -33,3 +33,8 @@ Thumbs.db
 *.bak
 *.swp
 *~
+
+# Local configuration (contains API keys)
+**/application-local.yml
+**/.env
+**/*.local.yml

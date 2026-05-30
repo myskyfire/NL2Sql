@@ -5,13 +5,17 @@ import com.nl2sql.core.agent.tool.BaseToolAdapter;
 import com.nl2sql.core.agent.tool.ToolContext;
 import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.retriever.VectorRetriever;
-import dev.langchain4j.agent.tool.Tool;
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import com.nl2sql.core.service.TableSelectionOrchestrator;
+
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Schema检索工具 - 根据用户问题检索相关表结构信息
@@ -21,8 +25,11 @@ import java.util.*;
 @Component
 public class SchemaRetrieverTool extends BaseToolAdapter {
     
-    @Autowired
+    @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
     
     @Autowired
     private VectorRetriever vectorRetriever;
@@ -59,8 +66,8 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
     @Override
     protected void validateParameters(ToolContext context) {
         parameterValidator
-            .required("query", context.getParameter("query"))
-            .required("datasourceId", context.getParameter("datasourceId"))
+            .required("query", (String) context.getParameter("query"))
+            .required("datasourceId", String.valueOf((Long)context.getParameter("datasourceId")))
             .throwIfHasErrors();
     }
     
@@ -78,6 +85,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
             
             if (cachedTables != null && !cachedTables.isEmpty()) {
                 log.info("[SchemaRetriever] ⚡ L2缓存命中(高分反馈): query='{}', tables={}", query, cachedTables);
+                TableSelectionOrchestrator.setPreRetrievedTables(cachedTables);
                 return buildTableSchemaInfo(cachedTables, datasourceId);
             }
             
@@ -86,6 +94,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
             
             if (cachedTables != null && !cachedTables.isEmpty()) {
                 log.info("[SchemaRetriever] ⚡ L3语义索引命中: query='{}', tables={}", query, cachedTables);
+                TableSelectionOrchestrator.setPreRetrievedTables(cachedTables);
                 return buildTableSchemaInfo(cachedTables, datasourceId);
             }
         }
@@ -97,6 +106,10 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
         if (tables.isEmpty()) {
             return "ERROR: 未找到任何相关表";
         }
+        
+        // ✅ 等效于 Groovy extractTableNamesFromSchema：将检索到的表名设置到 ThreadLocal 供后续复用
+        TableSelectionOrchestrator.setPreRetrievedTables(tables);
+        log.info("[SchemaRetriever] ⚡ 已设置预检索表列表: {}", tables);
         
         // 构建schema信息
         return buildTableSchemaInfo(tables, datasourceId);
@@ -111,10 +124,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
         for (String tableName : tables) {
             try {
                 // 查询表注释
-                String tableComment = jdbcTemplate.queryForObject(
-                    "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
-                    String.class, datasourceId, tableName
-                );
+                String tableComment = metadataMapper.selectTableComment(datasourceId, tableName);
                 
                 schemaInfo.append(String.format("\n### 表: %s", tableName));
                 if (tableComment != null && !tableComment.isEmpty()) {
@@ -123,20 +133,19 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
                 schemaInfo.append("\n");
                 
                 // 查询字段信息
-                List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                    "SELECT column_name, data_type, column_comment, is_nullable, column_key FROM column_metadata " +
-                    "WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position",
-                    datasourceId, tableName
-                );
+                List<Map<String, Object>> columns = metadataMapper.selectColumnListFull(datasourceId, tableName);
                 
                 if (!columns.isEmpty()) {
                     schemaInfo.append("字段:\n");
                     for (Map<String, Object> col : columns) {
-                        String colName = (String) col.get("column_name");
-                        String dataType = (String) col.get("data_type");
-                        String comment = (String) col.get("column_comment");
-                        String isNullable = (String) col.get("is_nullable");
-                        String columnKey = (String) col.get("column_key");
+                        String colName = String.valueOf(col.get("column_name"));
+                        String dataType = String.valueOf(col.get("data_type"));
+                        String comment = col.get("column_comment") != null ? String.valueOf(col.get("column_comment")) : null;
+                        Object isNullableObj = col.get("is_nullable");
+                        String isNullable = isNullableObj instanceof Number ? 
+                            ((Number) isNullableObj).intValue() == 0 ? "NO" : "YES" : 
+                            String.valueOf(isNullableObj);
+                        String columnKey = String.valueOf(col.get("column_key"));
                         
                         schemaInfo.append(String.format("  - %s (%s)", colName, dataType));
                         if ("PRI".equals(columnKey)) {
@@ -145,7 +154,7 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
                         if ("NO".equalsIgnoreCase(isNullable)) {
                             schemaInfo.append(" [非空]");
                         }
-                        if (comment != null && !comment.isEmpty()) {
+                        if (comment != null && !comment.isEmpty() && !"null".equals(comment)) {
                             schemaInfo.append(String.format(": %s", comment));
                         }
                         schemaInfo.append("\n");
@@ -170,7 +179,6 @@ public class SchemaRetrieverTool extends BaseToolAdapter {
         return extractor.toNormalizedJson(structure);
     }
     
-    @Tool("根据用户自然语言问题和数据源ID，检索相关的数据库表结构信息。返回表名、字段、数据类型、注释等信息")
     public String retrieveSchema(String query, Long datasourceId) {
         try {
             ToolContext context = ToolContext.builder()

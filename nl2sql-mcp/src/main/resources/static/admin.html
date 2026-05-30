@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NL2SQL 数据源管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { color: #333; margin-bottom: 20px; font-size: 24px; }
+        .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .card h2 { font-size: 18px; margin-bottom: 15px; color: #555; }
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-group { flex: 1; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 4px; font-size: 14px; color: #666; }
+        .form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #4a90d9; }
+        .form-group .hint { font-size: 12px; color: #999; margin-top: 2px; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-primary { background: #4a90d9; color: #fff; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
+        th { background: #f8f9fa; color: #555; font-weight: 600; }
+        .msg { padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; display: none; }
+        .msg.success { background: #d4edda; color: #155724; display: block; }
+        .msg.error { background: #f8d7da; color: #721c24; display: block; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .badge-MYSQL { background: #e8f4fd; color: #00758f; }
+        .badge-POSTGRESQL { background: #e8f0fe; color: #336791; }
+        .badge-ORACLE { background: #fef0e8; color: #f80000; }
+        .badge-DM { background: #f0e8fe; color: #6b3fa0; }
+        .badge-SQLSERVER { background: #e8fef0; color: #0078d4; }
+        .badge-UNKNOWN { background: #f0f0f0; color: #666; }
+        .jdbc-preview { font-size: 12px; color: #666; background: #f8f9fa; padding: 6px 10px; border-radius: 4px; margin-top: 4px; font-family: monospace; word-break: break-all; }
+        .btn-test { background: #6c757d; color: #fff; }
+        .btn-test:hover { background: #5a6268; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NL2SQL 数据源管理</h1>
+
+        <div id="message" class="msg"></div>
+
+        <div class="card">
+            <h2>添加数据源</h2>
+            <form id="addForm" onsubmit="return addDatasource(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>数据库类型</label>
+                        <select id="dbType" onchange="updateForm()" required>
+                            <option value="MYSQL">MySQL</option>
+                            <option value="POSTGRESQL">PostgreSQL</option>
+                            <option value="ORACLE">Oracle</option>
+                            <option value="DM">达梦</option>
+                            <option value="SQLSERVER">SQL Server</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>数据源名称</label>
+                        <input type="text" id="name" placeholder="如：生产库" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:2;">
+                        <label>主机地址</label>
+                        <input type="text" id="host" placeholder="如：192.168.1.100 或 localhost" required oninput="updateJdbcPreview()">
+                    </div>
+                    <div class="form-group">
+                        <label>端口</label>
+                        <input type="number" id="port" placeholder="" required oninput="updateJdbcPreview()">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>数据库名</label>
+                    <input type="text" id="database" placeholder="如：mydb" required oninput="updateJdbcPreview()">
+                </div>
+                <div class="form-group">
+                    <label>连接预览</label>
+                    <div class="jdbc-preview" id="jdbcPreview">-</div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="username" placeholder="如：root" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="password" placeholder="密码将加密存储" required>
+                    </div>
+                </div>
+                <div class="form-row" style="gap:8px;">
+                    <button type="button" class="btn btn-primary" onclick="testConnection()" id="testBtn">测试连接</button>
+                    <button type="submit" class="btn btn-primary">添加</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>数据源列表</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>类型</th>
+                        <th>名称</th>
+                        <th>连接信息</th>
+                        <th>用户名</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="datasourceTable"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/datasources';
+
+        // 各数据库类型的默认端口和 JDBC 模板
+        const dbConfig = {
+            'MYSQL': { port: 3306, jdbcTpl: 'jdbc:mysql://{host}:{port}/{database}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true' },
+            'POSTGRESQL': { port: 5432, jdbcTpl: 'jdbc:postgresql://{host}:{port}/{database}' },
+            'ORACLE': { port: 1521, jdbcTpl: 'jdbc:oracle:thin:@{host}:{port}/{database}' },
+            'DM': { port: 5236, jdbcTpl: 'jdbc:dm://{host}:{port}/{database}' },
+            'SQLSERVER': { port: 1433, jdbcTpl: 'jdbc:sqlserver://{host}:{port};databaseName={database}' }
+        };
+
+        function updateForm() {
+            const dbType = document.getElementById('dbType').value;
+            const cfg = dbConfig[dbType];
+            document.getElementById('port').value = cfg.port;
+            document.getElementById('port').placeholder = cfg.port;
+            updateJdbcPreview();
+        }
+
+        function updateJdbcPreview() {
+            const dbType = document.getElementById('dbType').value;
+            const host = document.getElementById('host').value || '{host}';
+            const port = document.getElementById('port').value || '{port}';
+            const database = document.getElementById('database').value || '{database}';
+            const tpl = dbConfig[dbType].jdbcTpl;
+            const jdbc = tpl.replace('{host}', host).replace('{port}', port).replace('{database}', database);
+            document.getElementById('jdbcPreview').textContent = jdbc;
+        }
+
+        function buildJdbcUrl() {
+            const dbType = document.getElementById('dbType').value;
+            const host = document.getElementById('host').value;
+            const port = document.getElementById('port').value;
+            const database = document.getElementById('database').value;
+            const tpl = dbConfig[dbType].jdbcTpl;
+            return tpl.replace('{host}', host).replace('{port}', port).replace('{database}', database);
+        }
+
+        function parseJdbcUrl(jdbcUrl) {
+            // 简单解析，提取 host:port/database
+            const m = jdbcUrl.match(/\/\/([^:/]+):(\d+)\/([^;?]+)/) || jdbcUrl.match(/\/\/([^:/]+):(\d+)\/([^;?]+)/);
+            if (m) return { host: m[1], port: m[2], database: m[3] };
+            return { host: '-', port: '-', database: '-' };
+        }
+
+        async function loadDatasources() {
+            const res = await fetch(API);
+            const data = await res.json();
+            const tbody = document.getElementById('datasourceTable');
+            tbody.innerHTML = '';
+            Object.entries(data.datasources || {}).forEach(([id, ds]) => {
+                const tr = document.createElement('tr');
+                const dbType = ds.dbType || 'UNKNOWN';
+                const conn = parseJdbcUrl(ds.jdbcUrl);
+                const connText = `${conn.host}:${conn.port}/${conn.database}`;
+                tr.innerHTML = `
+                    <td>${id}</td>
+                    <td><span class="badge badge-${dbType}">${dbType}</span></td>
+                    <td>${ds.name}</td>
+                    <td style="font-family:monospace;font-size:12px;">${connText}</td>
+                    <td>${ds.username}</td>
+                    <td><button class="btn btn-danger" onclick="deleteDatasource(${id})">删除</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function testConnection() {
+            const btn = document.getElementById('testBtn');
+            const dbType = document.getElementById('dbType').value;
+            const host = document.getElementById('host').value;
+            const port = document.getElementById('port').value;
+            const database = document.getElementById('database').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!host || !port || !database || !username || !password) {
+                showMessage('请填写完整的连接信息', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+
+            const body = {
+                dbType: dbType,
+                jdbcUrl: buildJdbcUrl(),
+                username: username,
+                password: password
+            };
+
+            try {
+                const res = await fetch(`${API}/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showMessage(`连接成功，耗时 ${data.elapsed_ms}ms`, 'success');
+                } else {
+                    showMessage(data.message, 'error');
+                }
+            } catch (e) {
+                showMessage('请求失败: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '测试连接';
+            }
+        }
+
+        async function addDatasource(e) {
+            e.preventDefault();
+            const body = {
+                dbType: document.getElementById('dbType').value,
+                name: document.getElementById('name').value,
+                jdbcUrl: buildJdbcUrl(),
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            };
+            const res = await fetch(API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.success) {
+                showMessage('添加成功', 'success');
+                document.getElementById('addForm').reset();
+                updateForm();
+                loadDatasources();
+            } else {
+                showMessage(data.message, 'error');
+            }
+        }
+
+        async function deleteDatasource(id) {
+            if (!confirm('确定删除此数据源？')) return;
+            const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showMessage('删除成功', 'success');
+                loadDatasources();
+            } else {
+                showMessage(data.message, 'error');
+            }
+        }
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `msg ${type}`;
+            setTimeout(() => msg.className = 'msg', 3000);
+        }
+
+        updateForm();
+        loadDatasources();
+    </script>
+</body>
+</html>

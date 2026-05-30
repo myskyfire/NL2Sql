@@ -1,10 +1,18 @@
 package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.common.util.JsonUtils;
+import com.nl2sql.core.agent.intent.IntentClassifier;
+import com.nl2sql.core.agent.routing.RoutingResult;
+import com.nl2sql.core.agent.routing.RoutingStrategy;
+import com.nl2sql.core.agent.routing.SkillRouter;
+import com.nl2sql.core.agent.skills.SkillResult;
+import com.nl2sql.core.agent.tool.ToolVisibility;
 import com.nl2sql.core.llm.LLMService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * ReAct Agent - 基于 Ollama 原生 Tool Calling 的推理-行动循环
@@ -23,14 +31,21 @@ public class ReActAgent {
     private final LLMService llmService;
     private final Map<String, ToolExecutor> tools;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final IntentClassifier intentClassifier;  // ✅ P0: 意图分类器
+    private final SkillRouter skillRouter;  // ✅ P1-1: 技能路由器
     
-    // 最大迭代次数，防止无限循环
-    private static final int MAX_ITERATIONS = 10;
+    // ✅ P1优化：降低最大迭代次数，qwen3.5-plus通常2-3次即可完成
+    private static final int MAX_ITERATIONS = 5;
     
-    public ReActAgent(LLMService llmService) {
+    /**
+     * ✅ P1-1: 构造函数注入 SkillRouter
+     */
+    public ReActAgent(LLMService llmService, SkillRouter skillRouter) {
         this.llmService = llmService;
         this.tools = new HashMap<>();
-        log.info("[ReActAgent] 初始化完成，使用原生 Tool Calling");
+        this.intentClassifier = new IntentClassifier();
+        this.skillRouter = skillRouter;
+        log.info("[ReActAgent] 初始化完成，使用原生 Tool Calling + 意图识别层 + 显式路由");
     }
     
     /**
@@ -59,6 +74,7 @@ public class ReActAgent {
     
     /**
      * 执行 ReAct 循环（使用原生 Tool Calling）
+     * ✅ P1-1: 集成显式意图路由层，根据意图直接路由或缩小 LLM 决策范围
      * ✅ 优化：userId/username从UserContext获取，避免层层传参
      * @return JSON字符串（工具结果）或自然语言（LLM回答）
      */
@@ -71,6 +87,109 @@ public class ReActAgent {
         log.info("[ReActAgent] 开始执行，用户消息: {}, datasourceId={}, userId={}, 历史消息数={}", 
             userMessage, datasourceId, userId, historyMessages != null ? historyMessages.size() : 0);
         
+        // ✅ P1-1: 意图识别 + 路由
+        RoutingResult routing = skillRouter.route(userMessage, datasourceId);
+        log.info("[ReActAgent] 路由结果: strategy={}, skills={}, reason={}", 
+            routing.getStrategy(), routing.getRecommendedSkills(), routing.getReason());
+        
+        // 根据路由策略执行
+        switch (routing.getStrategy()) {
+            case DIRECT:
+                // 直接调用推荐的 Skill，跳过 LLM
+                return executeDirectSkill(routing.getRecommendedSkills().get(0), 
+                                         datasourceId, userId, username, userMessage);
+            
+            case LLM_ASSISTED:
+                // LLM 辅助决策：只传递推荐的 Skills
+                List<Map<String, Object>> allToolsDef = ToolDefinitionConverter.convertToOpenAITools(tools, true);
+                List<Map<String, Object>> filteredTools = filterToolsByNames(
+                    routing.getRecommendedSkills(), allToolsDef
+                );
+                log.info("[ReActAgent] LLM 辅助决策，过滤后工具数: {} -> {}", 
+                    allToolsDef.size(), filteredTools.size());
+                return executeWithFilteredTools(userMessage, datasourceId, userId, username, 
+                                               historyMessages, filteredTools);
+            
+            case FALLBACK:
+            default:
+                // 降级：完整 ReAct 流程
+                log.info("[ReActAgent] 降级到完整 ReAct 流程");
+                return executeFullReAct(userMessage, datasourceId, userId, username, historyMessages);
+        }
+    }
+    
+    /**
+     * ✅ P1-1: 直接调用 Skill（跳过 LLM）
+     */
+    private String executeDirectSkill(String skillName, Long datasourceId, 
+                                     Long userId, String username, String userMessage) {
+        log.info("[ReActAgent] 直接调用 Skill: {}", skillName);
+        
+        ToolExecutor executor = tools.get(skillName);
+        if (executor == null) {
+            log.error("[ReActAgent] 未找到 Skill: {}", skillName);
+            return SkillResult.error("SKILL_NOT_FOUND", "未找到 Skill: " + skillName).toJson();
+        }
+        
+        try {
+            // 构造参数
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("question", userMessage);
+            if (datasourceId != null) {
+                arguments.put("datasourceId", datasourceId);
+            }
+            
+            String result = executor.execute(arguments, datasourceId, userId, username, userMessage);
+            log.info("[ReActAgent] Skill 执行成功: {}", skillName);
+            return result;
+        } catch (Exception e) {
+            log.error("[ReActAgent] Skill 执行失败: {}", skillName, e);
+            return SkillResult.error("SKILL_EXECUTION_ERROR", e.getMessage()).toJson();
+        }
+    }
+    
+    /**
+     * ✅ P1-1: 根据名称过滤工具定义
+     */
+    private List<Map<String, Object>> filterToolsByNames(List<String> skillNames, 
+                                                          List<Map<String, Object>> allTools) {
+        return allTools.stream()
+            .filter(tool -> {
+                String toolName = (String) ((Map<String, Object>) tool.get("function")).get("name");
+                return skillNames.contains(toolName);
+            })
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * ✅ P1-1: 使用过滤后的工具列表执行 ReAct 循环
+     */
+    private String executeWithFilteredTools(String userMessage, Long datasourceId,
+                                           Long userId, String username,
+                                           List<Map<String, Object>> historyMessages,
+                                           List<Map<String, Object>> filteredTools) {
+        // 复用 executeFullReAct 的逻辑，但使用 filteredTools
+        return executeReActLoop(userMessage, datasourceId, userId, username, historyMessages, filteredTools);
+    }
+    
+    /**
+     * ✅ P1-1: 完整 ReAct 流程（降级场景）
+     */
+    private String executeFullReAct(String userMessage, Long datasourceId,
+                                   Long userId, String username,
+                                   List<Map<String, Object>> historyMessages) {
+        // 使用所有 tools（包括 INTERNAL）
+        List<Map<String, Object>> allTools = ToolDefinitionConverter.convertToOpenAITools(tools, true);
+        return executeReActLoop(userMessage, datasourceId, userId, username, historyMessages, allTools);
+    }
+    
+    /**
+     * ✅ P1-1: ReAct 循环核心逻辑（抽取公共部分）
+     */
+    private String executeReActLoop(String userMessage, Long datasourceId,
+                                   Long userId, String username,
+                                   List<Map<String, Object>> historyMessages,
+                                   List<Map<String, Object>> toolsDef) {
         // 1. 构建消息列表
         List<Map<String, Object>> messages = new ArrayList<>();
         
@@ -101,8 +220,6 @@ public class ReActAgent {
         userMsg.put("content", enrichedMessage);
         messages.add(userMsg);
         
-        // 2. 构建工具定义（OpenAI 格式）
-        List<Map<String, Object>> toolsDef = ToolDefinitionConverter.convertToOpenAITools(tools);
         log.info("[ReActAgent] 工具数量: {}", toolsDef.size());
         
         // 3. 执行 ReAct 循环
@@ -116,7 +233,7 @@ public class ReActAgent {
                 // 调试：打印完整响应
                 log.info("[ReActAgent] LLM 完整响应: {}", objectMapper.writeValueAsString(llmResponse));
                 
-                // 解析响应
+                // 解析响应（统一格式：所有 Provider 都返回 {message: {...}}）
                 Map<String, Object> message = (Map<String, Object>) llmResponse.get("message");
                 if (message == null) {
                     log.error("[ReActAgent] LLM 响应格式错误");
@@ -152,8 +269,19 @@ public class ReActAgent {
                     
                     log.info("[ReActAgent] 调用工具: {}, 参数: {}", toolName, argumentsJson);
                     
-                    // 解析参数
-                    Map<String, Object> arguments = objectMapper.readValue(argumentsJson, Map.class);
+                    // ✅ 使用公共工具类修复并解析JSON
+                    Map<String, Object> arguments = JsonUtils.parseToJsonMap(argumentsJson);
+                    
+                    if (arguments == null) {
+                        log.error("[ReActAgent] JSON解析失败，原始参数: {}", argumentsJson);
+                        // 返回友好的错误提示
+                        Map<String, Object> errorMsg = new HashMap<>();
+                        errorMsg.put("role", "tool");
+                        errorMsg.put("name", toolName);
+                        errorMsg.put("content", "错误：工具参数格式不正确，请重试");
+                        messages.add(errorMsg);
+                        continue; // 继续下一轮迭代
+                    }
                     
                     // 执行工具
                     ToolExecutor executor = tools.get(toolName);
@@ -166,27 +294,15 @@ public class ReActAgent {
                             try {
                                 Map<String, Object> clarificationResult = objectMapper.readValue(observation, Map.class);
                                 
-                                // ✅ 兼容旧格式：没有type字段但有status字段
-                                if (!clarificationResult.containsKey("type") && clarificationResult.containsKey("status")) {
-                                    log.warn("[ReActAgent] 检测到旧格式响应，自动转换");
-                                    observation = convertLegacyClarificationFormat(clarificationResult);
-                                    clarificationResult = objectMapper.readValue(observation, Map.class);
-                                }
-                                
                                 // ✅ 新格式：从clarification嵌套对象中获取
                                 Boolean autoExecuted = null;
                                 Long recommendedDsId = null;
                                 
                                 if (clarificationResult.containsKey("clarification")) {
                                     Map<String, Object> clarification = (Map<String, Object>) clarificationResult.get("clarification");
-                                    autoExecuted = (Boolean) clarification.get("autoExecuted");
+                                    autoExecuted = com.nl2sql.common.util.BooleanUtils.toBoolean(clarification.get("autoExecuted"));
                                     recommendedDsId = clarification.get("recommendedDatasourceId") != null ?
                                         ((Number) clarification.get("recommendedDatasourceId")).longValue() : null;
-                                } else {
-                                    // 兼容旧格式：直接在顶层
-                                    autoExecuted = (Boolean) clarificationResult.get("autoExecuted");
-                                    recommendedDsId = clarificationResult.get("recommendedDatasourceId") != null ?
-                                        ((Number) clarificationResult.get("recommendedDatasourceId")).longValue() : null;
                                 }
                                 
                                 if (Boolean.TRUE.equals(autoExecuted) && recommendedDsId != null) {
@@ -246,7 +362,7 @@ public class ReActAgent {
                 
             } catch (Exception e) {
                 log.error("[ReActAgent] 执行失败", e);
-                return "执行错误: " + e.getMessage();
+                throw new RuntimeException("ReAct Agent 执行失败: " + e.getMessage(), e);
             }
         }
         
@@ -258,43 +374,17 @@ public class ReActAgent {
      * 构建 System Prompt（极简版，LLM 通过 tools 参数已知工具）
      */
     private String buildSystemPrompt() {
-        return "你是一个智能数据分析助手。\n" +
-               "\n" +
-               "## 核心规则\n" +
-               "1. **数据源处理**：\n" +
-               "   - 用户消息以 `[数据源ID: XXX]` 开头\n" +
-               "   - 如果为 null → 调用 clarify_datasource\n" +
-               "   - 如果有数字 → 直接使用该 ID，禁止再次澄清\n" +
-               "   - ⚠️ clarify_datasource 自动选择数据源后，系统会继续执行，无需你再次调用\n" +
-               "\n" +
-               "2. **查询执行**：\n" +
-               "   - 数据源明确时，调用 execute_standard_query(question, datasourceId)\n" +
-               "   - 参数格式：\n" +
-               "     * question: 用户的原始问题（不含数据源ID前缀）\n" +
-               "     * datasourceId: 数据源ID（数字类型）\n" +
-               "   - 禁止手动调用底层工具（analyze_sql_risk、execute_direct_sql 等）\n" +
-               "   - 禁止自己生成 SQL\n" +
-               "\n" +
-               "3. **特殊意图**：\n" +
-               "   - [INTENT:AI_SUMMARY] → 必须调用 summarize_result(lastQuery=\"...\", generatedSQL=\"...\")\n" +
-               "   - [INTENT:GENERATE_CHART] → 必须调用 generate_chart(chartType=\"bar/line/pie/area 或 null\", generatedSQL=\"...\")\n" +
-               "   - ⚠️ **重要**：当用户消息包含 [INTENT:XXX] 标记时，必须调用对应工具，不要返回空内容\n" +
-               "\n" +
-               "4. **返回规则**：\n" +
-               "   - 工具返回结构化数据（JSON）时，直接返回原始JSON，不要生成额外回答\n" +
-               "   - 所有工具返回统一格式：{\"success\": true/false, \"type\": \"data/clarification/error\", ...}\n" +
-               "   - execute_standard_query 返回结果后，直接返回JSON，不要询问后续操作\n" +
-               "   - 如果 clarify_datasource 返回 type=\"clarification\" 且 autoExecuted=false，直接返回该响应给用户确认\n" +
-               "\n" +
-               "5. **重要**：\n" +
-               "   - 禁止输出 thinking/reasoning 内容\n" +
-               "   - 直接调用工具或返回最终答案\n" +
-               "   - 不要在 content 中解释你的思考过程\n" +
-               "   - **如果不知道如何回答，必须调用工具，不要返回空字符串**";
+        return "你是数据分析助手。\n" +
+               "规则：\n" +
+               "1. 数据源ID为null时调用clarify_datasource，有ID直接使用\n" +
+               "2. 查询调用execute_standard_query(question, datasourceId)\n" +
+               "3. [INTENT:AI_SUMMARY]→summarize_result，[INTENT:GENERATE_CHART]→generate_chart\n" +
+               "4. 工具返回JSON直接输出，不添加内容\n" +
+               "5. 禁止输出思考过程，未知时调用工具";
     }
     
     /**
-     * ✅ 检查是否是统一Tool响应格式（包含success和type字段）
+     * ✅ P0-2: 检查是否是统一Skill响应格式（使用 SkillResult 类）
      */
     private boolean isUnifiedToolResponse(String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -307,38 +397,14 @@ public class ReActAgent {
         }
         
         try {
-            Map<String, Object> json = objectMapper.readValue(trimmed, Map.class);
-            // ✅ 统一格式必须同时包含success和type字段
-            return json.containsKey("success") && json.containsKey("type");
+            // ✅ 尝试解析为 SkillResult
+            com.nl2sql.core.agent.skills.SkillResult result = 
+                com.nl2sql.core.agent.skills.SkillResult.fromJson(trimmed);
+            
+            // ✅ 统一格式必须包含 success 和 type 字段
+            return result != null && result.getType() != null;
         } catch (Exception e) {
             return false;
-        }
-    }
-    
-    /**
-     * ✅ 兼容旧格式响应转换
-     */
-    private String convertLegacyClarificationFormat(Map<String, Object> legacy) {
-        try {
-            Map<String, Object> converted = new HashMap<>();
-            converted.put("success", true);
-            converted.put("type", "clarification");
-            
-            Map<String, Object> clarification = new HashMap<>();
-            clarification.put("clarificationType", legacy.get("clarificationType"));
-            clarification.put("message", legacy.get("message"));
-            clarification.put("autoExecuted", legacy.get("autoExecuted"));
-            if (legacy.containsKey("recommendedDatasourceId")) {
-                clarification.put("recommendedDatasourceId", legacy.get("recommendedDatasourceId"));
-            }
-            
-            converted.put("clarification", clarification);
-            converted.put("metadata", Map.of("converted", true, "originalFormat", "legacy"));
-            
-            return objectMapper.writeValueAsString(converted);
-        } catch (Exception e) {
-            log.error("[ReActAgent] 旧格式转换失败", e);
-            return legacy.toString();
         }
     }
     
@@ -352,6 +418,14 @@ public class ReActAgent {
         default String getDescription() {
             return "工具描述";
         }
+        
+        /**
+         * ✅ P1-2: 获取工具可见性
+         * 默认返回 PUBLIC，子类可覆写
+         */
+        default ToolVisibility getVisibility() {
+            return ToolVisibility.PUBLIC;
+        }
     }
     
     /**
@@ -360,10 +434,18 @@ public class ReActAgent {
     static class ToolExecutorWithDescription implements ToolExecutor {
         private final ToolExecutor delegate;
         private final String description;
+        private final ToolVisibility visibility;
         
         public ToolExecutorWithDescription(ToolExecutor delegate, String description) {
             this.delegate = delegate;
             this.description = description;
+            this.visibility = ToolVisibility.PUBLIC;  // 默认公开
+        }
+        
+        public ToolExecutorWithDescription(ToolExecutor delegate, String description, ToolVisibility visibility) {
+            this.delegate = delegate;
+            this.description = description;
+            this.visibility = visibility;
         }
         
         @Override
@@ -374,6 +456,11 @@ public class ReActAgent {
         @Override
         public String getDescription() {
             return description;
+        }
+        
+        @Override
+        public ToolVisibility getVisibility() {
+            return visibility;
         }
     }
 }

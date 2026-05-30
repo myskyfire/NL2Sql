@@ -57,14 +57,11 @@ public class SynonymExpanderTool extends BaseToolAdapter {
         String query = context.getRequiredParameter("query");
         Long datasourceId = context.getRequiredParameter("datasourceId");
         
-        String expanded = synonymService.expandSynonyms(query, datasourceId);
-        boolean hasExpansion = !expanded.equals(query);
+        // ✅ P0优化：expandSynonyms已改为直接返回原query，此Tool仅保留接口兼容性
+        String expanded = query;
+        boolean hasExpansion = false;
         
-        if (hasExpansion) {
-            log.info("[SynonymExpander] 查询扩展: {} -> {}", query, expanded);
-        } else {
-            log.debug("[SynonymExpander] 无需扩展: {}", query);
-        }
+        log.debug("[SynonymExpander] 同义词扩展已禁用，直接使用原始查询: {}", query);
         
         return Map.of(
             "original", query,

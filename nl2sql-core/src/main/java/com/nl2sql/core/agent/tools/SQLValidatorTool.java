@@ -117,8 +117,8 @@ public class SQLValidatorTool extends BaseToolAdapter {
                         break;
                     }
                     
-                    log.info("[SQLValidator] 尝试修正幻觉列名...");
-                    sql = attemptHallucinationCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues);
+                    log.info("[SQLValidator] 尝试统一纠错...");
+                    sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues);
                     continue;
                 }
             }
@@ -126,7 +126,19 @@ public class SQLValidatorTool extends BaseToolAdapter {
             // 综合验证
             SQLValidationService.ValidationReport report = sqlValidationService.comprehensiveValidate(sql);
             
-            if (report.isOverallValid()) {
+            // ✅ 等效于 Groovy optimizeSQL：IN子查询关联检测，建议改写为JOIN
+            List<String> inSubqueryIssues = detectInSubqueryIssues(sql);
+            if (!inSubqueryIssues.isEmpty()) {
+                log.warn("[SQLValidator] ⚠️ 检测到IN子查询性能问题 (attempt={}): {}", attempt, inSubqueryIssues);
+                
+                if (attempt < maxRetries) {
+                    log.info("[SQLValidator] 尝试优化IN子查询为JOIN...");
+                    sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, inSubqueryIssues);
+                    continue;
+                }
+            }
+            
+            if (report.isOverallValid() && inSubqueryIssues.isEmpty()) {
                 log.info("[SQLValidator] SQL验证通过 (attempt={})", attempt);
                 return sql;
             }
@@ -135,10 +147,11 @@ public class SQLValidatorTool extends BaseToolAdapter {
                 attempt, report.isSyntaxValid(), 
                 report.getAggregationIssues().size() + report.getJoinIssues().size());
             
-            // 语法错误修正
+            // 语法错误修正（使用统一纠错）
             if (!report.isSyntaxValid()) {
-                log.info("[SQLValidator] 尝试修正语法错误: {}", report.getSyntaxError());
-                sql = attemptSyntaxCorrection(sql, report.getSyntaxError(), question, schemaInfo, relationshipInfo);
+                log.info("[SQLValidator] 尝试统一纠错（语法错误）: {}", report.getSyntaxError());
+                List<String> issues = Collections.singletonList("语法错误: " + report.getSyntaxError());
+                sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, issues);
                 continue;
             }
             
@@ -157,8 +170,9 @@ public class SQLValidatorTool extends BaseToolAdapter {
                 log.warn("[SQLValidator] {}", warning.toString());
                 
                 if (attempt < maxRetries) {
-                    log.info("[SQLValidator] 尝试修正聚合/JOIN问题...");
-                    sql = attemptAggregationCorrection(sql, question, schemaInfo, relationshipInfo, warning.toString());
+                    log.info("[SQLValidator] 尝试统一纠错...");
+                    sql = attemptUnifiedCorrection(sql, question, schemaInfo, relationshipInfo, 
+                        report.getAggregationIssues().isEmpty() ? report.getJoinIssues() : report.getAggregationIssues());
                     continue;
                 } else {
                     log.warn("[SQLValidator] 达到最大重试次数，返回原SQL（可能存在风险）");
@@ -259,10 +273,66 @@ public class SQLValidatorTool extends BaseToolAdapter {
     }
     
     /**
-     * 修正幻觉列名
+     * ✅ 等效于 Groovy optimizeSQL：检测IN子查询关联问题，建议改写为JOIN
+     * 
+     * IN子查询性能问题：
+     * 1. WHERE col IN (SELECT ...) - 关联子查询效率低
+     * 2. 建议改写为 JOIN 或 EXISTS
      */
-    private String attemptHallucinationCorrection(String sql, String question, String schemaInfo, 
-                                                  String relationshipInfo, List<String> issues) {
+    private List<String> detectInSubqueryIssues(String sql) {
+        List<String> issues = new ArrayList<>();
+        if (sql == null || sql.isEmpty()) {
+            return issues;
+        }
+        
+        String upperSql = sql.toUpperCase();
+        
+        // 检测 IN (SELECT ...) 模式
+        java.util.regex.Pattern inSubqueryPattern = java.util.regex.Pattern.compile(
+            "\\bIN\\s*\\(\\s*SELECT\\b", java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        java.util.regex.Matcher matcher = inSubqueryPattern.matcher(sql);
+        
+        int inSubqueryCount = 0;
+        while (matcher.find()) {
+            inSubqueryCount++;
+        }
+        
+        if (inSubqueryCount > 0) {
+            issues.add(String.format(
+                "⚠️ 检测到 %d 个IN子查询，建议改写为JOIN以提升性能。" +
+                "例如：WHERE id IN (SELECT id FROM t) → JOIN t ON t.id = main.id",
+                inSubqueryCount
+            ));
+        }
+        
+        // 检测 NOT IN (SELECT ...) 模式（更严重的性能问题）
+        java.util.regex.Pattern notInSubqueryPattern = java.util.regex.Pattern.compile(
+            "\\bNOT\\s+IN\\s*\\(\\s*SELECT\\b", java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        java.util.regex.Matcher notInMatcher = notInSubqueryPattern.matcher(sql);
+        
+        int notInSubqueryCount = 0;
+        while (notInMatcher.find()) {
+            notInSubqueryCount++;
+        }
+        
+        if (notInSubqueryCount > 0) {
+            issues.add(String.format(
+                "🔴 检测到 %d 个NOT IN子查询，性能极差，建议改写为LEFT JOIN + IS NULL。" +
+                "例如：WHERE id NOT IN (SELECT id FROM t) → LEFT JOIN t ON t.id = main.id WHERE t.id IS NULL",
+                notInSubqueryCount
+            ));
+        }
+        
+        return issues;
+    }
+    
+    /**
+     * ✅ P2优化：合并三种纠错为一次LLM调用，减少延迟
+     */
+    private String attemptUnifiedCorrection(String sql, String question, String schemaInfo, 
+                                           String relationshipInfo, List<String> issues) {
         try {
             StringBuilder issueDesc = new StringBuilder();
             for (String issue : issues) {
@@ -270,18 +340,17 @@ public class SQLValidatorTool extends BaseToolAdapter {
             }
             
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句包含不存在的列名（大模型幻觉），请修正。\n\n" +
+                "MySQL SQL专家。以下SQL存在问题，请修正。\n\n" +
                 "用户问题：%s\n\n" +
-                "数据库表结构：\n%s\n\n" +
+                "表结构：\n%s\n\n" +
                 "%s" +
                 "有问题的SQL:\n%s\n\n" +
-                "检测到的问题:\n%s\n\n" +
+                "问题:\n%s\n\n" +
                 "要求：\n" +
-                "1. 只输出修正后的SQL语句\n" +
-                "2. 不要包含```sql或其他标记\n" +
-                "3. **严格基于上述表结构中的列名**，不要臆造不存在的列\n" +
-                "4. 如果不确定列名，可以使用表中已有的其他相关字段\n" +
-                "5. 保持原有查询意图不变",
+                "1. 只输出修正后的SQL，无标记\n" +
+                "2. **严格基于上述表结构中的列名**，不要臆造\n" +
+                "3. SELECT非聚合字段必须出现在GROUP BY中\n" +
+                "4. 保持原有查询意图",
                 question, schemaInfo,
                 relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
                 sql, issueDesc.toString()
@@ -291,73 +360,7 @@ public class SQLValidatorTool extends BaseToolAdapter {
             return MarkdownUtils.cleanSQL(correctedSql);
             
         } catch (Exception e) {
-            log.error("[SQLValidator] 幻觉列名修正失败", e);
-            return sql;
-        }
-    }
-    
-    /**
-     * 修正语法错误
-     */
-    private String attemptSyntaxCorrection(String failedSql, String errorMessage, 
-                                           String question, String schemaInfo, String relationshipInfo) {
-        try {
-            String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句存在语法错误，请修正。\n\n" +
-                "用户问题：%s\n\n" +
-                "数据库表结构：\n%s\n\n" +
-                "%s" +
-                "失败的SQL:\n%s\n\n" +
-                "错误信息:\n%s\n\n" +
-                "要求：\n" +
-                "1. 只输出修正后的SQL语句\n" +
-                "2. 不要包含```sql或其他标记\n" +
-                "3. 保持原有查询意图不变\n" +
-                "4. 仔细检查括号、关键字、字段名是否正确",
-                question, schemaInfo,
-                relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
-                failedSql, errorMessage
-            );
-            
-            String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
-            return MarkdownUtils.cleanSQL(correctedSql);
-            
-        } catch (Exception e) {
-            log.error("[SQLValidator] 语法修正失败", e);
-            return failedSql;
-        }
-    }
-    
-    /**
-     * 修正聚合/JOIN问题
-     */
-    private String attemptAggregationCorrection(String sql, String question, String schemaInfo, 
-                                                String relationshipInfo, String issues) {
-        try {
-            String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句存在逻辑问题，请修正。\n\n" +
-                "用户问题：%s\n\n" +
-                "数据库表结构：\n%s\n\n" +
-                "%s" +
-                "有问题的SQL:\n%s\n\n" +
-                "检测到的问题:\n%s\n\n" +
-                "要求：\n" +
-                "1. 只输出修正后的SQL语句\n" +
-                "2. 不要包含```sql或其他标记\n" +
-                "3. **重要：SELECT 中的非聚合字段必须出现在 GROUP BY 中**\n" +
-                "   - 错误：SELECT o.created_at ... GROUP BY DATE_FORMAT(o.created_at, ...)\n" +
-                "   - 正确：SELECT DATE_FORMAT(o.created_at, '%%Y-%%m-%%d') AS '订单日期' ... GROUP BY DATE_FORMAT(o.created_at, '%%Y-%%m-%%d')\n" +
-                "4. 确保 SELECT 和 GROUP BY 使用相同的表达式",
-                question, schemaInfo,
-                relationshipInfo.isEmpty() ? "" : relationshipInfo + "\n\n",
-                sql, issues
-            );
-            
-            String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
-            return MarkdownUtils.cleanSQL(correctedSql);
-            
-        } catch (Exception e) {
-            log.error("[SQLValidator] 聚合/JOIN修正失败", e);
+            log.error("[SQLValidator] 统一纠错失败", e);
             return sql;
         }
     }

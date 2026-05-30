@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>监控Dashboard - DataMind AI</title>
+    <script src="lib/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -21,6 +22,9 @@
             border-radius: 8px;
             margin-bottom: 20px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .header h1 {
@@ -33,11 +37,67 @@
             opacity: 0.9;
         }
         
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .header-actions button {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        
+        .header-actions button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            text-align: center;
+        }
+        
+        .stat-card .stat-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .stat-number {
+            font-size: 28px;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: #888;
+        }
+        
         .dashboard-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 20px;
             margin-bottom: 20px;
+        }
+        
+        .dashboard-grid.three-cols {
+            grid-template-columns: repeat(3, 1fr);
         }
         
         .card {
@@ -49,76 +109,22 @@
         
         .card h3 {
             color: #667eea;
-            font-size: 18px;
+            font-size: 16px;
             margin-bottom: 15px;
             padding-bottom: 10px;
             border-bottom: 2px solid #f0f0f0;
-        }
-        
-        .stat-item {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #f5f5f5;
+            gap: 8px;
         }
         
-        .stat-item:last-child {
-            border-bottom: none;
-        }
-        
-        .stat-label {
-            color: #666;
-            font-size: 14px;
-        }
-        
-        .stat-value {
-            font-weight: 600;
-            color: #333;
-            font-size: 16px;
-        }
-        
-        .stat-value.highlight {
-            color: #667eea;
-            font-size: 20px;
-        }
-        
-        .progress-bar {
+        .chart-container {
             width: 100%;
-            height: 8px;
-            background: #f0f0f0;
-            border-radius: 4px;
-            margin-top: 8px;
-            overflow: hidden;
+            height: 300px;
         }
         
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            transition: width 0.3s ease;
-        }
-        
-        .tag {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            margin: 2px;
-        }
-        
-        .tag.success {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .tag.warning {
-            background: #fff3cd;
-            color: #856404;
-        }
-        
-        .tag.info {
-            background: #d1ecf1;
-            color: #0c5460;
+        .chart-container.small {
+            height: 250px;
         }
         
         .loading {
@@ -127,79 +133,213 @@
             color: #888;
         }
         
-        .refresh-btn {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(102,126,234,0.3);
-            transition: all 0.3s;
-        }
-        
-        .refresh-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(102,126,234,0.4);
-        }
-        
         .empty-state {
             text-align: center;
             padding: 30px;
             color: #999;
         }
+        
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            .dashboard-grid.three-cols {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .stats-overview {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .stats-overview {
+                grid-template-columns: 1fr;
+            }
+            .dashboard-grid.three-cols {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>📊 NL2SQL 监控Dashboard</h1>
-        <p>实时监控归一化效果、缓存命中率和RAG使用情况</p>
+        <div>
+            <h1>📊 NL2SQL 监控Dashboard</h1>
+            <p>实时监控查询趋势、缓存命中率和系统性能</p>
+        </div>
+        <div class="header-actions">
+            <button onclick="refreshAll()">🔄 刷新数据</button>
+            <button onclick="toggleAutoRefresh()" id="autoRefreshBtn">⏱️ 自动刷新: 关</button>
+        </div>
+    </div>
+    
+    <div class="stats-overview" id="statsOverview">
+        <div class="stat-card">
+            <div class="stat-icon">📈</div>
+            <div class="stat-number" id="totalQueries">-</div>
+            <div class="stat-label">总查询次数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-number" id="successRate">-</div>
+            <div class="stat-label">成功率</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-number" id="cacheHitRate">-</div>
+            <div class="stat-label">缓存命中率</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">⏱️</div>
+            <div class="stat-number" id="avgResponseTime">-</div>
+            <div class="stat-label">平均响应时间</div>
+        </div>
     </div>
     
     <div class="dashboard-grid">
-        <!-- 归一化统计 -->
         <div class="card">
-            <h3>🔍 归一化效果统计</h3>
-            <div id="normalizationStats">
-                <div class="loading">加载中...</div>
-            </div>
+            <h3>📈 查询趋势（近7天）</h3>
+            <div id="queryTrendChart" class="chart-container"></div>
         </div>
         
-        <!-- 缓存命中率 -->
         <div class="card">
-            <h3>⚡ 缓存命中率</h3>
-            <div id="cacheStats">
-                <div class="loading">加载中...</div>
-            </div>
-        </div>
-        
-        <!-- RAG使用情况 -->
-        <div class="card">
-            <h3>📚 RAG检索统计</h3>
-            <div id="ragStats">
-                <div class="loading">加载中...</div>
-            </div>
+            <h3>🔍 归一化效果分布</h3>
+            <div id="normalizationChart" class="chart-container"></div>
         </div>
     </div>
     
-    <button class="refresh-btn" onclick="refreshAll()">🔄 刷新数据</button>
+    <div class="dashboard-grid">
+        <div class="card">
+            <h3>⚡ 缓存命中率</h3>
+            <div id="cacheGaugeChart" class="chart-container"></div>
+        </div>
+        
+        <div class="card">
+            <h3>📚 RAG使用统计</h3>
+            <div id="ragChart" class="chart-container"></div>
+        </div>
+    </div>
+    
+    <div class="dashboard-grid three-cols">
+        <div class="card">
+            <h3>🔥 热门表TOP10</h3>
+            <div id="hotTablesChart" class="chart-container small"></div>
+        </div>
+        
+        <div class="card">
+            <h3>📊 查询类型分布</h3>
+            <div id="queryTypeChart" class="chart-container small"></div>
+        </div>
+        
+        <div class="card">
+            <h3>⏱️ 响应时间分布</h3>
+            <div id="responseTimeChart" class="chart-container small"></div>
+        </div>
+    </div>
     
     <script>
         const token = localStorage.getItem('token');
+        let autoRefreshInterval = null;
+        let charts = {};
         
-        // 获取认证头
         function getAuthHeaders() {
             return {
                 'Authorization': `Bearer ${token}`
             };
         }
         
-        // 加载归一化统计
-        async function loadNormalizationStats() {
+        function initCharts() {
+            charts.queryTrend = echarts.init(document.getElementById('queryTrendChart'));
+            charts.normalization = echarts.init(document.getElementById('normalizationChart'));
+            charts.cacheGauge = echarts.init(document.getElementById('cacheGaugeChart'));
+            charts.rag = echarts.init(document.getElementById('ragChart'));
+            charts.hotTables = echarts.init(document.getElementById('hotTablesChart'));
+            charts.queryType = echarts.init(document.getElementById('queryTypeChart'));
+            charts.responseTime = echarts.init(document.getElementById('responseTimeChart'));
+            
+            window.addEventListener('resize', () => {
+                Object.values(charts).forEach(chart => chart.resize());
+            });
+        }
+        
+        async function loadOverviewStats() {
+            try {
+                const response = await fetch('/api/monitor/stats', {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    document.getElementById('totalQueries').textContent = data.totalQueries || 0;
+                    document.getElementById('successRate').textContent = (data.successRate || '0%');
+                    document.getElementById('cacheHitRate').textContent = (data.cacheHitRate || '0%');
+                    document.getElementById('avgResponseTime').textContent = (data.avgResponseTime || '0ms');
+                }
+            } catch (error) {
+                console.error('加载概览统计失败:', error);
+            }
+        }
+        
+        async function loadQueryTrend() {
+            try {
+                const response = await fetch('/api/monitor/query-trend?days=7', {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    charts.queryTrend.setOption({
+                        tooltip: {
+                            trigger: 'axis',
+                            axisPointer: { type: 'cross' }
+                        },
+                        legend: { data: ['查询次数', '成功次数', '缓存命中'] },
+                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                        xAxis: {
+                            type: 'category',
+                            boundaryGap: false,
+                            data: data.dates || []
+                        },
+                        yAxis: { type: 'value' },
+                        series: [
+                            {
+                                name: '查询次数',
+                                type: 'line',
+                                smooth: true,
+                                data: data.totalQueries || [],
+                                itemStyle: { color: '#667eea' },
+                                areaStyle: {
+                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                        { offset: 0, color: 'rgba(102,126,234,0.3)' },
+                                        { offset: 1, color: 'rgba(102,126,234,0.05)' }
+                                    ])
+                                }
+                            },
+                            {
+                                name: '成功次数',
+                                type: 'line',
+                                smooth: true,
+                                data: data.successQueries || [],
+                                itemStyle: { color: '#52c41a' }
+                            },
+                            {
+                                name: '缓存命中',
+                                type: 'line',
+                                smooth: true,
+                                data: data.cacheHits || [],
+                                itemStyle: { color: '#faad14' }
+                            }
+                        ]
+                    });
+                }
+            } catch (error) {
+                console.error('加载查询趋势失败:', error);
+            }
+        }
+        
+        async function loadNormalizationChart() {
             try {
                 const response = await fetch('/api/monitor/normalization-stats', {
                     headers: getAuthHeaders()
@@ -207,40 +347,59 @@
                 const result = await response.json();
                 
                 if (result.code === 200) {
-                    renderNormalizationStats(result.data);
+                    const data = result.data;
+                    const seriesData = [];
+                    
+                    if (data.withPersonEntity > 0) {
+                        seriesData.push({ value: data.withPersonEntity, name: '人名实体' });
+                    }
+                    if (data.withLocationEntity > 0) {
+                        seriesData.push({ value: data.withLocationEntity, name: '地名实体' });
+                    }
+                    if (data.withPlaceholder > 0) {
+                        seriesData.push({ value: data.withPlaceholder, name: '占位符' });
+                    }
+                    if (data.withoutNormalization > 0) {
+                        seriesData.push({ value: data.withoutNormalization, name: '未归一化' });
+                    }
+                    
+                    if (seriesData.length === 0) {
+                        seriesData.push({ value: data.totalQueries || 0, name: '总查询' });
+                    }
+                    
+                    charts.normalization.setOption({
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                        legend: { orient: 'vertical', left: 'left' },
+                        series: [{
+                            name: '归一化方式',
+                            type: 'pie',
+                            radius: ['40%', '70%'],
+                            avoidLabelOverlap: false,
+                            itemStyle: {
+                                borderRadius: 10,
+                                borderColor: '#fff',
+                                borderWidth: 2
+                            },
+                            label: { show: false, position: 'center' },
+                            emphasis: {
+                                label: {
+                                    show: true,
+                                    fontSize: 16,
+                                    fontWeight: 'bold'
+                                }
+                            },
+                            labelLine: { show: false },
+                            data: seriesData,
+                            color: ['#667eea', '#764ba2', '#52c41a', '#faad14', '#ff4d4f']
+                        }]
+                    });
                 }
             } catch (error) {
                 console.error('加载归一化统计失败:', error);
             }
         }
         
-        // 渲染归一化统计
-        function renderNormalizationStats(data) {
-            const container = document.getElementById('normalizationStats');
-            
-            container.innerHTML = `
-                <div class="stat-item">
-                    <span class="stat-label">总查询数</span>
-                    <span class="stat-value highlight">${data.totalQueries}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">人名实体识别</span>
-                    <span class="stat-value">${data.withPersonEntity} (${data.personEntityRate})</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">地名实体识别</span>
-                    <span class="stat-value">${data.withLocationEntity} (${data.locationEntityRate})</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">占位符使用率</span>
-                    <span class="stat-value">${data.withPlaceholder} (${data.placeholderRate})</span>
-                </div>
-                ${renderDistributionTags('归一化方式', data.normalizationMethodDistribution)}
-            `;
-        }
-        
-        // 加载缓存统计
-        async function loadCacheStats() {
+        async function loadCacheGauge() {
             try {
                 const response = await fetch('/api/monitor/cache-hit-rate', {
                     headers: getAuthHeaders()
@@ -248,36 +407,43 @@
                 const result = await response.json();
                 
                 if (result.code === 200) {
-                    renderCacheStats(result.data);
+                    const data = result.data;
+                    const hitRate = parseFloat(data.cacheHitRate) || 0;
+                    
+                    charts.cacheGauge.setOption({
+                        tooltip: { formatter: '缓存命中率: {value}%' },
+                        series: [{
+                            name: '缓存命中率',
+                            type: 'gauge',
+                            min: 0,
+                            max: 100,
+                            progress: { show: true, width: 18 },
+                            axisLine: { lineStyle: { width: 18 } },
+                            axisTick: { show: false },
+                            splitLine: { length: 15, lineStyle: { width: 2 } },
+                            axisLabel: { distance: 25, fontSize: 12 },
+                            anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                            title: { show: false },
+                            detail: {
+                                valueAnimation: true,
+                                fontSize: 30,
+                                offsetCenter: [0, '70%'],
+                                formatter: '{value}%',
+                                color: hitRate > 50 ? '#52c41a' : '#faad14'
+                            },
+                            data: [{ value: hitRate }],
+                            pointer: {
+                                itemStyle: { color: hitRate > 50 ? '#52c41a' : '#faad14' }
+                            }
+                        }]
+                    });
                 }
             } catch (error) {
                 console.error('加载缓存统计失败:', error);
             }
         }
         
-        // 渲染缓存统计
-        function renderCacheStats(data) {
-            const container = document.getElementById('cacheStats');
-            const hitRate = parseFloat(data.cacheHitRate);
-            
-            container.innerHTML = `
-                <div class="stat-item">
-                    <span class="stat-label">缓存命中率</span>
-                    <span class="stat-value highlight">${data.cacheHitRate}</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${hitRate}%"></div>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">缓存命中数</span>
-                    <span class="stat-value">${data.cacheHitCount} / ${data.totalQueries}</span>
-                </div>
-                ${renderDistributionTags('缓存层级分布', data.cacheLevelDistribution)}
-            `;
-        }
-        
-        // 渲染RAG统计
-        async function loadRagStats() {
+        async function loadRagChart() {
             try {
                 const response = await fetch('/api/monitor/cache-hit-rate', {
                     headers: getAuthHeaders()
@@ -285,68 +451,174 @@
                 const result = await response.json();
                 
                 if (result.code === 200) {
-                    renderRagStats(result.data);
+                    const data = result.data;
+                    const ragUsageCount = data.ragUsageCount || 0;
+                    const totalQueries = data.totalQueries || 1;
+                    const withoutRag = totalQueries - ragUsageCount;
+                    
+                    charts.rag.setOption({
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                        legend: { orient: 'vertical', left: 'left' },
+                        series: [{
+                            name: 'RAG使用',
+                            type: 'pie',
+                            radius: '70%',
+                            data: [
+                                { value: ragUsageCount, name: '使用RAG', itemStyle: { color: '#667eea' } },
+                                { value: withoutRag, name: '未使用RAG', itemStyle: { color: '#e8e8e8' } }
+                            ],
+                            label: {
+                                formatter: '{b}\n{c}次 ({d}%)'
+                            }
+                        }]
+                    });
                 }
             } catch (error) {
                 console.error('加载RAG统计失败:', error);
             }
         }
         
-        // 渲染RAG统计
-        function renderRagStats(data) {
-            const container = document.getElementById('ragStats');
-            
-            container.innerHTML = `
-                <div class="stat-item">
-                    <span class="stat-label">RAG使用率</span>
-                    <span class="stat-value highlight">${data.ragUsageRate}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">RAG使用次数</span>
-                    <span class="stat-value">${data.ragUsageCount}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">平均每查询示例数</span>
-                    <span class="stat-value">${data.avgRagExamplesPerQuery}</span>
-                </div>
-            `;
-        }
-        
-        // 渲染分布标签
-        function renderDistributionTags(label, distribution) {
-            if (!distribution || distribution.length === 0) {
-                return '';
+        async function loadHotTables() {
+            try {
+                const response = await fetch('/api/monitor/hot-tables?limit=10', {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    const tableNames = (data.tables || []).map(t => t.tableName).reverse();
+                    const tableCounts = (data.tables || []).map(t => t.queryCount).reverse();
+                    
+                    charts.hotTables.setOption({
+                        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                        grid: { left: '3%', right: '10%', bottom: '3%', containLabel: true },
+                        xAxis: { type: 'value' },
+                        yAxis: {
+                            type: 'category',
+                            data: tableNames,
+                            axisLabel: { interval: 0 }
+                        },
+                        series: [{
+                            name: '查询次数',
+                            type: 'bar',
+                            data: tableCounts,
+                            itemStyle: {
+                                color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
+                                    { offset: 0, color: '#667eea' },
+                                    { offset: 1, color: '#764ba2' }
+                                ])
+                            },
+                            label: { show: true, position: 'right' }
+                        }]
+                    });
+                }
+            } catch (error) {
+                console.error('加载热门表失败:', error);
             }
-            
-            const tags = distribution.map(item => {
-                const key = item.normalization_method || item.cache_level;
-                const count = item.count;
-                return `<span class="tag info">${key}: ${count}</span>`;
-            }).join('');
-            
-            return `
-                <div class="stat-item" style="flex-direction: column; align-items: flex-start;">
-                    <span class="stat-label" style="margin-bottom: 8px;">${label}</span>
-                    <div>${tags}</div>
-                </div>
-            `;
         }
         
-        // 刷新所有数据
+        async function loadQueryTypeChart() {
+            try {
+                const response = await fetch('/api/monitor/query-type-distribution', {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    const seriesData = (data.types || []).map(t => ({
+                        value: t.count,
+                        name: t.type
+                    }));
+                    
+                    if (seriesData.length === 0) {
+                        seriesData.push({ value: 0, name: '暂无数据' });
+                    }
+                    
+                    charts.queryType.setOption({
+                        tooltip: { trigger: 'item', formatter: '{b}: {c}次 ({d}%)' },
+                        legend: { orient: 'vertical', left: 'left', textStyle: { fontSize: 11 } },
+                        series: [{
+                            name: '查询类型',
+                            type: 'pie',
+                            radius: ['30%', '60%'],
+                            data: seriesData,
+                            color: ['#667eea', '#764ba2', '#52c41a', '#faad14', '#ff4d4f', '#13c2c2']
+                        }]
+                    });
+                }
+            } catch (error) {
+                console.error('加载查询类型失败:', error);
+            }
+        }
+        
+        async function loadResponseTimeChart() {
+            try {
+                const response = await fetch('/api/monitor/response-time-distribution', {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                if (result.code === 200) {
+                    const data = result.data;
+                    
+                    charts.responseTime.setOption({
+                        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                        xAxis: {
+                            type: 'category',
+                            data: data.ranges || ['<1s', '1-2s', '2-3s', '3-5s', '>5s']
+                        },
+                        yAxis: { type: 'value', name: '查询数' },
+                        series: [{
+                            name: '查询数',
+                            type: 'bar',
+                            data: data.counts || [0, 0, 0, 0, 0],
+                            itemStyle: {
+                                color: function(params) {
+                                    const colors = ['#52c41a', '#13c2c2', '#faad14', '#fa8c16', '#ff4d4f'];
+                                    return colors[params.dataIndex] || '#667eea';
+                                }
+                            },
+                            label: { show: true, position: 'top' }
+                        }]
+                    });
+                }
+            } catch (error) {
+                console.error('加载响应时间分布失败:', error);
+            }
+        }
+        
         async function refreshAll() {
-            document.getElementById('normalizationStats').innerHTML = '<div class="loading">加载中...</div>';
-            document.getElementById('cacheStats').innerHTML = '<div class="loading">加载中...</div>';
-            document.getElementById('ragStats').innerHTML = '<div class="loading">加载中...</div>';
-            
             await Promise.all([
-                loadNormalizationStats(),
-                loadCacheStats(),
-                loadRagStats()
+                loadOverviewStats(),
+                loadQueryTrend(),
+                loadNormalizationChart(),
+                loadCacheGauge(),
+                loadRagChart(),
+                loadHotTables(),
+                loadQueryTypeChart(),
+                loadResponseTimeChart()
             ]);
         }
         
-        // 页面加载时初始化
-        window.addEventListener('DOMContentLoaded', refreshAll);
+        function toggleAutoRefresh() {
+            const btn = document.getElementById('autoRefreshBtn');
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                btn.textContent = '⏱️ 自动刷新: 关';
+            } else {
+                autoRefreshInterval = setInterval(refreshAll, 30000);
+                btn.textContent = '⏱️ 自动刷新: 开';
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            refreshAll();
+        });
     </script>
 </body>
 </html>

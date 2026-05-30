@@ -220,20 +220,13 @@ public class IterativeTableDiscoveryTool extends BaseToolAdapter {
     private String buildTableCheckPrompt(String query, String schemaInfo, 
                                          String relationshipInfo, Long datasourceId) {
         return String.format(
-            "你是一个数据库专家。根据以下信息，判断当前表集合是否足以生成SQL。\n\n" +
-            "## 用户问题\n%s\n\n" +
-            "## 当前可用表结构\n%s\n\n" +
-            "## 表关联关系\n%s\n\n" +
-            "## 任务\n" +
-            "1. 分析用户问题需要哪些表和字段\n" +
-            "2. 检查当前表集合是否包含所有必需的表\n" +
-            "3. 如果表足够，返回选中的表列表\n" +
-            "4. 如果缺少表，返回缺失的表名和原因\n\n" +
-            "## 输出格式\n" +
-            "只返回JSON格式：\n" +
-            "- 如果表足够：{\"selected_tables\": [\"表1\", \"表2\"]}\n" +
-            "- 如果缺少表：{\"missing_tables\": [\"表A\", \"表B\"], \"reason\": \"说明缺少的表用途\"}",
-            query, schemaInfo, relationshipInfo
+            "你是数据库专家。判断当前表集合是否足以生成SQL。\n\n" +
+            "用户问题：%s\n\n" +
+            "可用表结构：\n%s\n\n" +
+            "%s\n\n" +
+            "任务：分析需要的表和字段，检查当前表是否包含所有必需表。如果足够返回selected_tables，缺少则返回missing_tables和原因。\n\n" +
+            "输出JSON：{\"selected_tables\": [\"表1\"]} 或 {\"missing_tables\": [\"表A\"], \"reason\": \"原因\"}",
+            query, schemaInfo, relationshipInfo.isEmpty() ? "" : "表关联关系：\n" + relationshipInfo
         );
     }
     

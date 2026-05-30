@@ -22,6 +22,8 @@ public class ColumnMetadata {
     private String characterSetName;
     private String collationName;
     private String extraInfo;
+    private String commentSource;  // 注释来源: MANUAL/LLM/INFERRED
+    private LocalDateTime enhancedAt;  // 增强时间
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -89,6 +89,13 @@ public class MarkdownUtils {
         sql = sql.replace("\r\n", " ").replace("\n", " ").replace("\r", " ");
         sql = sql.replaceAll("\\s+", " ").trim();
         
+        // ✅ 替换中文标点为英文标点（防止LLM返回中文逗号/括号）
+        sql = sql.replace("，", ",")   // 中文逗号
+                 .replace("（", "(")   // 中文左括号
+                 .replace("）", ")")   // 中文右括号
+                 .replace("；", ";")   // 中文分号
+                 .replace("：", ":");  // 中文冒号
+        
         // 只保留第一条SQL（以分号结尾）
         if (sql.contains(";")) {
             sql = sql.substring(0, sql.indexOf(";") + 1).trim();

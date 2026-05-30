@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.metadata.mapper.MetadataQueryMapper">
+
+    <!-- TableMetadata ResultMap -->
+    <resultMap id="TableMetadataResultMap" type="com.nl2sql.metadata.entity.TableMetadata">
+        <id property="id" column="id"/>
+        <result property="datasourceId" column="datasource_id"/>
+        <result property="tableName" column="table_name"/>
+        <result property="tableComment" column="table_comment"/>
+        <result property="tableType" column="table_type"/>
+        <result property="schemaName" column="schema_name"/>
+        <result property="rowCountEstimate" column="row_count_estimate"/>
+        <result property="dataSizeKb" column="data_size_kb"/>
+        <result property="indexSizeKb" column="index_size_kb"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!-- ColumnMetadata ResultMap -->
+    <resultMap id="ColumnMetadataResultMap" type="com.nl2sql.metadata.entity.ColumnMetadata">
+        <id property="id" column="id"/>
+        <result property="datasourceId" column="datasource_id"/>
+        <result property="tableName" column="table_name"/>
+        <result property="columnName" column="column_name"/>
+        <result property="dataType" column="data_type"/>
+        <result property="columnSize" column="column_size"/>
+        <result property="decimalDigits" column="decimal_digits"/>
+        <result property="isNullable" column="is_nullable"/>
+        <result property="columnDefault" column="column_default"/>
+        <result property="columnComment" column="column_comment"/>
+        <result property="isPrimaryKey" column="is_primary_key"/>
+        <result property="isUnique" column="is_unique"/>
+        <result property="ordinalPosition" column="ordinal_position"/>
+        <result property="characterSetName" column="character_set_name"/>
+        <result property="collationName" column="collation_name"/>
+        <result property="extraInfo" column="extra_info"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!-- 查询指定数据源的所有表（返回实体） -->
+    <select id="selectTablesByDatasource" resultMap="TableMetadataResultMap">
+        SELECT * FROM table_metadata 
+        WHERE datasource_id = #{datasourceId} 
+        ORDER BY table_name
+    </select>
+
+    <!-- 查询指定数据源和表名的表信息（返回实体） -->
+    <select id="selectTableByDatasourceAndName" resultMap="TableMetadataResultMap">
+        SELECT * FROM table_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name = #{tableName}
+    </select>
+
+    <!-- 查询指定数据源和表名的字段信息（返回实体） -->
+    <select id="selectColumnsByDatasourceAndTable" resultMap="ColumnMetadataResultMap">
+        SELECT * FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name = #{tableName} 
+        ORDER BY ordinal_position
+    </select>
+
+    <!-- 搜索表名（返回实体） -->
+    <select id="searchTablesAsEntity" resultMap="TableMetadataResultMap">
+        SELECT * FROM table_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name LIKE CONCAT('%', #{keyword}, '%') 
+        ORDER BY table_name 
+        LIMIT 50
+    </select>
+    
+    <!-- 查询表注释 -->
+    <select id="selectTableComment" resultType="java.lang.String">
+        SELECT DISTINCT table_comment FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name = #{tableName} 
+        LIMIT 1
+    </select>
+    
+    <!-- 查询表的字段列表（简化版） -->
+    <select id="selectColumnList" resultType="java.util.HashMap">
+        SELECT column_name, data_type, column_comment, is_primary_key, ordinal_position
+        FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name = #{tableName}
+        ORDER BY ordinal_position
+    </select>
+    
+    <!-- 查询表的字段列表（完整版，含is_nullable/is_primary_key） -->
+    <select id="selectColumnListFull" resultType="java.util.HashMap">
+        SELECT column_name, data_type, column_comment, is_nullable, 
+               CASE WHEN is_primary_key = 1 THEN 'PRI' ELSE '' END AS column_key,
+               ordinal_position
+        FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name = #{tableName}
+        ORDER BY ordinal_position
+    </select>
+    
+    <!-- 查询表的字段名称和注释 -->
+    <select id="selectColumnNameAndComment" resultType="java.util.HashMap">
+        SELECT column_name, column_comment
+        FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} AND table_name = #{tableName}
+        ORDER BY ordinal_position
+    </select>
+    
+    <!-- 插入NL2SQL查询日志 -->
+    <insert id="insertQueryLog">
+        INSERT INTO nl2sql_query_log (
+            session_id, user_id, question, normalized_query, has_person_entity, has_location_entity,
+            normalization_method, cache_level, cache_hit, rag_examples_count, industry_terms_matched,
+            generated_sql, executed_sql, execution_success, row_count, execution_time_ms,
+            datasource_id, selected_tables
+        ) VALUES (
+            #{sessionId}, #{userId}, #{question}, #{normalizedQuery}, #{hasPersonEntity}, #{hasLocationEntity},
+            #{normalizationMethod}, #{cacheLevel}, #{cacheHit}, #{ragExamplesCount}, #{industryTermsMatched},
+            #{generatedSql}, #{executedSql}, #{executionSuccess}, #{rowCount}, #{executionTimeMs},
+            #{datasourceId}, #{selectedTables}
+        )
+    </insert>
+
+</mapper>

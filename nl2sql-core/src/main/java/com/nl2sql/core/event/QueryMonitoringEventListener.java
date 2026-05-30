@@ -1,5 +1,6 @@
 package com.nl2sql.core.event;
 
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -19,6 +20,9 @@ public class QueryMonitoringEventListener {
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
     
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
+    
     /**
      * 异步处理监控事件
      * 使用@Async确保不阻塞主线程
@@ -34,31 +38,25 @@ public class QueryMonitoringEventListener {
         try {
             Map<String, Object> data = event.getMonitoringData();
             
-            String sql = "INSERT INTO nl2sql_query_log " +
-                "(session_id, user_id, question, normalized_query, has_person_entity, has_location_entity, normalization_method, " +
-                "cache_level, cache_hit, rag_examples_count, industry_terms_matched, " +
-                "generated_sql, executed_sql, execution_success, row_count, execution_time_ms, datasource_id, selected_tables) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
-            jdbcTemplate.update(sql,
-                data.get("sessionId"),
-                data.get("userId"),
-                data.get("question"),
-                data.get("normalizedQuery"),
+            metadataMapper.insertQueryLog(
+                (String) data.get("sessionId"),
+                toLong(data.get("userId")),
+                (String) data.get("question"),
+                (String) data.get("normalizedQuery"),
                 toInteger(data.get("hasPersonEntity")),
                 toInteger(data.get("hasLocationEntity")),
-                data.get("normalizationMethod"),
-                data.get("cacheLevel"),
+                (String) data.get("normalizationMethod"),
+                (String) data.get("cacheLevel"),
                 toInteger(data.get("cacheHit")),
                 toInteger(data.get("ragExamplesCount")),
-                data.get("industryTermsMatched"),
-                data.get("generatedSql"),
-                data.get("executedSql"),
+                (String) data.get("industryTermsMatched"),
+                (String) data.get("generatedSql"),
+                (String) data.get("executedSql"),
                 toInteger(data.get("executionSuccess")),
                 toLong(data.get("rowCount")),
                 toLong(data.get("executionTimeMs")),
                 toLong(data.get("datasourceId")),
-                data.get("selectedTables")
+                (String) data.get("selectedTables")
             );
             
             log.debug("[QueryMonitoring] 异步记录成功: sessionId={}, cacheLevel={}", 

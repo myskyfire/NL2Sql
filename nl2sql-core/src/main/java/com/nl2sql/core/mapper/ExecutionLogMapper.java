@@ -4,7 +4,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * SQL执行日志Mapper
+ * SQL 执行日志 Mapper
  */
 @Mapper
 public interface ExecutionLogMapper {
@@ -16,8 +16,8 @@ public interface ExecutionLogMapper {
                            @Param("username") String username,
                            @Param("sqlText") String sqlText,
                            @Param("executionTimeMs") Long executionTimeMs,
-                           @Param("rowCount") Integer rowCount,
-                           @Param("isSlowQuery") int isSlowQuery,
+                           @Param("rowCount") Long rowCount,
+                           @Param("isSlowQuery") Boolean isSlowQuery,
                            @Param("status") String status,
                            @Param("errorMessage") String errorMessage,
                            @Param("ipAddress") String ipAddress);

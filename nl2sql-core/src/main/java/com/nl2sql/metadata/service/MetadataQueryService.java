@@ -6,14 +6,13 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.nl2sql.metadata.entity.ColumnMetadata;
 import com.nl2sql.metadata.entity.TableMetadata;
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,15 +22,20 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class MetadataQueryService {
     
-    private final JdbcTemplate jdbcTemplate;
-    private final StringRedisTemplate redisTemplate;
+    @Autowired(required = false)
+    private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+    
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
+    
     private final ObjectMapper objectMapper;
     
     private static final long CACHE_TTL_HOURS = 24;
     
-    public MetadataQueryService(JdbcTemplate jdbcTemplate, StringRedisTemplate redisTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.redisTemplate = redisTemplate;
+    public MetadataQueryService() {
         this.objectMapper = new ObjectMapper();
         // 注册JavaTimeModule以支持LocalDateTime序列化
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -56,8 +60,7 @@ public class MetadataQueryService {
         }
         
         // 从数据库加载
-        String sql = "SELECT * FROM table_metadata WHERE datasource_id = ? ORDER BY table_name";
-        List<TableMetadata> tables = jdbcTemplate.query(sql, new TableRowMapper(), datasourceId);
+        List<TableMetadata> tables = metadataMapper.selectTablesByDatasource(datasourceId);
         
         // 写入缓存
         try {
@@ -75,19 +78,17 @@ public class MetadataQueryService {
      */
     public TableDetail getTableDetail(Long datasourceId, String tableName) {
         // 获取表信息
-        String tableSql = "SELECT * FROM table_metadata WHERE datasource_id = ? AND table_name = ?";
-        List<TableMetadata> tables = jdbcTemplate.query(tableSql, new TableRowMapper(), datasourceId, tableName);
+        TableMetadata table = metadataMapper.selectTableByDatasourceAndName(datasourceId, tableName);
         
-        if (tables.isEmpty()) {
+        if (table == null) {
             return null;
         }
         
         TableDetail detail = new TableDetail();
-        detail.setTable(tables.get(0));
+        detail.setTable(table);
         
         // 获取字段信息
-        String columnSql = "SELECT * FROM column_metadata WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position";
-        List<ColumnMetadata> columns = jdbcTemplate.query(columnSql, new ColumnRowMapper(), datasourceId, tableName);
+        List<ColumnMetadata> columns = metadataMapper.selectColumnsByDatasourceAndTable(datasourceId, tableName);
         detail.setColumns(columns);
         
         return detail;
@@ -97,8 +98,7 @@ public class MetadataQueryService {
      * 搜索表名
      */
     public List<TableMetadata> searchTables(Long datasourceId, String keyword) {
-        String sql = "SELECT * FROM table_metadata WHERE datasource_id = ? AND table_name LIKE ? ORDER BY table_name LIMIT 50";
-        return jdbcTemplate.query(sql, new TableRowMapper(), datasourceId, "%" + keyword + "%");
+        return metadataMapper.searchTablesAsEntity(datasourceId, "%" + keyword + "%");
     }
     
     /**
@@ -118,13 +118,11 @@ public class MetadataQueryService {
         
         try {
             // 统计本地修改的表数量
-            String tableSql = "SELECT COUNT(*) FROM table_metadata WHERE datasource_id = ? AND is_local_modified = 1";
-            Integer tableCount = jdbcTemplate.queryForObject(tableSql, Integer.class, datasourceId);
+            Integer tableCount = metadataMapper.countLocalModifiedTables(datasourceId);
             result.put("tableCount", tableCount != null ? tableCount : 0);
             
             // 统计本地修改的字段数量
-            String columnSql = "SELECT COUNT(*) FROM column_metadata WHERE datasource_id = ? AND is_local_modified = 1";
-            Integer columnCount = jdbcTemplate.queryForObject(columnSql, Integer.class, datasourceId);
+            Integer columnCount = metadataMapper.countLocalModifiedColumns(datasourceId);
             result.put("columnCount", columnCount != null ? columnCount : 0);
             
             log.debug("数据源 {} 本地修改统计: 表={}, 字段={}", datasourceId, result.get("tableCount"), result.get("columnCount"));
@@ -145,68 +143,5 @@ public class MetadataQueryService {
     public static class TableDetail {
         private TableMetadata table;
         private List<ColumnMetadata> columns;
-    }
-    
-    /**
-     * TableRowMapper
-     */
-    private static class TableRowMapper implements RowMapper<TableMetadata> {
-        @Override
-        public TableMetadata mapRow(ResultSet rs, int rowNum) throws SQLException {
-            TableMetadata table = new TableMetadata();
-            table.setId(rs.getLong("id"));
-            table.setDatasourceId(rs.getLong("datasource_id"));
-            table.setTableName(rs.getString("table_name"));
-            table.setTableComment(rs.getString("table_comment"));
-            table.setTableType(rs.getString("table_type"));
-            table.setSchemaName(rs.getString("schema_name"));
-            table.setRowCountEstimate(rs.getLong("row_count_estimate"));
-            table.setDataSizeKb(rs.getLong("data_size_kb"));
-            table.setIndexSizeKb(rs.getLong("index_size_kb"));
-            table.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
-            table.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
-            return table;
-        }
-    }
-    
-    /**
-     * ColumnRowMapper
-     */
-    private static class ColumnRowMapper implements RowMapper<ColumnMetadata> {
-        @Override
-        public ColumnMetadata mapRow(ResultSet rs, int rowNum) throws SQLException {
-            ColumnMetadata column = new ColumnMetadata();
-            column.setId(rs.getLong("id"));
-            column.setDatasourceId(rs.getLong("datasource_id"));
-            column.setTableName(rs.getString("table_name"));
-            column.setColumnName(rs.getString("column_name"));
-            column.setDataType(rs.getString("data_type"));
-            column.setColumnSize(rs.getInt("column_size"));
-            column.setDecimalDigits(rs.getInt("decimal_digits"));
-            column.setIsNullable(rs.getInt("is_nullable"));
-            column.setColumnDefault(rs.getString("column_default"));
-            column.setColumnComment(rs.getString("column_comment"));
-            column.setIsPrimaryKey(rs.getInt("is_primary_key"));
-            column.setIsUnique(rs.getInt("is_unique"));
-            column.setOrdinalPosition(rs.getInt("ordinal_position"));
-            
-            // 兼容可能为null的字段
-            try {
-                column.setCharacterSetName(rs.getString("character_set_name"));
-            } catch (SQLException e) {
-                column.setCharacterSetName(null);
-            }
-            
-            try {
-                column.setCollationName(rs.getString("collation_name"));
-            } catch (SQLException e) {
-                column.setCollationName(null);
-            }
-            
-            column.setExtraInfo(rs.getString("extra_info"));
-            column.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
-            column.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
-            return column;
-        }
     }
 }

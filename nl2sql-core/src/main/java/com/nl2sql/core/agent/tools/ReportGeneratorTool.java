@@ -113,17 +113,14 @@ public class ReportGeneratorTool {
                                      List<Map<String, Object>> data,
                                      Map<String, Object> statistics) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一个资深数据分析师。请根据以下数据生成专业的分析报告。\n\n");
+        prompt.append("根据数据生成报告。\n\n");
         
-        prompt.append("## 用户问题\n");
-        prompt.append(userQuery).append("\n\n");
+        prompt.append("问题：").append(userQuery).append("\n\n");
+        prompt.append("SQL 查询：").append(sql).append("\n\n");
         
-        prompt.append("## SQL查询\n");
-        prompt.append(sql).append("\n\n");
-        
-        prompt.append("## 数据统计\n");
-        prompt.append("- 总行数: ").append(statistics.get("totalRows")).append("\n");
-        prompt.append("- 列数: ").append(statistics.get("columns")).append("\n");
+        prompt.append("数据统计：\n");
+        prompt.append("- 总行数：").append(statistics.get("totalRows")).append("\n");
+        prompt.append("- 列数：").append(statistics.get("columns")).append("\n");
         
         // 添加数值列统计
         for (Map.Entry<String, Object> entry : statistics.entrySet()) {
@@ -136,30 +133,13 @@ public class ReportGeneratorTool {
             }
         }
         
-        prompt.append("\n## 数据样本（前10行）\n");
+        prompt.append("\n数据样本（前 10 行）：\n");
         int displayRows = Math.min(10, data.size());
         for (int i = 0; i < displayRows; i++) {
             prompt.append(data.get(i).toString()).append("\n");
         }
         
-        prompt.append("\n## 报告要求\n");
-        prompt.append("请按以下结构生成报告：\n\n");
-        prompt.append("### 1. 执行摘要（50字以内）\n");
-        prompt.append("简要概括核心发现\n\n");
-        
-        prompt.append("### 2. 关键发现\n");
-        prompt.append("- 列出3-5个最重要的数据洞察\n");
-        prompt.append("- 每个发现要有数据支撑\n\n");
-        
-        prompt.append("### 3. 趋势分析\n");
-        prompt.append("- 识别数据中的模式或趋势\n");
-        prompt.append("- 指出异常值或特殊情况\n\n");
-        
-        prompt.append("### 4. 业务建议\n");
-        prompt.append("- 基于数据提出2-3条可操作的建议\n");
-        prompt.append("- 建议要具体、可行\n\n");
-        
-        prompt.append("要求：使用专业但易懂的语言，避免技术术语，重点突出业务价值。");
+        prompt.append("\n要求：专业易懂，突出业务价值");
         
         return prompt.toString();
     }

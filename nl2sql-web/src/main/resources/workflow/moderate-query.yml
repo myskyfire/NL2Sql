@@ -1,0 +1,79 @@
+name: moderate-query
+description: 多表JOIN查询，使用 Tool 调用链
+
+steps:
+  - id: resolve_datasource
+    type: skip
+    condition: "${datasourceId == null}"
+    onConditionTrue: fail
+    onConditionFalse: retrieve_schema
+
+  - id: retrieve_schema
+    type: call_tool
+    action: call_tool
+    tool: retrieveSchema
+    toolInput:
+      query: "${userMessage}"
+      datasourceId: "${datasourceId}"
+    outputVar: schema_result
+    onNext: generate_sql
+
+  - id: generate_sql
+    type: call_tool
+    action: call_tool
+    tool: generateSQL
+    toolInput:
+      question: "${userMessage}"
+      datasourceId: "${datasourceId}"
+    outputVar: sql_result
+    onNext: assess_risk
+
+  - id: assess_risk
+    type: call_tool
+    action: call_tool
+    tool: analyzeSQLRisk
+    condition: "${sql_result.success == true}"
+    toolInput:
+      sql: "${sql_result.data.sql}"
+      datasourceId: "${datasourceId}"
+    outputVar: risk_result
+    onNext: execute_sql
+
+  - id: execute_sql
+    type: call_tool
+    action: call_tool
+    tool: executeSQL
+    condition: "${risk_result.riskLevel != HIGH}"
+    toolInput:
+      sql: "${sql_result.data.sql}"
+      datasourceId: "${datasourceId}"
+    outputVar: exec_result
+    onNext: check_chart
+
+  - id: check_chart
+    type: condition
+    condition: "${queryPlan.chart.needed}"
+    onTrue: chart_step
+    onFalse: check_summary
+
+  - id: chart_step
+    type: worker
+    worker: chart
+    onNext: check_summary
+
+  - id: check_summary
+    type: condition
+    condition: "${queryPlan.needSummary}"
+    onTrue: summary_step
+    onFalse: assemble
+
+  - id: summary_step
+    type: worker
+    worker: summary
+    onNext: assemble
+
+  - id: assemble
+    type: assemble
+
+  - id: fail
+    type: skip

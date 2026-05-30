@@ -1,0 +1,32 @@
+feat(P0): 引入意图识别层和统一响应格式
+
+P0级别架构优化：
+
+1. IntentClassifier - 统一的意图分类器
+   - 支持4种意图类型：QUERY/SUMMARY/CHART/CLARIFY
+   - 规则匹配 + 显式标记检测
+   - 返回结构化的 IntentClassification 对象
+   - 置信度评分，便于后续优化
+
+2. SkillResult - 统一的响应格式
+   - 替代现有的多种返回格式（JSON字符串、Map等）
+   - 支持6种响应类型：QUERY_RESULT/SUMMARY/CHART/CLARIFICATION/ERROR/PROGRESS
+   - 内置 ClarificationInfo 和 ErrorInfo 子对象
+   - 提供便捷构建方法：success()/clarification()/error()
+   - 支持序列化和反序列化
+
+3. ReActAgent 集成
+   - 在 execute() 方法开头调用意图识别
+   - 记录意图分类结果日志
+   - 更新 isUnifiedToolResponse() 使用 SkillResult.fromJson()
+   - 为 P1 阶段的显式路由预留接口
+
+技术细节：
+- IntentClassifier: 正则表达式匹配中文关键词
+- SkillResult: Lombok @Builder + 静态工厂方法
+- 向后兼容：保留旧的 JSON 格式解析逻辑
+
+影响范围：
+- 新增2个文件：IntentClassifier.java, SkillResult.java
+- 修改1个文件：ReActAgent.java
+- 编译通过，无破坏性变更

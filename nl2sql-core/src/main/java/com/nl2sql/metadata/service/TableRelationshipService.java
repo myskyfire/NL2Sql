@@ -3,6 +3,7 @@ package com.nl2sql.metadata.service;
 import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.llm.MultiModelService;
 import com.nl2sql.metadata.entity.TableRelationship;
+import com.nl2sql.metadata.mapper.TableRelationshipMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,9 @@ public class TableRelationshipService {
     
     private final JdbcTemplate jdbcTemplate;
     private final MultiModelService multiModelService;
+    
+    @Autowired
+    private TableRelationshipMapper relationshipMapper;
     
     @Autowired(required = false)
     private MetadataCacheService metadataCacheService;
@@ -42,8 +46,7 @@ public class TableRelationshipService {
     public List<TableRelationship> autoDiscoverRelationships(Long datasourceId) {
         try {
             // 获取所有表的元数据
-            String tableSql = "SELECT table_name, table_comment FROM table_metadata WHERE datasource_id = ?";
-            List<Map<String, Object>> tables = jdbcTemplate.queryForList(tableSql, datasourceId);
+            List<Map<String, Object>> tables = relationshipMapper.selectTableMetadata(datasourceId);
             
             if (tables.isEmpty()) {
                 log.warn("数据源 {} 没有表元数据", datasourceId);
@@ -55,24 +58,7 @@ public class TableRelationshipService {
                 .map(t -> (String) t.get("table_name"))
                 .collect(Collectors.toList());
             
-            String placeholders = tableNames.stream()
-                .map(t -> "?")
-                .collect(Collectors.joining(", "));
-            
-            String batchColSql = String.format(
-                "SELECT table_name, column_name, data_type, column_comment, is_primary_key " +
-                "FROM column_metadata WHERE datasource_id = ? AND table_name IN (%s) " +
-                "ORDER BY table_name, ordinal_position",
-                placeholders
-            );
-            
-            Object[] params = new Object[tableNames.size() + 1];
-            params[0] = datasourceId;
-            for (int i = 0; i < tableNames.size(); i++) {
-                params[i + 1] = tableNames.get(i);
-            }
-            
-            List<Map<String, Object>> allColumns = jdbcTemplate.queryForList(batchColSql, params);
+            List<Map<String, Object>> allColumns = relationshipMapper.selectColumnsBatch(datasourceId, tableNames);
             
             // 按表名分组
             Map<String, List<Map<String, Object>>> columnsByTable = allColumns.stream()
@@ -182,10 +168,7 @@ public class TableRelationshipService {
         
         try {
             // 获取数据源配置以查询information_schema
-            String schemaName = jdbcTemplate.queryForObject(
-                "SELECT database_name FROM datasource_config WHERE id = ?",
-                String.class, datasourceId
-            );
+            String schemaName = relationshipMapper.selectDatabaseName(datasourceId);
             
             if (schemaName == null || schemaName.trim().isEmpty()) {
                 log.warn("无法获取数据源 {} 的schema名称", datasourceId);
@@ -193,29 +176,7 @@ public class TableRelationshipService {
             }
             
             // 查询MySQL真实外键（包含字段类型）
-            String fkSql = """
-                SELECT 
-                    kcu.TABLE_NAME AS source_table,
-                    kcu.COLUMN_NAME AS source_column,
-                    kcu.REFERENCED_TABLE_NAME AS target_table,
-                    kcu.REFERENCED_COLUMN_NAME AS target_column,
-                    c1.DATA_TYPE AS source_type,
-                    c2.DATA_TYPE AS target_type
-                FROM information_schema.KEY_COLUMN_USAGE kcu
-                JOIN information_schema.COLUMNS c1 
-                    ON kcu.TABLE_SCHEMA = c1.TABLE_SCHEMA 
-                    AND kcu.TABLE_NAME = c1.TABLE_NAME 
-                    AND kcu.COLUMN_NAME = c1.COLUMN_NAME
-                JOIN information_schema.COLUMNS c2 
-                    ON kcu.REFERENCED_TABLE_SCHEMA = c2.TABLE_SCHEMA 
-                    AND kcu.REFERENCED_TABLE_NAME = c2.TABLE_NAME 
-                    AND kcu.REFERENCED_COLUMN_NAME = c2.COLUMN_NAME
-                WHERE kcu.TABLE_SCHEMA = ?
-                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-                ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
-                """;
-            
-            List<Map<String, Object>> fkRows = jdbcTemplate.queryForList(fkSql, schemaName);
+            List<Map<String, Object>> fkRows = relationshipMapper.selectRealForeignKeys(schemaName);
             
             for (Map<String, Object> row : fkRows) {
                 String sourceType = (String) row.get("source_type");
@@ -904,44 +865,25 @@ public class TableRelationshipService {
      */
     public boolean saveRelationship(TableRelationship relationship) {
         try {
-            String checkSql = "SELECT COUNT(*) FROM table_relationships WHERE datasource_id = ? AND source_table = ? AND source_column = ? AND target_table = ? AND target_column = ?";
-            Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class,
-                relationship.getDatasourceId(),
-                relationship.getSourceTable(),
-                relationship.getSourceColumn(),
-                relationship.getTargetTable(),
-                relationship.getTargetColumn()
-            );
+            // 检查是否已存在
+            TableRelationship existing = relationshipMapper.selectByDatasourceId(relationship.getDatasourceId()).stream()
+                .filter(r -> r.getSourceTable().equals(relationship.getSourceTable()) &&
+                            r.getSourceColumn().equals(relationship.getSourceColumn()) &&
+                            r.getTargetTable().equals(relationship.getTargetTable()) &&
+                            r.getTargetColumn().equals(relationship.getTargetColumn()))
+                .findFirst()
+                .orElse(null);
             
-            if (count != null && count > 0) {
+            if (existing != null) {
                 // 更新
-                String updateSql = "UPDATE table_relationships SET relationship_type = ?, confidence = ?, description = ?, is_active = ? WHERE datasource_id = ? AND source_table = ? AND source_column = ? AND target_table = ? AND target_column = ?";
-                jdbcTemplate.update(updateSql,
-                    relationship.getRelationshipType(),
-                    relationship.getConfidence(),
-                    relationship.getDescription(),
-                    relationship.getIsActive(),
-                    relationship.getDatasourceId(),
-                    relationship.getSourceTable(),
-                    relationship.getSourceColumn(),
-                    relationship.getTargetTable(),
-                    relationship.getTargetColumn()
-                );
+                relationship.setId(existing.getId());
+                relationshipMapper.update(relationship);
             } else {
                 // 插入
-                String insertSql = "INSERT INTO table_relationships (datasource_id, source_table, source_column, target_table, target_column, relationship_type, confidence, description, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                jdbcTemplate.update(insertSql,
-                    relationship.getDatasourceId(),
-                    relationship.getSourceTable(),
-                    relationship.getSourceColumn(),
-                    relationship.getTargetTable(),
-                    relationship.getTargetColumn(),
-                    relationship.getRelationshipType(),
-                    relationship.getConfidence(),
-                    relationship.getDescription(),
-                    relationship.getIsActive() != null ? relationship.getIsActive() : 1,
-                    relationship.getCreatedBy()
-                );
+                if (relationship.getIsActive() == null) {
+                    relationship.setIsActive(1);
+                }
+                relationshipMapper.insert(relationship);
             }
             
             // ✅ 关键：清除关联关系缓存（因为数据已变更）
@@ -962,7 +904,7 @@ public class TableRelationshipService {
      */
     public boolean deleteRelationship(Long id) {
         try {
-            jdbcTemplate.update("DELETE FROM table_relationships WHERE id = ?", id);
+            relationshipMapper.deleteById(id);
             
             // ✅ 关键：清除关联关系缓存
             if (metadataCacheService != null) {
@@ -982,7 +924,7 @@ public class TableRelationshipService {
      */
     public boolean toggleRelationship(Long id, boolean active) {
         try {
-            jdbcTemplate.update("UPDATE table_relationships SET is_active = ? WHERE id = ?", active ? 1 : 0, id);
+            relationshipMapper.updateActiveStatus(id, active);
             
             // ✅ 关键：清除关联关系缓存
             if (metadataCacheService != null) {
@@ -1385,8 +1327,7 @@ public class TableRelationshipService {
                 return "";
             }
             
-            // ✅ 关键修复：不再二次过滤，保留所有与已选表相关的关联关系
-            // 这样LLM能看到 orders.user_id -> users.id，即使users不在初始表中
+            // ✅ 保留所有与已选表相关的关联关系（包括涉及未选表的关系，用于表选择回溯）
             List<Map<String, Object>> filteredRelationships = relationships;
             
             StringBuilder sb = new StringBuilder("\n\n表之间的关联关系：\n");
@@ -1412,6 +1353,77 @@ public class TableRelationshipService {
             return result;
         } catch (Exception e) {
             log.warn("获取关联关系失败: {}", e.getMessage());
+            return "";
+        }
+    }
+    
+    /**
+     * ✅ 新增：专为SQL生成阶段过滤关联关系
+     * 只返回源表和目标表都在指定表列表中的关联关系
+     * 
+     * @param datasourceId 数据源ID
+     * @param tables 相关表列表（必须是最终确定的表集合）
+     * @return 过滤后的关联关系描述字符串
+     */
+    public String getFilteredRelationshipsForSQLGeneration(Long datasourceId, List<String> tables) {
+        if (datasourceId == null || tables == null || tables.isEmpty()) {
+            return "";
+        }
+        
+        try {
+            // 先获取所有相关关系
+            String allRelationships = getRelationshipsForPrompt(datasourceId, tables);
+            if (allRelationships.isEmpty()) {
+                return "";
+            }
+            
+            // 重新查询原始数据以便过滤
+            String tableList = tables.stream()
+                .map(t -> "'" + t.replace("'", "''") + "'")
+                .collect(Collectors.joining(", "));
+            
+            String sql = String.format(
+                "SELECT source_table, source_column, target_table, target_column, relationship_type, description " +
+                "FROM table_relationships " +
+                "WHERE datasource_id = %d AND is_active = 1 " +
+                "AND (source_table IN (%s) OR target_table IN (%s))",
+                datasourceId, tableList, tableList
+            );
+            
+            List<Map<String, Object>> relationships = jdbcTemplate.queryForList(sql);
+            
+            // ✅ 关键过滤：只保留源表和目标表都在表列表中的关系
+            Set<String> tableSet = new HashSet<>(tables);
+            List<Map<String, Object>> filteredRelationships = relationships.stream()
+                .filter(rel -> {
+                    String sourceTable = (String) rel.get("source_table");
+                    String targetTable = (String) rel.get("target_table");
+                    return tableSet.contains(sourceTable) && tableSet.contains(targetTable);
+                })
+                .collect(Collectors.toList());
+            
+            log.info("[TableRelationship] SQL生成阶段关联关系过滤: {} 条 → {} 条", 
+                relationships.size(), filteredRelationships.size());
+            
+            if (filteredRelationships.isEmpty()) {
+                return "";
+            }
+            
+            StringBuilder sb = new StringBuilder("\n\n表之间的关联关系：\n");
+            for (Map<String, Object> rel : filteredRelationships) {
+                sb.append(String.format("- %s.%s -> %s.%s (%s): %s\n",
+                    rel.get("source_table"),
+                    rel.get("source_column"),
+                    rel.get("target_table"),
+                    rel.get("target_column"),
+                    rel.get("relationship_type"),
+                    rel.get("description") != null ? rel.get("description") : ""
+                ));
+            }
+            
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("[TableRelationship] 过滤关联关系失败: {}", e.getMessage());
             return "";
         }
     }

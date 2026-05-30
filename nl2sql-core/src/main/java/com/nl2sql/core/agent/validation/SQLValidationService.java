@@ -79,10 +79,17 @@ public class SQLValidationService {
             PlainSelect plainSelect = (PlainSelect) selectBody;
             GroupByElement groupBy = plainSelect.getGroupBy();
             
-            // 如果没有 GROUP BY，但 SELECT 中有聚合函数，需要警告
+            // ✅ 修复：只有当 SELECT 中既有聚合函数又有非聚合字段时，才需要 GROUP BY
             if (groupBy == null && hasAggregateFunction(plainSelect)) {
-                issues.add("⚠️ 检测到聚合函数但未使用 GROUP BY，可能导致意外结果");
-                return issues;
+                // 检查是否有非聚合字段
+                List<String> nonAggregateColumns = extractNonAggregateColumns(plainSelect);
+                
+                // 如果只有聚合函数（无非聚合字段），是合法的单行聚合查询
+                if (!nonAggregateColumns.isEmpty()) {
+                    issues.add("⚠️ 检测到聚合函数和非聚合字段混合，但未使用 GROUP BY，可能导致意外结果");
+                    return issues;
+                }
+                // 否则是合法的单行聚合查询（如 SELECT COUNT(*) FROM ...），无需警告
             }
             
             if (groupBy != null) {
@@ -409,13 +416,14 @@ public class SQLValidationService {
     private Set<String> extractAllColumns(PlainSelect select) {
         Set<String> columns = new HashSet<>();
         
-        // 1. 提取 SELECT 中的列
+        // 1. 提取 SELECT 中的列（✅ 关键修复：跳过 AS 别名）
         if (select.getSelectItems() != null) {
             for (SelectItem item : select.getSelectItems()) {
                 if (item instanceof SelectExpressionItem) {
                     SelectExpressionItem sei = (SelectExpressionItem) item;
                     Expression expr = sei.getExpression();
                     
+                    // ✅ 只提取真实列名，跳过聚合函数和表达式
                     if (expr instanceof Column) {
                         Column col = (Column) expr;
                         String columnName = col.getColumnName();
@@ -424,6 +432,7 @@ public class SQLValidationService {
                         }
                         columns.add(columnName);
                     }
+                    // ⚠️ 注意：不提取 Function/Aggregate 等表达式，因为它们是计算结果，不是真实列
                 }
             }
         }
@@ -441,18 +450,29 @@ public class SQLValidationService {
             }
         }
         
-        // 3. 提取 ORDER BY 中的列
+        // 3. 提取 ORDER BY 中的列（✅ 关键修复：跳过字符串常量/别名）
         if (select.getOrderByElements() != null) {
             for (OrderByElement orderBy : select.getOrderByElements()) {
                 Expression expr = orderBy.getExpression();
+                
+                // ✅ 只提取真实列名，跳过字符串常量（如 '销售额'）
                 if (expr instanceof Column) {
                     Column col = (Column) expr;
                     String columnName = col.getColumnName();
+                    
+                    // ⚠️ 如果列名是带引号的字符串（如 `销售额` 或 '销售额'），跳过
+                    if (columnName.startsWith("`") || columnName.startsWith("'") || 
+                        columnName.startsWith("\"")) {
+                        log.debug("[SQLValidation] 跳过 ORDER BY 中的别名: {}", columnName);
+                        continue;
+                    }
+                    
                     if (col.getTable() != null) {
                         columnName = col.getTable().getName() + "." + columnName;
                     }
                     columns.add(columnName);
                 }
+                // ⚠️ 注意：不提取 Function/Aggregate，因为它们是计算结果
             }
         }
         

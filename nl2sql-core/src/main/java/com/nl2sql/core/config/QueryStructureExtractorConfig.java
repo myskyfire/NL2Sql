@@ -3,6 +3,7 @@ package com.nl2sql.core.config;
 import com.nl2sql.core.cache.ConfigurableIndustryTargetExtractor;
 import com.nl2sql.core.cache.IndustryTargetExtractor;
 import com.nl2sql.core.cache.QueryStructureExtractor;
+import com.nl2sql.metadata.mapper.IndustryConceptAdminMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,8 +24,8 @@ public class QueryStructureExtractorConfig {
      * 创建行业提取器工厂（根据数据源ID返回对应的提取器）
      */
     @Bean
-    public IndustryTargetExtractorFactory industryTargetExtractorFactory(JdbcTemplate jdbcTemplate) {
-        return new IndustryTargetExtractorFactory(jdbcTemplate);
+    public IndustryTargetExtractorFactory industryTargetExtractorFactory(JdbcTemplate jdbcTemplate, IndustryConceptAdminMapper adminMapper) {
+        return new IndustryTargetExtractorFactory(jdbcTemplate, adminMapper);
     }
     
     /**
@@ -33,10 +34,12 @@ public class QueryStructureExtractorConfig {
      */
     public static class IndustryTargetExtractorFactory {
         private final JdbcTemplate jdbcTemplate;
+        private final IndustryConceptAdminMapper adminMapper;
         private final Map<String, IndustryTargetExtractor> extractorCache = new HashMap<>();
         
-        public IndustryTargetExtractorFactory(JdbcTemplate jdbcTemplate) {
+        public IndustryTargetExtractorFactory(JdbcTemplate jdbcTemplate, IndustryConceptAdminMapper adminMapper) {
             this.jdbcTemplate = jdbcTemplate;
+            this.adminMapper = adminMapper;
             // ✅ 不再预注册硬编码实例，改为按需动态创建
         }
         
@@ -51,10 +54,7 @@ public class QueryStructureExtractorConfig {
             
             try {
                 // 1. 从数据库查询数据源的行业代码
-                String industryCode = jdbcTemplate.queryForObject(
-                    "SELECT industry_code FROM datasource_industry_mapping WHERE datasource_id = ? LIMIT 1",
-                    String.class, datasourceId
-                );
+                String industryCode = adminMapper.selectIndustryCodeByDatasourceId(datasourceId);
                 
                 if (industryCode == null) {
                     log.debug("[IndustryExtractor] 数据源 {} 未配置行业，使用通用提取器", datasourceId);

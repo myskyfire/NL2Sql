@@ -2,6 +2,7 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
 import com.nl2sql.core.cache.MetadataCacheService;
+import com.nl2sql.core.metadata.MetadataService;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.service.DataSourceConfigService;
 import com.nl2sql.metadata.service.MetadataCollectorService;
@@ -30,6 +31,9 @@ public class AdminMetadataController {
     
     @Autowired(required = false)
     private MetadataCacheService metadataCacheService;
+    
+    @Autowired(required = false)
+    private MetadataService metadataService;
     
     public AdminMetadataController(DataSourceConfigService dataSourceConfigService,
                                    MetadataCollectorService metadataCollectorService,
@@ -221,6 +225,31 @@ public class AdminMetadataController {
     }
     
     /**
+     * ✅ 新增：按需增强指定表的字段注释（反馈驱动优化）
+     */
+    @PostMapping("/metadata/enhance-table/{datasourceId}/{tableName}")
+    public Result<Map<String, Object>> enhanceTableColumns(
+            @PathVariable Long datasourceId,
+            @PathVariable String tableName) {
+        try {
+            log.info("[按需增强] 手动触发表 {}.{} 的字段注释增强", datasourceId, tableName);
+            
+            // 调用按需增强方法
+            metadataCollectorService.enhanceColumnDescriptionsForTable(datasourceId, tableName);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "STARTED");
+            response.put("message", String.format("表 %s.%s 的增强任务已启动，将在后台异步执行", datasourceId, tableName));
+            response.put("note", "仅当注释覆盖率 < 50% 时才会实际执行增强");
+            
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[按需增强] 启动失败", e);
+            return Result.error("增强失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 查询已同步的元数据（所有数据源）
      */
     @GetMapping("/metadata/list")
@@ -298,19 +327,50 @@ public class AdminMetadataController {
     }
     
     /**
+     * ✅ 新增：按数据源获取数据库列表
+     */
+    @GetMapping("/metadata/databases")
+    public Result<List<Map<String, Object>>> getDatabasesByDatasource(@RequestParam Long datasourceId) {
+        try {
+            DataSourceConfig ds = dataSourceConfigService.getConfigById(datasourceId);
+            if (ds == null) {
+                return Result.error("数据源不存在: " + datasourceId);
+            }
+            
+            List<Map<String, Object>> databases = new java.util.ArrayList<>();
+            Map<String, Object> db = new HashMap<>();
+            db.put("name", ds.getDatabaseName());
+            db.put("databaseName", ds.getDatabaseName());
+            db.put("datasourceId", ds.getId());
+            db.put("datasourceName", ds.getName());
+            databases.add(db);
+            
+            return Result.success(databases);
+        } catch (Exception e) {
+            log.error("获取数据库列表失败", e);
+            return Result.error("获取失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * ✅ 新增：按数据库名获取表列表
      */
     @GetMapping("/metadata/tables")
-    public Result<List<String>> getTablesByDatabase(@RequestParam String databaseName) {
+    public Result<List<String>> getTablesByDatabase(
+            @RequestParam String databaseName,
+            @RequestParam(required = false) Long datasourceId) {
         try {
-            // 根据数据库名查找对应的数据源
-            List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
             DataSourceConfig targetDs = null;
             
-            for (DataSourceConfig ds : datasources) {
-                if (databaseName.equals(ds.getDatabaseName()) || databaseName.equals(ds.getName())) {
-                    targetDs = ds;
-                    break;
+            if (datasourceId != null) {
+                targetDs = dataSourceConfigService.getConfigById(datasourceId);
+            } else {
+                List<DataSourceConfig> datasources = dataSourceConfigService.listActiveConfigs();
+                for (DataSourceConfig ds : datasources) {
+                    if (databaseName.equals(ds.getDatabaseName()) || databaseName.equals(ds.getName())) {
+                        targetDs = ds;
+                        break;
+                    }
                 }
             }
             
@@ -330,6 +390,36 @@ public class AdminMetadataController {
         } catch (Exception e) {
             log.error("获取表列表失败", e);
             return Result.error("获取失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ 新增：刷新元数据缓存（用于数据变更后立即生效）
+     */
+    @PostMapping("/metadata/refresh")
+    public Result<Map<String, Object>> refreshMetadata() {
+        try {
+            log.info("[元数据刷新] 开始刷新元数据缓存");
+            
+            if (metadataService != null) {
+                metadataService.refreshMetadata();
+                log.info("[元数据刷新] ✅ MetadataService 缓存已刷新");
+            }
+            
+            // 清除 Caffeine 缓存
+            if (metadataCacheService != null) {
+                metadataCacheService.invalidateAll();
+                log.info("[元数据刷新] ✅ Caffeine 缓存已清除");
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("message", "元数据缓存已刷新");
+            
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[元数据刷新] 失败", e);
+            return Result.error("刷新失败: " + e.getMessage());
         }
     }
     

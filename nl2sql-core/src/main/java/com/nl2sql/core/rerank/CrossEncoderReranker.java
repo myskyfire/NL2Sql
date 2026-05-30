@@ -2,10 +2,7 @@ package com.nl2sql.core.rerank;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,61 +14,91 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Cross-Encoder Reranker Service - 使用Ollama bge-reranker进行精排
+ * Cross-Encoder Reranker - 使用 HuggingFace TEI (Text Embeddings Inference) 进行本地精排
  * 
  * 工作原理:
- * 1. 接收Query和候选文档列表
- * 2. 将(Query, Doc)对送入Cross-Encoder模型
- * 3. 模型输出相关性分数(0-1)
- * 4. 按分数降序排序,返回Top-K
+ * 1. 接收 Query 和候选文档列表
+ * 2. 将 (Query, Doc) 对送入 Cross-Encoder 模型
+ * 3. 模型输出相关性分数 (0-1)
+ * 4. 按分数降序排序，返回 Top-K
+ * 
+ * 支持的服务:
+ * - HuggingFace TEI (Docker): ghcr.io/huggingface/text-embeddings-inference
+ * - Ollama bge-reranker (未来扩展)
  */
 @Slf4j
-@Service
-public class CrossEncoderReranker {
+public class CrossEncoderReranker implements Reranker {
     
-    @Value("${ollama.base-url:http://localhost:11434}")
-    private String baseUrl;
-    
-    @Value("${reranker.model:bge-reranker-v2-m3}")
-    private String rerankerModel;
-    
-    @Value("${reranker.top-k:5}")
-    private int topK;
-    
-    @Value("${reranker.threshold:0.5}")
-    private double threshold;
+    private final String baseUrl;
+    private final String rerankerModel;
+    private final int topK;
+    private final double threshold;
     
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    /**
-     * 重排序主方法
-     * 
-     * @param query 用户查询
-     * @param candidates 候选文档列表
-     * @return 重排序后的Top-K文档
-     */
+    // 缓存可用性检查结果
+    private Boolean cachedAvailable = null;
+    
+    public CrossEncoderReranker(String baseUrl, String rerankerModel, int topK, double threshold) {
+        this.baseUrl = baseUrl;
+        this.rerankerModel = rerankerModel;
+        this.topK = topK;
+        this.threshold = threshold;
+    }
+    
+    @Override
+    public String getName() {
+        return "cross-encoder";
+    }
+    
+    @Override
+    public boolean isAvailable() {
+        if (cachedAvailable != null) {
+            return cachedAvailable;
+        }
+        
+        try {
+            // 尝试 HuggingFace TEI 健康检查端点
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/health"))
+                .GET()
+                .build();
+            HttpResponse<String> response = httpClient.send(
+                request, HttpResponse.BodyHandlers.ofString()
+            );
+            cachedAvailable = response.statusCode() == 200;
+            if (cachedAvailable) {
+                log.info("[CrossEncoderReranker] ✅ 服务可用: baseUrl={}, model={}", baseUrl, rerankerModel);
+            } else {
+                log.warn("[CrossEncoderReranker] ❌ 服务不可用: health端点返回 {}", response.statusCode());
+            }
+            return cachedAvailable;
+        } catch (Exception e) {
+            log.warn("[CrossEncoderReranker] ❌ 服务不可用: health端点检查失败: {}", e.getMessage());
+            cachedAvailable = false;
+            return false;
+        }
+    }
+    
+    @Override
     public List<RerankedDocument> rerank(String query, List<String> candidates) {
         if (candidates == null || candidates.isEmpty()) {
             return new ArrayList<>();
         }
         
         try {
-            log.info("[Reranker] 开始重排序: query='{}', candidates={}", query, candidates.size());
+            log.info("[CrossEncoderReranker] 开始重排序: query='{}', candidates={}", query, candidates.size());
             
-            // 构建(Query, Doc)对
             List<QueryDocPair> pairs = new ArrayList<>();
             for (int i = 0; i < candidates.size(); i++) {
                 pairs.add(new QueryDocPair(query, candidates.get(i), i));
             }
             
-            // 批量调用Ollama Reranker API
             List<RerankResult> results = batchRerank(pairs);
             
-            // 按分数降序排序
             results.sort(Comparator.comparingDouble(RerankResult::getScore).reversed());
             
-            // 阈值过滤 + Top-K
             List<RerankedDocument> ranked = results.stream()
                 .filter(r -> r.getScore() >= threshold)
                 .limit(topK)
@@ -82,15 +109,14 @@ public class CrossEncoderReranker {
                 ))
                 .collect(Collectors.toList());
             
-            log.info("[Reranker] 重排序完成: input={}, output={}, avgScore={}", 
+            log.info("[CrossEncoderReranker] 重排序完成: input={}, output={}, avgScore={}", 
                 candidates.size(), ranked.size(),
                 String.format("%.3f", ranked.isEmpty() ? 0 : ranked.stream().mapToDouble(RerankedDocument::getRelevanceScore).average().orElse(0)));
             
             return ranked;
             
         } catch (Exception e) {
-            log.error("[Reranker] 重排序失败: {}", e.getMessage(), e);
-            // 降级: 返回原始顺序
+            log.error("[CrossEncoderReranker] 重排序失败: {}", e.getMessage(), e);
             return candidates.stream()
                 .limit(topK)
                 .map(doc -> new RerankedDocument(doc, 0.0, 0))
@@ -98,25 +124,23 @@ public class CrossEncoderReranker {
         }
     }
     
-    /**
-     * 批量重排序
-     */
     private List<RerankResult> batchRerank(List<QueryDocPair> pairs) throws Exception {
-        String url = baseUrl + "/api/rerank";
+        // ✅ TEI (Text Embeddings Inference) API 格式
+        String url = baseUrl + "/rerank";
         
-        // 构建请求体
-        List<List<String>> documents = pairs.stream()
-            .map(p -> List.of(p.query, p.document))
+        // 提取所有文档文本
+        List<String> texts = pairs.stream()
+            .map(p -> p.document)
             .collect(Collectors.toList());
         
+        // TEI 请求格式：{"query": "...", "texts": ["doc1", "doc2"]}
         String requestBody = objectMapper.writeValueAsString(
             java.util.Map.of(
-                "model", rerankerModel,
-                "documents", documents
+                "query", pairs.get(0).query,
+                "texts", texts
             )
         );
         
-        // 发送HTTP请求
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Content-Type", "application/json")
@@ -129,30 +153,27 @@ public class CrossEncoderReranker {
         );
         
         if (response.statusCode() != 200) {
-            throw new RuntimeException("Ollama Rerank API error: " + response.body());
+            throw new RuntimeException("TEI Rerank API error: " + response.body());
         }
         
-        // 解析响应
-        JsonNode jsonNode = objectMapper.readTree(response.body());
-        JsonNode resultsNode = jsonNode.get("results");
+        // TEI 响应格式：[{"index": 0, "score": 0.9}, ...]
+        JsonNode resultsNode = objectMapper.readTree(response.body());
         
-        if (resultsNode == null || !resultsNode.isArray()) {
-            throw new RuntimeException("Invalid rerank response from Ollama");
+        if (!resultsNode.isArray()) {
+            throw new RuntimeException("Invalid rerank response from TEI");
         }
         
         List<RerankResult> results = new ArrayList<>();
         for (int i = 0; i < resultsNode.size(); i++) {
             JsonNode resultNode = resultsNode.get(i);
+            int index = resultNode.get("index").asInt();
             double score = resultNode.get("score").asDouble();
-            results.add(new RerankResult(pairs.get(i).originalIndex, score));
+            results.add(new RerankResult(index, score));
         }
         
         return results;
     }
     
-    // ==================== 内部类 ====================
-    
-    @Data
     private static class QueryDocPair {
         private final String query;
         private final String document;
@@ -165,16 +186,21 @@ public class CrossEncoderReranker {
         }
     }
     
-    @Data
     private static class RerankResult {
         private final int originalIndex;
         private final double score;
-    }
-    
-    @Data
-    public static class RerankedDocument {
-        private final String content;
-        private final double relevanceScore;
-        private final int originalPosition;
+        
+        RerankResult(int originalIndex, double score) {
+            this.originalIndex = originalIndex;
+            this.score = score;
+        }
+        
+        public int getOriginalIndex() {
+            return originalIndex;
+        }
+        
+        public double getScore() {
+            return score;
+        }
     }
 }

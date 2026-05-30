@@ -1,15 +1,39 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
-    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.nl2sql.core.datasource.mapper.DataSourceMapper">
-    
-    <!-- 查询所有数据源 -->
-    <select id="findAllDataSources" resultType="java.util.HashMap">
-        SELECT id, name, db_type, host, port, database_name, username, password_encrypted
-        FROM datasources
-        WHERE is_active = 1
-        ORDER BY created_at DESC
+
+    <resultMap id="DataSourceConfigResultMap" type="com.nl2sql.metadata.entity.DataSourceConfig">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="type" column="type"/>
+        <result property="host" column="host"/>
+        <result property="port" column="port"/>
+        <result property="databaseName" column="database_name"/>
+        <result property="username" column="username"/>
+        <result property="password" column="password"/>
+        <result property="businessCategory" column="business_category"/>
+        <result property="industryCode" column="industry_code"/>
+        <result property="description" column="description"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!-- 插入数据源配置 -->
+    <insert id="insertDataSource" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO datasource_config (
+            name, type, host, port, database_name, username, password,
+            business_category, industry_code, description, created_at
+        ) VALUES (
+            #{name}, #{type}, #{host}, #{port}, #{databaseName}, #{username}, #{password},
+            #{businessCategory}, #{industryCode}, #{description}, NOW()
+        )
+    </insert>
+
+    <!-- 根据ID查询数据源 -->
+    <select id="selectById" resultMap="DataSourceConfigResultMap">
+        SELECT * FROM datasource_config WHERE id = #{id}
     </select>
-    
+
 </mapper>

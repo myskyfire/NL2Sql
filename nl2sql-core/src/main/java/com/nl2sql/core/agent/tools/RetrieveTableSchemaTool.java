@@ -2,14 +2,19 @@ package com.nl2sql.core.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.service.SchemaRetrievalService;
+import com.nl2sql.core.service.TableSelectionOrchestrator;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 检索表结构 Tool
@@ -33,7 +38,7 @@ public class RetrieveTableSchemaTool {
      * @param datasourceId 数据源ID
      * @return JSON格式：{"success": true, "schema": "..."} 或 {"success": false, "error": "..."}
      */
-    @Tool("根据用户问题检索相关的数据库表结构信息，返回表的字段、类型、注释等元数据")
+    @Tool(name = "retrieveSchema", value = "根据用户问题检索相关的数据库表结构信息，返回表的字段、类型、注释等元数据")
     public String execute(
         @P("用户的自然语言问题，例如：查询上月订单总额") String question,
         @P("数据源ID") Long datasourceId
@@ -57,6 +62,12 @@ public class RetrieveTableSchemaTool {
             }
             
             log.info("[RetrieveTableSchemaTool] 表结构检索成功，长度: {} 字符", schema.length());
+
+            List<String> tableNames = extractTableNamesFromSchema(schema);
+            if (!tableNames.isEmpty()) {
+                TableSelectionOrchestrator.setPreRetrievedTables(tableNames);
+                log.info("[RetrieveTableSchemaTool] 已设置预检索表列表到ThreadLocal: {}", tableNames);
+            }
             
             // 构建成功响应
             return buildSuccessResponse(schema);
@@ -88,5 +99,20 @@ public class RetrieveTableSchemaTool {
         return ToolResponseBuilder.error("SCHEMA_RETRIEVAL_ERROR", error)
             .addMetadata("toolName", "retrieve_table_schema")
             .build();
+    }
+
+    private List<String> extractTableNamesFromSchema(String schema) {
+        List<String> tables = new ArrayList<>();
+        if (schema == null || schema.isEmpty()) {
+            return tables;
+        }
+
+        Pattern pattern = Pattern.compile("\\n表名:\\s*(\\w+)");
+        Matcher matcher = pattern.matcher(schema);
+        while (matcher.find()) {
+            tables.add(matcher.group(1).toLowerCase());
+        }
+
+        return tables;
     }
 }

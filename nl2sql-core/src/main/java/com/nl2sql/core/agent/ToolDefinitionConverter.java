@@ -1,9 +1,11 @@
 package com.nl2sql.core.agent;
 
+import com.nl2sql.core.agent.tool.ToolVisibility;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 工具定义转换器 - 将 ReActAgent 的工具转换为 OpenAI 兼容格式
@@ -13,27 +15,42 @@ public class ToolDefinitionConverter {
     
     /**
      * 将 ReActAgent 的工具列表转换为 OpenAI 兼容的 tools 格式
+     * ✅ P1-2: 默认仅包含 PUBLIC tools
      */
     public static List<Map<String, Object>> convertToOpenAITools(Map<String, ReActAgent.ToolExecutor> tools) {
-        List<Map<String, Object>> openAITools = new ArrayList<>();
-        
-        for (Map.Entry<String, ReActAgent.ToolExecutor> entry : tools.entrySet()) {
-            String toolName = entry.getKey();
-            ReActAgent.ToolExecutor executor = entry.getValue();
-            
-            Map<String, Object> toolDef = new HashMap<>();
-            toolDef.put("type", "function");
-            
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", toolName);
-            function.put("description", executor.getDescription());
-            function.put("parameters", buildParametersSchema(toolName));
-            
-            toolDef.put("function", function);
-            openAITools.add(toolDef);
-        }
-        
-        return openAITools;
+        return convertToOpenAITools(tools, false);  // 默认不包含 INTERNAL
+    }
+    
+    /**
+     * 将 ReActAgent 的工具列表转换为 OpenAI 兼容的 tools 格式
+     * 
+     * @param tools 工具映射
+     * @param includeInternal 是否包含 INTERNAL tools
+     * @return OpenAI 格式的工具列表
+     */
+    public static List<Map<String, Object>> convertToOpenAITools(Map<String, ReActAgent.ToolExecutor> tools, boolean includeInternal) {
+        return tools.entrySet().stream()
+            .filter(entry -> {
+                ReActAgent.ToolExecutor executor = entry.getValue();
+                // 如果 includeInternal=false，过滤掉 INTERNAL tools
+                return includeInternal || executor.getVisibility() == ToolVisibility.PUBLIC;
+            })
+            .map(entry -> {
+                String toolName = entry.getKey();
+                ReActAgent.ToolExecutor executor = entry.getValue();
+                
+                Map<String, Object> toolDef = new HashMap<>();
+                toolDef.put("type", "function");
+                
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", toolName);
+                function.put("description", executor.getDescription());
+                function.put("parameters", buildParametersSchema(toolName));
+                
+                toolDef.put("function", function);
+                return toolDef;
+            })
+            .collect(Collectors.toList());
     }
     
     /**

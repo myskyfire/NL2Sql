@@ -26,42 +26,43 @@ public class AISummaryTool {
      * 
      * @param userQuery 用户原始问题
      * @param sql 执行的SQL
-     * @param dataJson 查询结果数据JSON字符串
-     * @return AI生成的总结文本
+     * @param data 查询结果数据（可以是JSON字符串或List<Map>对象）
+     * @return AI生成的总结文本（JSON格式，包含 type 和 message 字段）
      */
-    @Tool("对SQL查询结果进行智能分析和总结，提取关键洞察")
-    public String summarize(String userQuery, String sql, String dataJson) {
+    @Tool(name = "summarize_result", value = "对SQL查询结果进行智能分析和总结，提取关键洞察")
+    public String summarize(String userQuery, String sql, Object data) {
         try {
-            List<Map<String, Object>> data = parseDataJson(dataJson);
-            log.info("[AISummaryTool] 开始生成总结: data行数={}", data != null ? data.size() : 0);
+            List<Map<String, Object>> dataList = parseData(data);
+            log.info("[AISummaryTool] 开始生成总结: data行数={}", dataList != null ? dataList.size() : 0);
             
-            if (data == null || data.isEmpty()) {
-                return "查询结果为空，无法生成总结。";
+            if (dataList == null || dataList.isEmpty()) {
+                // ✅ 返回标准JSON格式，包含 type 字段
+                return "{\"type\":\"summary\",\"message\":\"查询结果为空，无法生成总结。\"}";
             }
             
             StringBuilder promptBuilder = new StringBuilder();
-            promptBuilder.append("你是一个专业的数据分析师。请根据以下查询结果进行分析和总结。\n\n");
+            promptBuilder.append("分析查询结果:\n\n");
             
             if (userQuery != null && !userQuery.isEmpty()) {
-                promptBuilder.append("用户问题：").append(userQuery).append("\n\n");
+                promptBuilder.append("问题：").append(userQuery).append("\n\n");
             }
             
             if (sql != null && !sql.isEmpty()) {
-                promptBuilder.append("SQL查询：\n").append(sql).append("\n\n");
+                promptBuilder.append("SQL：\n").append(sql).append("\n\n");
             }
             
-            promptBuilder.append("查询结果：共").append(data.size()).append("行数据\n\n");
+            promptBuilder.append("结果：共").append(dataList.size()).append("行\n\n");
             
             // 以表格形式展示数据
-            Set<String> columns = data.get(0).keySet();
+            Set<String> columns = dataList.get(0).keySet();
             String header = String.join(" | ", columns);
             promptBuilder.append(header).append("\n");
             promptBuilder.append(String.join("-|-", java.util.Collections.nCopies(columns.size(), "---"))).append("\n");
             
-            // 最多显示15行
-            int displayRows = Math.min(15, data.size());
+            // 最多显示 15 行
+            int displayRows = Math.min(15, dataList.size());
             for (int i = 0; i < displayRows; i++) {
-                Map<String, Object> row = data.get(i);
+                Map<String, Object> row = dataList.get(i);
                 List<String> values = new ArrayList<>();
                 for (String col : columns) {
                     Object value = row.get(col);
@@ -70,32 +71,55 @@ public class AISummaryTool {
                 promptBuilder.append(String.join(" | ", values)).append("\n");
             }
             
-            if (data.size() > 15) {
-                promptBuilder.append("... 还有 ").append(data.size() - 15).append(" 行数据\n");
+            if (dataList.size() > 15) {
+                promptBuilder.append("... 还有 ").append(dataList.size() - 15).append(" 行\n");
             }
             promptBuilder.append("\n");
             
-            promptBuilder.append("请分析以上数据并总结：\n");
-            promptBuilder.append("1. 数据的主要趋势或模式\n");
-            promptBuilder.append("2. 关键数值和异常点\n");
-            promptBuilder.append("3. 业务洞察和建议\n\n");
-            promptBuilder.append("要求：\n");
-            promptBuilder.append("- 必须基于上述实际数据进行分析\n");
-            promptBuilder.append("- 使用清晰的段落结构，每个要点之间用空行分隔\n");
-            promptBuilder.append("- 数字列表格式：1. xxx\\n\\n2. xxx\\n\\n3. xxx\n");
-            promptBuilder.append("- 子项使用破折号：- xxx\n");
-            promptBuilder.append("- 控制总字数在200字以内\n");
-            promptBuilder.append("- 用简洁的中文回答");
+            promptBuilder.append("要求：基于实际数据，段落清晰，200字以内，简洁中文");
             
             String summary = modelRouter.getMultiModelService().summarizeResult(promptBuilder.toString());
             
             log.info("[AISummaryTool] 总结生成完成");
-            return summary != null ? summary : "无法生成总结";
+            
+            // ✅ 返回标准JSON格式，前端通过 type='summary' 识别并显示
+            String resultSummary = summary != null ? summary : "无法生成总结";
+            // 转义JSON特殊字符
+            resultSummary = resultSummary.replace("\\", "\\\\")
+                                        .replace("\"", "\\\"")
+                                        .replace("\n", "\\n")
+                                        .replace("\r", "\\r")
+                                        .replace("\t", "\\t");
+            
+            return "{\"type\":\"summary\",\"message\":\"" + resultSummary + "\"}";
             
         } catch (Exception e) {
             log.error("[AISummaryTool] 生成总结失败", e);
-            return "总结生成失败：" + e.getMessage();
+            return "{\"type\":\"summary\",\"message\":\"总结生成失败：" + e.getMessage().replace("\"", "\\\"") + "\"}";
         }
+    }
+    
+    /**
+     * 解析数据（支持JSON字符串或List<Map>对象）
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseData(Object data) {
+        if (data == null) {
+            return new ArrayList<>();
+        }
+        
+        // 如果已经是 List 类型，直接返回
+        if (data instanceof List) {
+            return (List<Map<String, Object>>) data;
+        }
+        
+        // 如果是 String 类型，尝试解析 JSON
+        if (data instanceof String) {
+            return parseDataJson((String) data);
+        }
+        
+        log.warn("[AISummaryTool] 不支持的数据类型: {}", data.getClass().getName());
+        return new ArrayList<>();
     }
     
     /**

@@ -356,31 +356,27 @@ public class AuthService {
     /**
      * 授权用户访问指定表(仅管理员)
      */
-    public boolean grantTablePermission(Long operatorId, Long targetUserId, String databaseName, String tableName) {
+    public boolean grantTablePermission(Long operatorId, Long targetUserId, String databaseName, String tableName, Long datasourceId) {
         try {
             if (!isAdmin(operatorId)) {
                 return false;
             }
             
-            // 检查目标用户是否存在
             Integer count = authMapper.checkUserExists(targetUserId);
             
             if (count == null || count == 0) {
                 return false;
             }
             
-            // 插入或更新授权
             tablePermissionMapper.insertTablePermission(targetUserId, databaseName.toLowerCase(), tableName.toLowerCase(), String.valueOf(operatorId));
             
-            // 清除缓存
             String cacheKey = String.format(TABLE_PERMS_CACHE_KEY, targetUserId);
             redisTemplate.delete(cacheKey);
             
-            // 记录日志
             logOperation(operatorId, targetUserId, "GRANT_TABLE", 
-                        String.format("授权访问表: %s.%s", databaseName, tableName), null);
+                        String.format("授权访问表: datasourceId=%s, %s.%s", datasourceId, databaseName, tableName), null);
             
-            log.info("表授权成功: operatorId={}, targetUserId={}, database={}, table={}", operatorId, targetUserId, databaseName, tableName);
+            log.info("表授权成功: operatorId={}, targetUserId={}, datasourceId={}, database={}, table={}", operatorId, targetUserId, datasourceId, databaseName, tableName);
             return true;
             
         } catch (Exception e) {
@@ -392,7 +388,7 @@ public class AuthService {
     /**
      * 撤销用户的表访问权限(仅管理员)
      */
-    public boolean revokeTablePermission(Long operatorId, Long targetUserId, String databaseName, String tableName) {
+    public boolean revokeTablePermission(Long operatorId, Long targetUserId, String databaseName, String tableName, Long datasourceId) {
         try {
             if (!isAdmin(operatorId)) {
                 return false;
@@ -401,14 +397,13 @@ public class AuthService {
             int affected = tablePermissionMapper.deactivateTablePermission(targetUserId, databaseName.toLowerCase(), tableName.toLowerCase());
             
             if (affected > 0) {
-                // 清除缓存
                 String cacheKey = String.format(TABLE_PERMS_CACHE_KEY, targetUserId);
                 redisTemplate.delete(cacheKey);
                 
                 logOperation(operatorId, targetUserId, "REVOKE_TABLE", 
-                            String.format("撤销表权限: %s.%s", databaseName, tableName), null);
+                            String.format("撤销表权限: datasourceId=%s, %s.%s", datasourceId, databaseName, tableName), null);
                 
-                log.info("撤销表权限成功: targetUserId={}, database={}, table={}", targetUserId, databaseName, tableName);
+                log.info("撤销表权限成功: targetUserId={}, datasourceId={}, database={}, table={}", targetUserId, datasourceId, databaseName, tableName);
                 return true;
             }
             
@@ -423,19 +418,19 @@ public class AuthService {
     /**
      * 获取用户的表授权列表
      */
-    public List<TablePermission> getUserTablePermissions(Long userId) {
+    public List<TablePermission> getUserTablePermissions(Long userId, Long datasourceId) {
         try {
-            String sql = "SELECT tp.id, tp.user_id, u.username, u.real_name, " +
-                        "tp.table_name, tp.granted_by, tp.granted_at, tp.is_active " +
-                        "FROM table_permissions tp " +
-                        "JOIN users u ON tp.user_id = u.id " +
-                        "WHERE tp.user_id = ? " +
-                        "ORDER BY tp.granted_at DESC";
-            
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, userId);
+            List<Map<String, Object>> rows = tablePermissionMapper.findUserTablePermissions(userId);
             List<TablePermission> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
+                if (datasourceId != null) {
+                    Object rowDatasourceId = row.get("datasource_id");
+                    if (rowDatasourceId == null || !datasourceId.equals(((Number) rowDatasourceId).longValue())) {
+                        continue;
+                    }
+                }
+                
                 TablePermission perm = new TablePermission();
                 perm.setId(((Number) row.get("id")).longValue());
                 perm.setUserId(((Number) row.get("user_id")).longValue());
@@ -461,10 +456,17 @@ public class AuthService {
     /**
      * 获取所有表的授权统计
      */
-    public List<Map<String, Object>> getAllTablePermissions() {
+    public List<Map<String, Object>> getAllTablePermissions(Long datasourceId) {
         try {
-            // ✅ 使用Mapper查询
-            return tablePermissionMapper.findAllTablePermissions();
+            List<Map<String, Object>> allPermissions = tablePermissionMapper.findAllTablePermissions();
+            
+            if (datasourceId == null) {
+                return allPermissions;
+            }
+            
+            return allPermissions.stream()
+                .filter(p -> datasourceId.equals(p.get("datasource_id")))
+                .collect(java.util.stream.Collectors.toList());
         } catch (Exception e) {
             log.error("获取所有表授权统计失败", e);
             return Collections.emptyList();
@@ -474,13 +476,19 @@ public class AuthService {
     /**
      * 按表名查询已授权的用户列表
      */
-    public List<TablePermission> getPermissionsByTable(String databaseName, String tableName) {
+    public List<TablePermission> getPermissionsByTable(String databaseName, String tableName, Long datasourceId) {
         try {
-            // ✅ 使用Mapper查询
             List<Map<String, Object>> rows = tablePermissionMapper.findByTableName(databaseName != null ? databaseName.toLowerCase() : null, tableName.toLowerCase());
             List<TablePermission> result = new ArrayList<>();
             
             for (Map<String, Object> row : rows) {
+                if (datasourceId != null) {
+                    Object rowDatasourceId = row.get("datasource_id");
+                    if (rowDatasourceId == null || !datasourceId.equals(((Number) rowDatasourceId).longValue())) {
+                        continue;
+                    }
+                }
+                
                 TablePermission perm = new TablePermission();
                 perm.setId(((Number) row.get("id")).longValue());
                 perm.setUserId(((Number) row.get("user_id")).longValue());
@@ -507,7 +515,7 @@ public class AuthService {
             return result;
             
         } catch (Exception e) {
-            log.error("按表查询权限失败: database={}, table={}", databaseName, tableName, e);
+            log.error("按表查询权限失败: database={}, table={}, datasourceId={}", databaseName, tableName, datasourceId, e);
             return Collections.emptyList();
         }
     }

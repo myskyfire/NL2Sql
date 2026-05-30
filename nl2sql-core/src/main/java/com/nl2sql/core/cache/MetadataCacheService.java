@@ -2,7 +2,6 @@ package com.nl2sql.core.cache;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.nl2sql.core.rerank.JinaReranker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -35,9 +34,6 @@ public class MetadataCacheService {
     
     @Autowired(required = false)
     private QueryCacheVectorService queryCacheVectorService;
-    
-    @Autowired(required = false)
-    private JinaReranker jinaReranker;  // ✅ Jina AI重排序服务
     
     /**
      * 表结构缓存：key = "schema:{datasourceId}:{tableName}"
@@ -255,62 +251,6 @@ public class MetadataCacheService {
                     
                     log.info("[MetadataCache] ✅ L3语义匹配成功(Chroma): query='{}', similar='{}', similarity={}, jaccard={}", 
                         query, bestMatch.getCachedQuery(), String.format("%.3f", bestMatch.getScore()), String.format("%.3f", jaccardScore));
-                    
-                    // ==================== ✅ 新增：Jina Reranker重排序 ====================
-                    if (jinaReranker != null) {
-                        try {
-                            log.info("[MetadataCache] 🔄 启动Jina Reranker重排序");
-                            
-                            // 1. 从Chroma获取Top-20候选
-                            List<QueryCacheVectorService.CachedQueryResult> candidates = 
-                                queryCacheVectorService.findTopKMatches(query, datasourceId, 20);
-                            
-                            if (candidates != null && !candidates.isEmpty()) {
-                                // 2. 提取候选文档文本
-                                List<String> candidateDocs = candidates.stream()
-                                    .map(c -> c.getCachedQuery())
-                                    .collect(java.util.stream.Collectors.toList());
-                                
-                                // 3. 调用Jina Reranker精排 TODO 后面再放开
-                                /*List<JinaReranker.RerankedDocument> reranked =
-                                    jinaReranker.rerank(query, candidateDocs);*/
-                                List<JinaReranker.RerankedDocument> reranked = new ArrayList<>();
-                                if (!reranked.isEmpty()) {
-                                    // 4. 取Top-1最佳匹配
-                                    JinaReranker.RerankedDocument bestDoc = reranked.get(0);
-                                    
-                                    log.info("[MetadataCache] ✅ Reranking完成: originalScore={}, rerankScore={}", 
-                                        String.format("%.3f", bestMatch.getScore()), 
-                                        String.format("%.3f", bestDoc.getRelevanceScore()));
-                                    
-                                    // 5. 查找对应的CachedQueryResult获取tables
-                                    String bestMatchedQuery = bestDoc.getContent();
-                                    QueryCacheVectorService.CachedQueryResult finalMatch = candidates.stream()
-                                        .filter(c -> c.getCachedQuery().equals(bestMatchedQuery))
-                                        .findFirst()
-                                        .orElse(bestMatch);
-                                    
-                                    try {
-                                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                                        @SuppressWarnings("unchecked")
-                                        List<String> tables = mapper.readValue(finalMatch.getTables(), List.class);
-                                        log.info("[MetadataCache] ✅ Reranking缓存命中，返回表: {}", tables);
-                                        return tables;
-                                    } catch (Exception e) {
-                                        log.warn("[MetadataCache] ⚠️ 解析缓存的tables失败: query='{}', error={}", 
-                                            query, e.getMessage());
-                                        return null;
-                                    }
-                                }
-                            }
-                            
-                            log.warn("[MetadataCache] ⚠️ Reranking无结果，降级到原始匹配");
-                            
-                        } catch (Exception e) {
-                            log.error("[MetadataCache] ❌ Reranking失败，降级到原始匹配: {}", e.getMessage(), e);
-                        }
-                    }
-                    // ==================== Reranking结束 ====================
                     
                     // 解析JSON格式的tables字符串
                     try {

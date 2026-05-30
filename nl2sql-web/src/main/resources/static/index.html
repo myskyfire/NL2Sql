@@ -76,7 +76,7 @@
         /* 侧边栏 */
         .sidebar {
             width: 200px; /* ✅ 调整宽度，避免菜单项换行 */
-            min-width: 150px; /* ✅ 最小宽度 */
+            min-width: 200px;
             max-width: 400px; /* ✅ 最大宽度 */
             background: white;
             box-shadow: 2px 0 10px rgba(0,0,0,0.05);
@@ -87,6 +87,54 @@
             overflow-x: hidden;
             max-height: calc(100vh - 60px); /* ✅ 减去顶部导航栏高度 */
             position: relative; /* ✅ 为拖拽条定位 */
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            padding: 0;
+            overflow: hidden;
+            border-right: none;
+        }
+        
+        /* 折叠按钮 */
+        .sidebar-toggle {
+            position: absolute;
+            left: 200px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 60px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: all 0.3s ease;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+        }
+        
+        .sidebar-toggle:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .sidebar-toggle.collapsed {
+            left: 0;
+        }
+        
+        .sidebar-toggle-icon {
+            font-size: 12px;
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar-toggle.collapsed .sidebar-toggle-icon {
+            transform: rotate(180deg);
         }
         
         /* ✅ 拖拽条 */
@@ -485,6 +533,11 @@
             <div class="sidebar-resizer" id="sidebarResizer"></div>
         </div>
         
+        <!-- 折叠按钮 -->
+        <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+            <span class="sidebar-toggle-icon">◀</span>
+        </button>
+        
         <!-- 内容区域 -->
         <div class="content-area">
             <!-- 页签栏 -->
@@ -822,6 +875,8 @@
                     const isChatPage = iframe.src.includes('agent-chat.html') || iframe.src.includes('stream-chat.html');
                     // ✅ 判断是否为表关联管理页面（需要显示 header）
                     const isRelationshipPage = iframe.src.includes('relationship-management.html');
+                    // ✅ 判断是否为帮助中心页面（需要保留 flex 布局）
+                    const isHelpCenterPage = iframe.src.includes('help-center.html');
                     
                     style.textContent = `
                         /* 强制重置 body */
@@ -839,8 +894,8 @@
                         }
                         /* 隐藏子页面的独立 header（表关联管理页面除外） */
                         ${isRelationshipPage ? '' : '.chat-header, .header { display: none !important; }'}
-                        /* 调整容器 - 保留底部边距 */
-                        .chat-container, .container, .main-container, .app-container, .query-container {
+                        /* 调整容器 - 保留底部边距（帮助中心除外，保持flex布局） */
+                        ${isHelpCenterPage ? '' : `.chat-container, .container, .main-container, .app-container, .query-container {
                             height: auto !important;
                             min-height: auto !important;
                             max-height: none !important;
@@ -852,7 +907,7 @@
                             padding: 0 !important;
                             display: block !important;
                             overflow: visible !important;
-                        }
+                        }`}
                         /* 内容区域允许正常显示 */
                         .chat-messages, .content-area, .messages-container, .chat-area, .content {
                             height: auto !important;
@@ -1033,6 +1088,14 @@
             function isAdminPage(pageName) {
                 return adminPages.includes(pageName);
             }
+        
+        // 折叠/展开侧边栏
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.getElementById('sidebarToggle');
+            sidebar.classList.toggle('collapsed');
+            toggle.classList.toggle('collapsed');
+        }
         
         // 切换页面
         function showPage(pageName, clickedElement) {
@@ -1628,19 +1691,19 @@
             window.addEventListener('message', handleIframeMessage);
         };
         
-        // ✅ 处理iframe发送的消息
+        // ✅ 处理 iframe 发送的消息
         function handleIframeMessage(event) {
             const data = event.data;
             
             if (data.type === 'SHOW_MODAL') {
-                showRelationshipModal(data.modalType);
+                showRelationshipModal(data.modalType, data.relationshipData, data.data);
             } else if (data.type === 'CLOSE_MODAL') {
                 closeRelationshipModal();
             }
         }
         
         // ✅ 显示表关联管理模态框
-        function showRelationshipModal(modalType) {
+        function showRelationshipModal(modalType, relationshipData = null, modalData = null) {
             const overlay = document.getElementById('relationshipModalOverlay');
             const content = document.getElementById('relationshipModalContent');
             const iframe = document.getElementById('iframe-relationship-management');
@@ -1653,16 +1716,20 @@
             // 根据类型设置不同的内容
             let modalHTML = '';
             
-            if (modalType === 'create' || modalType === 'edit') {
-                // 创建/编辑模态框 - 从iframe中获取表单
+            if (modalType === 'create') {
+                // 创建模态框 - 从iframe中获取表单
                 const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
                 const form = iframeDoc.getElementById('relationshipForm');
                 const modalTitle = iframeDoc.getElementById('modalTitle');
                 
                 if (form && modalTitle) {
+                    // ✅ 设置标题
+                    const titleText = '➕ 创建关联关系';
+                    modalTitle.textContent = titleText;
+                    
                     modalHTML = `
                         <div class="modal-header" style="padding:20px 24px;border-bottom:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
-                            <h2 style="font-size:18px;color:#333;margin:0;">${modalTitle.textContent}</h2>
+                            <h2 style="font-size:18px;color:#333;margin:0;">${titleText}</h2>
                             <button onclick="closeRelationshipModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
                         </div>
                         <div class="modal-body" style="padding:24px;">
@@ -1725,6 +1792,21 @@
             
             content.innerHTML = modalHTML;
             overlay.style.display = 'flex';
+            
+            // ✅ 修复：显示模态框后，调用 iframe 中的 loadTables() 加载表列表
+            if (modalType === 'create') {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const iframeWindow = iframe.contentWindow;
+                
+                // 等待 DOM 更新后再调用
+                setTimeout(() => {
+                    if (iframeWindow && typeof iframeWindow.loadTables === 'function') {
+                        iframeWindow.loadTables().then(() => {
+                            console.log('[showRelationshipModal] 表列表加载完成');
+                        });
+                    }
+                }, 100);
+            }
         }
         
         // ✅ 关闭表关联管理模态框

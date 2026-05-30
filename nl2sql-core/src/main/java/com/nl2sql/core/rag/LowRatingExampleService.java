@@ -54,8 +54,8 @@ public class LowRatingExampleService {
      */
     public LowRatingExample checkIfSimilarToLowRating(String question, String generatedSql) {
         try {
-            // ✅ 使用MyBatis Mapper查询
-            return ragFeedbackMapper.checkExactMatchLowRating(question);
+            // ✅ 使用MyBatis Mapper查询（同时匹配 question + SQL）
+            return ragFeedbackMapper.checkExactMatchLowRating(question, generatedSql);
             
         } catch (Exception e) {
             log.error("[低分检查] 查询失败: question={}", question, e);

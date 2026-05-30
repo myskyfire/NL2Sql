@@ -15,6 +15,9 @@ public class RagAutoLearner {
     @Autowired(required = false)
     private RagKnowledgeBaseService ragService;
     
+    @Autowired(required = false)
+    private ConceptAliasExtractor conceptAliasExtractor;
+    
     /**
      * 自动学习：保存成功的 SQL 到知识库
      * 
@@ -65,6 +68,15 @@ public class RagAutoLearner {
             
             log.info("[RagAutoLearner] ✅ 自动学习成功: id={}, question={}, quality={}", 
                 knowledgeId, question, qualityScore);
+            
+            if (conceptAliasExtractor != null && qualityScore >= 0.8) {
+                try {
+                    Long datasourceId = RagLearningContext.getCurrentDatasourceId();
+                    conceptAliasExtractor.extractAndSave(question, sql, datasourceId, qualityScore);
+                } catch (Exception e) {
+                    log.warn("[RagAutoLearner] 概念别名提取失败: {}", e.getMessage());
+                }
+            }
             
         } catch (Exception e) {
             log.error("[RagAutoLearner] 自动学习失败: question={}", question, e);
@@ -156,50 +168,51 @@ public class RagAutoLearner {
     private boolean validateSemanticConsistency(String question, String sql) {
         String upperSql = sql.toUpperCase();
         boolean hasGroupBy = upperSql.contains("GROUP BY");
+        boolean hasAggregation = upperSql.contains("SUM(") || 
+                               upperSql.contains("COUNT(") ||
+                               upperSql.contains("AVG(") ||
+                               upperSql.contains("MAX(") ||
+                               upperSql.contains("MIN(");
         
-        // 规则1: 如果SQL有GROUP BY，问题必须包含统计类关键词
-        if (hasGroupBy) {
-            boolean isStatQuestion = question.contains("统计") || 
-                                   question.contains("汇总") ||
-                                   question.contains("平均") ||
-                                   question.contains("合计") ||
-                                   question.contains("每个") ||
-                                   question.contains("各") ||
-                                   question.contains("分组");
-            
-            if (!isStatQuestion) {
-                log.warn("[RagAutoLearner] 语义不一致: SQL包含GROUP BY但问题非统计类: {}", question);
-                return false;
-            }
+        boolean isStatQuestion = isStatisticalQuestion(question);
+        
+        if (hasGroupBy && !isStatQuestion) {
+            log.warn("[RagAutoLearner] 语义不一致: SQL包含GROUP BY但问题非统计类: {}", question);
+            return false;
         }
         
-        // 规则2: 如果问题是统计类，SQL必须有聚合函数或GROUP BY
-        boolean isStatQuestion = question.contains("统计") || 
-                               question.contains("汇总") ||
-                               question.contains("平均") ||
-                               question.contains("合计");
-        
-        if (isStatQuestion) {
-            boolean hasAggregation = upperSql.contains("SUM(") || 
-                                   upperSql.contains("COUNT(") ||
-                                   upperSql.contains("AVG(") ||
-                                   upperSql.contains("MAX(") ||
-                                   upperSql.contains("MIN(") ||
-                                   hasGroupBy;
-            
-            if (!hasAggregation) {
-                log.warn("[RagAutoLearner] 语义不一致: 问题是统计类但SQL无聚合: {}", question);
-                return false;
-            }
+        if (isStatQuestion && !hasAggregation && !hasGroupBy) {
+            log.warn("[RagAutoLearner] 语义不一致: 问题是统计类但SQL无聚合: {}", question);
+            return false;
         }
         
-        // 规则3: 禁止SELECT * 用于统计问题
         if (isStatQuestion && upperSql.contains("SELECT *")) {
             log.warn("[RagAutoLearner] 语义不一致: 统计问题不应使用SELECT *: {}", question);
             return false;
         }
         
         return true;
+    }
+    
+    private boolean isStatisticalQuestion(String question) {
+        String[] statKeywords = {
+            "统计", "汇总", "平均", "合计", "每个", "各", "分组",
+            "每天", "每月", "每年", "每周", "每日", "每月", "每年",
+            "数量", "金额", "总额", "总量", "总计", "总数",
+            "多少", "几", "占比", "比例", "百分比",
+            "排名", "排行", "top", "前几",
+            "趋势", "变化", "增长", "下降",
+            "分布", "对比", "比较", "差异",
+            "最大", "最小", "最高", "最低",
+            "累计", "累计", "逐", "按"
+        };
+        
+        for (String keyword : statKeywords) {
+            if (question.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
     
     /**

@@ -40,6 +40,17 @@ public interface LLMProvider {
     String generateJson(String systemPrompt, String userPrompt, double temperature);
     
     /**
+     * 原生 Tool Calling（可选实现）
+     * @param messages 消息列表
+     * @param temperature 温度参数
+     * @param tools 工具定义列表
+     * @return 完整响应（包含 tool_calls 或 content）
+     */
+    default Map<String, Object> generateWithTools(java.util.List<Map<String, Object>> messages, double temperature, java.util.List<Map<String, Object>> tools) {
+        throw new UnsupportedOperationException("当前 Provider 不支持原生 Tool Calling");
+    }
+    
+    /**
      * 流式生成（可选实现）
      * @param prompt 提示词
      * @param callback 流式回调

@@ -4,6 +4,7 @@ import com.nl2sql.common.util.MarkdownUtils;
 import com.nl2sql.core.agent.validation.SQLValidationService;
 import com.nl2sql.core.cache.MetadataCacheService;
 import com.nl2sql.core.llm.ModelRouterService;
+import com.nl2sql.core.mapper.MetadataMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,6 +37,9 @@ public class SQLCorrectionService {
     @Autowired
     private MetadataCacheService metadataCacheService;
     
+    @Autowired
+    private MetadataMapper metadataMapper;
+    
     /**
      * SQL 验证与 Self-Correction
      * 
@@ -65,7 +69,7 @@ public class SQLCorrectionService {
                     
                     // 触发重新生成
                     log.info("[SQLCorrection] 尝试修正幻觉列名...");
-                    sql = attemptHallucinationCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues);
+                    sql = attemptHallucinationCorrection(sql, question, schemaInfo, relationshipInfo, whitelistIssues, datasourceId);
                     continue; // 重新验证
                 }
             }
@@ -85,7 +89,7 @@ public class SQLCorrectionService {
             // 2. 如果是语法错误，尝试修正
             if (!report.isSyntaxValid()) {
                 log.info("[SQLCorrection] 尝试修正语法错误: {}", report.getSyntaxError());
-                sql = attemptSyntaxCorrection(sql, report.getSyntaxError(), question, schemaInfo, relationshipInfo);
+                sql = attemptSyntaxCorrection(sql, report.getSyntaxError(), question, schemaInfo, relationshipInfo, datasourceId);
                 continue;
             }
             
@@ -106,7 +110,7 @@ public class SQLCorrectionService {
                 // ✅ 关键修复：如果是严重问题（如 GROUP BY 不匹配），尝试修正
                 if (attempt < maxRetries) {
                     log.info("[SQLCorrection] 尝试修正聚合/JOIN问题...");
-                    sql = attemptAggregationCorrection(sql, question, schemaInfo, relationshipInfo, warning.toString());
+                    sql = attemptAggregationCorrection(sql, question, schemaInfo, relationshipInfo, warning.toString(), datasourceId);
                     continue; // 重新验证
                 } else {
                     log.warn("[SQLCorrection] 达到最大重试次数，返回原SQL（可能存在风险）");
@@ -225,15 +229,18 @@ public class SQLCorrectionService {
      * 尝试修正幻觉列名
      */
     public String attemptHallucinationCorrection(String sql, String question, String schemaInfo, 
-                                                 String relationshipInfo, List<String> issues) {
+                                                 String relationshipInfo, List<String> issues, Long datasourceId) {
         try {
+            String dbType = getDbType(datasourceId);
+            
             StringBuilder issueDesc = new StringBuilder();
             for (String issue : issues) {
                 issueDesc.append("- ").append(issue).append("\n");
             }
             
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句包含不存在的列名（大模型幻觉），请修正。\n\n" +
+                "你是" + dbType.toUpperCase() + " SQL专家。以下SQL语句包含不存在的列名（大模型幻觉），请修正。\n\n" +
+                "数据库类型：" + dbType.toUpperCase() + "\n\n" +
                 "用户问题：%s\n\n" +
                 "数据库表结构：\n%s\n\n" +
                 "%s" +
@@ -268,10 +275,13 @@ public class SQLCorrectionService {
      * 尝试修正语法错误
      */
     public String attemptSyntaxCorrection(String failedSql, String errorMessage, 
-                                          String question, String schemaInfo, String relationshipInfo) {
+                                          String question, String schemaInfo, String relationshipInfo, Long datasourceId) {
         try {
+            String dbType = getDbType(datasourceId);
+            
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句存在语法错误，请修正。\n\n" +
+                "你是" + dbType.toUpperCase() + " SQL专家。以下SQL语句存在语法错误，请修正。\n\n" +
+                "数据库类型：" + dbType.toUpperCase() + "\n\n" +
                 "用户问题：%s\n\n" +
                 "数据库表结构：\n%s\n\n" +
                 "%s" +
@@ -292,6 +302,15 @@ public class SQLCorrectionService {
             String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
             correctedSql = cleanSQL(correctedSql);
             
+            // ✅ 关键校验：检查是否为 LLM 错误信息
+            if (correctedSql.contains("LLM调用失败") || 
+                correctedSql.contains("API调用失败") || 
+                correctedSql.contains("request timed out") ||
+                correctedSql.contains("timeout")) {
+                log.error("[SQLCorrection] LLM 返回错误信息，非有效 SQL: {}", correctedSql);
+                return failedSql; // 返回原 SQL，避免死循环
+            }
+            
             log.info("[SQLCorrection] 修正后SQL: {}", correctedSql);
             return correctedSql;
             
@@ -305,10 +324,13 @@ public class SQLCorrectionService {
      * 尝试修正聚合/JOIN问题
      */
     public String attemptAggregationCorrection(String sql, String question, String schemaInfo, 
-                                               String relationshipInfo, String issues) {
+                                               String relationshipInfo, String issues, Long datasourceId) {
         try {
+            String dbType = getDbType(datasourceId);
+            
             String correctionPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL语句存在逻辑问题，请修正。\n\n" +
+                "你是" + dbType.toUpperCase() + " SQL专家。以下SQL语句存在逻辑问题，请修正。\n\n" +
+                "数据库类型：" + dbType.toUpperCase() + "\n\n" +
                 "用户问题：%s\n\n" +
                 "数据库表结构：\n%s\n\n" +
                 "%s" +
@@ -319,7 +341,7 @@ public class SQLCorrectionService {
                 "2. 不要包含```sql或其他标记\n" +
                 "3. **重要：SELECT 中的非聚合字段必须出现在 GROUP BY 中**\n" +
                 "   - 错误：SELECT o.created_at ... GROUP BY DATE_FORMAT(o.created_at, ...)\n" +
-                "   - 正确：SELECT DATE_FORMAT(o.created_at, '%%Y-%%m-%%d') AS '订单日期' ... GROUP BY DATE_FORMAT(o.created_at, '%%Y-%%m-%%d')\n" +
+                "   - 正确：SELECT和GROUP BY使用相同的原始表达式（如日期格式化函数）\n" +
                 "4. 确保 SELECT 和 GROUP BY 使用相同的表达式",
                 question,
                 schemaInfo,
@@ -330,6 +352,15 @@ public class SQLCorrectionService {
             
             String correctedSql = modelRouter.smartGenerateSQL(correctionPrompt, question);
             correctedSql = cleanSQL(correctedSql);
+            
+            // ✅ 关键校验：检查是否为 LLM 错误信息
+            if (correctedSql.contains("LLM调用失败") || 
+                correctedSql.contains("API调用失败") || 
+                correctedSql.contains("request timed out") ||
+                correctedSql.contains("timeout")) {
+                log.error("[SQLCorrection] LLM 返回错误信息，非有效 SQL: {}", correctedSql);
+                return sql; // 返回原 SQL
+            }
             
             log.info("[SQLCorrection] 聚合/JOIN修正后SQL: {}", correctedSql);
             return correctedSql;
@@ -382,7 +413,7 @@ public class SQLCorrectionService {
         log.info("[SQLCorrection] 开始SQL纠错: sql={}, error={}", sql, error);
         
         // 优先尝试语法修正
-        String correctedSql = attemptSyntaxCorrection(sql, error, "", "", "");
+        String correctedSql = attemptSyntaxCorrection(sql, error, "", "", "", null);
         
         if (correctedSql != null && !correctedSql.trim().isEmpty() && !correctedSql.equals(sql)) {
             result.setSuccess(true);
@@ -392,7 +423,7 @@ public class SQLCorrectionService {
         }
         
         // 尝试幻觉列名修正
-        correctedSql = attemptHallucinationCorrection(sql, "", "", "", java.util.Collections.singletonList(error));
+        correctedSql = attemptHallucinationCorrection(sql, "", "", "", java.util.Collections.singletonList(error), null);
         
         if (correctedSql != null && !correctedSql.trim().isEmpty() && !correctedSql.equals(sql)) {
             result.setSuccess(true);
@@ -408,5 +439,21 @@ public class SQLCorrectionService {
         log.warn("[SQLCorrection] ❌ SQL纠错失败");
         
         return result;
+    }
+    
+    /**
+     * 根据数据源ID获取数据库类型
+     */
+    private String getDbType(Long datasourceId) {
+        if (datasourceId == null) {
+            return "MySQL";
+        }
+        try {
+            String dbType = metadataMapper.getDbType(datasourceId);
+            return dbType != null ? dbType : "MySQL";
+        } catch (Exception e) {
+            log.warn("[SQLCorrection] 获取数据库类型失败，默认使用MySQL: {}", e.getMessage());
+            return "MySQL";
+        }
     }
 }

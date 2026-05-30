@@ -50,35 +50,18 @@ public class IntentClassifierTool {
      */
     private String buildClassificationPrompt(String query) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一个意图分类专家。请分析用户问题，判断其意图类型。\n\n");
+        prompt.append("请分析用户问题，判断其意图类型。\n\n");
         
-        prompt.append("## 可选意图类型\n");
-        prompt.append("1. QUERY - 数据查询（查某类数据、查指标等）\n");
-        prompt.append("2. ANALYSIS - 数据分析（趋势、对比、占比等）\n");
-        prompt.append("3. CHART - 图表生成（柱状图、折线图等）\n");
-        prompt.append("4. REPORT - 报告生成（生成分析报告）\n");
-        prompt.append("5. OPTIMIZE - SQL优化（优化SQL性能）\n");
-        prompt.append("6. DOWNLOAD - 数据下载（导出Excel/CSV）\n");
-        prompt.append("7. CLARIFY - 需要澄清（信息不足，需追问）\n");
-        prompt.append("8. OTHER - 其他（闲聊、无关问题）\n\n");
+        prompt.append("可选类型：\n");
+        prompt.append("QUERY-数据查询，ANALYSIS-数据分析，CHART-图表生成，REPORT-报告生成，\n");
+        prompt.append("OPTIMIZE-SQL 优化，DOWNLOAD-数据下载，CLARIFY-需澄清，OTHER-其他\n\n");
         
-        prompt.append("## 用户问题\n");
-        prompt.append(query).append("\n\n");
+        prompt.append("问题：").append(query).append("\n\n");
         
-        prompt.append("## 输出格式\n");
-        prompt.append("请以 JSON 格式输出：\n");
-        prompt.append("{\n");
-        prompt.append("  \"intent_type\": \"QUERY\",\n");
-        prompt.append("  \"confidence\": 0.95,\n");
-        prompt.append("  \"entities\": {\n");
-        prompt.append("    \"datasource\": \"数据源名称或null\",\n");
-        prompt.append("    \"tables\": [\"表名列表\"],\n");
-        prompt.append("    \"metrics\": [\"指标列表\"]\n");
-        prompt.append("  },\n");
-        prompt.append("  \"reasoning\": \"分类理由\"\n");
-        prompt.append("}\n\n");
+        prompt.append("输出 JSON 格式：\n");
+        prompt.append("{\"intent_type\":\"类型\",\"confidence\":0.95,\"entities\":{\"datasource\":\"数据源\",\"tables\":[],\"metrics\":[]},\"reasoning\":\"理由\"}\n\n");
         
-        prompt.append("请输出分类结果：");
+        prompt.append("分类结果：");
         
         return prompt.toString();
     }

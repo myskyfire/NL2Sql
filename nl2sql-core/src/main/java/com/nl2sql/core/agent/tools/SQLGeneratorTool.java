@@ -10,7 +10,6 @@ import com.nl2sql.core.rag.LowRatingExampleService;
 import com.nl2sql.core.rag.RagKnowledgeBaseService;
 import com.nl2sql.core.rag.RagLearningContext;
 import com.nl2sql.metadata.service.TableRelationshipService;
-import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -83,11 +82,14 @@ public class SQLGeneratorTool extends BaseToolAdapter {
     
     @Override
     protected void validateParameters(ToolContext context) {
+        // ✅ 关键修复：Long类型必须显式声明为Object，避免Java选择String重载
+        Object datasourceId = context.getParameter("datasourceId");
+        
         parameterValidator
-            .required("query", context.getParameter("query"))
+            .required("query", (String) context.getParameter("query"))
             .required("tables", context.getParameter("tables"))
-            .required("datasourceId", context.getParameter("datasourceId"))
-            .required("schemaInfo", context.getParameter("schemaInfo"))
+            .required("datasourceId", datasourceId)  // Object类型，强制调用Object版本
+            .required("schemaInfo", (String) context.getParameter("schemaInfo"))
             .throwIfHasErrors();
     }
     
@@ -169,6 +171,7 @@ public class SQLGeneratorTool extends BaseToolAdapter {
             // 8. 设置RAG学习上下文
             RagLearningContext.setCurrentQuestion(expandedQuery);
             RagLearningContext.setCurrentSql(sql);
+            RagLearningContext.setCurrentDatasourceId(datasourceId);
             
             // 9. 缓存SQL
             cacheSQL(expandedQuery, sql, datasourceId);
@@ -432,7 +435,6 @@ public class SQLGeneratorTool extends BaseToolAdapter {
         }
     }
     
-    @Tool("基于已选定的表和用户问题生成SQL语句。输入查询问题、表列表、数据源ID等信息，返回生成的SQL")
     public String generateSQL(String query, List<String> tables, Long datasourceId, 
                              String schemaInfo, String relationshipInfo, String llmResponse) {
         try {

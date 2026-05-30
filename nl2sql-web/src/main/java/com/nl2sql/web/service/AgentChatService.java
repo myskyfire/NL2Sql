@@ -3,10 +3,16 @@ package com.nl2sql.web.service;
 import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.context.UserContext;
 import com.nl2sql.common.result.Result;
+import com.nl2sql.common.util.BooleanUtils;
 import com.nl2sql.common.util.LogContextUtil;
 import com.nl2sql.conversation.ConversationHistoryService;
 import com.nl2sql.core.agent.ReActAgent;
+import com.nl2sql.core.agent.SupervisorAgent;
+import com.nl2sql.core.agent.tools.AISummaryTool;
+import com.nl2sql.core.agent.tools.ChartDetectionTool;
+import com.nl2sql.core.agent.tools.ToolRegistry;
 import com.nl2sql.core.rag.SQLFeedbackService;
+import com.nl2sql.core.service.MonitoringContext;
 import com.nl2sql.core.service.SessionContextManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +33,10 @@ import java.util.*;
 public class AgentChatService {
     
     @Autowired
-    private ReActAgent reActAgent;
+    private SupervisorAgent supervisorAgent;
+
+    @Autowired(required = false)
+    private ReActAgent reActAgent; // ⚠️ 保留供降级使用
     
     @Autowired(required = false)
     private SQLFeedbackService feedbackService;
@@ -41,8 +50,9 @@ public class AgentChatService {
     @Autowired(required = false)
     private SessionContextManager sessionContextManager;
     
-    @Autowired(required = false)
-    private IntentClassifier intentClassifier;
+    // ✅ 已移除：意图分类由 SkillRouter 处理
+    // @Autowired(required = false)
+    // private IntentClassifier intentClassifier;
     
     @Autowired
     private AgentResponseProcessor responseProcessor;
@@ -58,6 +68,9 @@ public class AgentChatService {
     
     @Autowired(required = false)
     private ApplicationEventPublisher eventPublisher; // ✅ 事件发布器
+    
+    @Autowired(required = false)
+    private ToolRegistry toolRegistry; // ✅ Tool 注册中心（追问执行用）
     
     /**
      * 处理聊天请求
@@ -86,8 +99,8 @@ public class AgentChatService {
             // 3. 构建完整消息（包含 context）
             String fullMessage = buildFullMessage(fixedMessage, request.getContext());
             
-            // 4. 意图识别
-            String intent = classifyIntent(fullMessage);
+            /*// 4. 意图识别
+            String intent = classifyIntent(fullMessage);*/
             
             // 5. 设置会话ID到 SessionContextManager
             setSessionId(sessionId);
@@ -104,8 +117,25 @@ public class AgentChatService {
                 return Result.success(clearResponse);
             }
             
+            // ✅ 7. 追问意图识别（过渡期：仅自然语言追问触发，按钮追问走原有流程）
+            String followUpResult = detectAndExecuteFollowUp(request, userInfo, fixedMessage);
+            if (followUpResult != null) {
+                // 追问已处理，直接返回结果
+                long executionTime = System.currentTimeMillis() - startTime;
+                Map<String, Object> response = responseProcessor.processResponse(
+                    followUpResult,
+                    buildRequestMap(request),
+                    buildUserInfoMap(userInfo)
+                );
+                enrichResponse(response, sessionId, executionTime, request);
+                publishMonitoringEvent(request, response, userInfo);
+                saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, response);
+                
+                return Result.success(response);
+            }
+            
             try {
-                // 6. 调用 ReAct Agent
+                // 6. 调用 Agent
                 String agentResponse = executeAgent(fullMessage, request, userInfo);
                 
                 long executionTime = System.currentTimeMillis() - startTime;
@@ -129,15 +159,15 @@ public class AgentChatService {
                 // 10. ✅ 异步记录监控数据（不阻塞主流程）
                 publishMonitoringEvent(request, response, userInfo);
                 
-                // 11. 保存对话历史
-                saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, agentResponse);
+                // 11. 保存对话历史（使用已解析的Map，避免重复解析）
+                saveConversationHistory(sessionId, userInfo.getUserId(), fullMessage, response);
                 
                 return Result.success(response);
                 
             } finally {
                 clearSessionId();
                 // ✅ 清理监控上下文（防止内存泄漏）
-                com.nl2sql.core.service.MonitoringContext.clear();
+                MonitoringContext.clear();
                 // ✅ 清理用户上下文
                 UserContext.clear();
             }
@@ -239,15 +269,11 @@ public class AgentChatService {
     }
     
     /**
-     * 意图识别
+     * 意图识别（已由 SkillRouter 接管）
      */
     private String classifyIntent(String message) {
-        String intent = "QUERY"; // 默认意图
-        if (intentClassifier != null) {
-            intent = intentClassifier.classify(message);
-            log.debug("[Agent对话] 意图识别结果: {}", intent);
-        }
-        return intent;
+        // ✅ 简化：直接返回默认意图，实际路由由 ReActAgent 内部的 SkillRouter 处理
+        return "QUERY";
     }
     
     /**
@@ -292,16 +318,15 @@ public class AgentChatService {
             ? datasourceSessionService.resolveDatasourceId(sessionId, request.getDatasourceId())
             : request.getDatasourceId();
         
-        log.info("[Agent对话] 调用 ReActAgent.execute()... [datasourceId={}]", resolvedDatasourceId);
-        
+        log.info("[Agent对话] 调用 SupervisorAgent.execute()... [datasourceId={}]", resolvedDatasourceId);
+
         // ✅ 加载对话历史
-        List<Map<String, Object>> history = historyService != null 
+        List<Map<String, Object>> history = historyService != null
             ? historyService.getHistory(sessionId)
             : Collections.emptyList();
-        
+
         try {
-            // ✅ 优化：不再传递 userId/username，ReActAgent从UserContext获取
-            String result = reActAgent.execute(
+            String result = supervisorAgent.execute(
                 fullMessage,
                 resolvedDatasourceId,
                 history  // ✅ 传入历史消息
@@ -445,12 +470,10 @@ public class AgentChatService {
             eventData.put("industryTermsMatched", monitoringData.getIndustryTermsMatched());
             
             // SQL执行相关
-            Boolean success = (Boolean) response.get("success");
+            Boolean success = com.nl2sql.common.util.BooleanUtils.toBoolean(response.get("success"));
             String sql = (String) response.get("sql");
-            Integer rowCount = response.get("rowCount") != null ? 
-                (Integer) response.get("rowCount") : 0;
-            Long executionTime = response.get("executionTime") != null ? 
-                (Long) response.get("executionTime") : 0L;
+            Integer rowCount = parseInteger(response.get("rowCount"));
+            Long executionTime = parseLong(response.get("executionTime"));
             
             eventData.put("generatedSql", sql != null ? sql : "");
             eventData.put("executedSql", sql != null ? sql : "");
@@ -483,7 +506,7 @@ public class AgentChatService {
     /**
      * 保存对话历史（优化版：只保存摘要，避免上下文爆炸）
      */
-    private void saveConversationHistory(String sessionId, Number userId, String userMessage, String agentResponse) {
+    private void saveConversationHistory(String sessionId, Number userId, String userMessage, Map<String, Object> response) {
         if (historyService == null) {
             return;
         }
@@ -497,8 +520,8 @@ public class AgentChatService {
             userMsg.put("content", userMessage);
             messages.add(userMsg);
             
-            // ✅ 关键优化：解析 agentResponse，只保存摘要信息
-            String assistantContent = extractSummaryFromResponse(agentResponse);
+            // ✅ 关键优化：解析 response，只保存摘要信息
+            String assistantContent = extractSummaryFromResponse(response);
             
             Map<String, Object> assistantMsg = new HashMap<>();
             assistantMsg.put("role", "assistant");
@@ -515,28 +538,20 @@ public class AgentChatService {
     /**
      * 从 Agent 响应中提取摘要信息（避免保存完整结果数据）
      * 
-     * @param agentResponse 完整的 Agent 响应 JSON
+     * @param response 已解析的 Agent 响应 Map
      * @return 摘要文本
      */
-    private String extractSummaryFromResponse(String agentResponse) {
-        // ✅ 先检查是否为 JSON 格式
-        if (agentResponse == null || !agentResponse.trim().startsWith("{")) {
-            log.debug("[对话历史] 响应非 JSON 格式，直接截断保存");
-            if (agentResponse != null && agentResponse.length() > 1000) {
-                return agentResponse.substring(0, 1000) + "... [已截断]";
-            }
-            return agentResponse;
+    private String extractSummaryFromResponse(Map<String, Object> response) {
+        if (response == null) {
+            return "无响应";
         }
         
         try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<String, Object> response = mapper.readValue(agentResponse, Map.class);
-            
-            Boolean success = (Boolean) response.get("success");
-            if (success != null && success) {
+            Boolean success = com.nl2sql.common.util.BooleanUtils.toBoolean(response.get("success"));
+            if (BooleanUtils.isTrue(success)) {
                 // 成功查询：保存 SQL + 结果摘要
                 String sql = (String) response.get("sql");
-                Integer rowCount = (Integer) response.get("rowCount");
+                Integer rowCount = parseInteger(response.get("rowCount"));
                 
                 StringBuilder summary = new StringBuilder();
                 summary.append("✅ 查询成功\n");
@@ -548,8 +563,14 @@ public class AgentChatService {
                 }
                 
                 // ✅ 可选：添加前3行数据样本（限制字段数）
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> data = (List<Map<String, Object>>) response.get("data");
+                Object dataObj = response.get("data");
+                List<Map<String, Object>> data = null;
+                if (dataObj instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> tempList = (List<Map<String, Object>>) dataObj;
+                    data = tempList;
+                }
+                
                 if (data != null && !data.isEmpty()) {
                     summary.append("\n\n数据样本（前3行）:\n");
                     int sampleSize = Math.min(3, data.size());
@@ -574,24 +595,454 @@ public class AgentChatService {
             }
             
         } catch (Exception e) {
-            log.warn("[对话历史] 解析响应失败，保存原始响应", e);
-            // 降级：如果解析失败，截断原始响应
-            if (agentResponse != null && agentResponse.length() > 1000) {
-                return agentResponse.substring(0, 1000) + "... [已截断]";
-            }
-            return agentResponse;
+            log.warn("[对话历史] 提取摘要失败", e);
+            return "响应处理异常";
         }
+    }
+    
+    /**
+     * ✅ 人机协同：处理SQL确认请求
+     * 
+     * @param approvalId 确认ID
+     * @param approved 是否批准
+     * @param userInfo 用户信息
+     * @return 执行结果
+     */
+    public Result<Map<String, Object>> handleSqlApproval(
+        String approvalId, 
+        Boolean approved,
+        AuthService.UserInfo userInfo
+    ) {
+        log.info("[人机协同] 处理SQL确认: approvalId={}, approved={}, userId={}", 
+            approvalId, approved, userInfo.getUserId());
+        
+        if (!approved) {
+            // 用户取消执行
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "❌ 已取消执行高风险SQL");
+            response.put("approvalId", approvalId);
+            return Result.success(response);
+        }
+        
+        // ✅ 用户批准，需要重新执行原始SQL
+        // TODO: 从缓存中获取原始请求参数，重新调用Agent执行
+        // 当前简化实现：返回提示信息，前端需要重新发送完整请求
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "✅ 已批准执行，请重新发送查询请求");
+        response.put("approvalId", approvalId);
+        response.put("note", "由于会话状态已过期，请重新发送原始问题以执行SQL");
+        
+        log.info("[人机协同] SQL已批准，但需重新发送请求: approvalId={}", approvalId);
+        
+        return Result.success(response);
+    }
+    
+    /**
+     * 安全解析 Integer（兼容 String/Number/null）
+     */
+    private Integer parseInteger(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number) return ((Number) value).intValue();
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+    
+    /**
+     * 安全解析 Long（兼容 String/Number/null）
+     */
+    private Long parseLong(Object value) {
+        if (value == null) return 0L;
+        if (value instanceof Number) return ((Number) value).longValue();
+        if (value instanceof String) {
+            try {
+                return Long.parseLong((String) value);
+            } catch (NumberFormatException e) {
+                return 0L;
+            }
+        }
+        return 0L;
     }
     
     /**
      * 聊天请求 DTO
      */
+    /**
+     * 检测并执行追问（业界标准 2 层架构）
+     * 
+     * @return 如果处理了追问，返回 Tool 执行结果；否则返回 null（走正常流程）
+     */
+    private String detectAndExecuteFollowUp(ChatRequest request, AuthService.UserInfo userInfo, String message) {
+        // ✅ L1: 前端显式信号验证
+        if (!Boolean.TRUE.equals(request.getHasData()) || request.getContextId() == null) {
+            return null;  // 前端未标识为追问，走正常 Agent 流程
+        }
+        
+        log.info("[L1] 前端已标识为追问: contextId={}, hasData=true", request.getContextId());
+        
+        // ✅ L2: 后端二次验证（滑动窗口衰减 + 意图识别）
+        String followUpSkill = detectFollowUpIntent(message, request.getSessionId());
+        if (followUpSkill == null) {
+            log.info("[L2] 后端判定非追问，走正常流程");
+            return null;  // 后端判定不是追问，走正常流程
+        }
+        
+        log.info("[追问识别] 确认追问意图: skill={}, message={}", followUpSkill, message);
+        
+        // 执行追问 Tool
+        return executeFollowUpTool(followUpSkill, request, userInfo);
+    }
+    
+    /**
+     * 检测追问意图（业界标准 2 层架构）
+     * L1: 关键词匹配（快速过滤）
+     * L2: 滑动窗口衰减 + 实体重叠度（精细判断）
+     */
+    private String detectFollowUpIntent(String message, String sessionId) {
+        if (message == null || message.trim().isEmpty()) {
+            return null;
+        }
+        
+        String lowerMsg = message.toLowerCase().trim();
+        
+        // ========== L1: 显式信号检测 ==========
+        
+        // ❌ 新话题信号词（confidence=1.0 -> 新查询）
+        if (lowerMsg.matches(".*(统计|查询|查看|获取|列出|显示|找出|检索).*") && message.length() > 8) {
+            log.debug("[L1] 检测到新话题信号，非追问");
+            return null;
+        }
+        
+        if (lowerMsg.matches(".*(最近|上周|上月|今年|去年|本周|本月|前\\d+天).*") && message.length() > 8) {
+            log.debug("[L1] 检测到时间范围信号，非追问");
+            return null;
+        }
+        
+        if (lowerMsg.matches(".*(每个|所有|全部|整个|总共).*") && message.length() > 8) {
+            log.debug("[L1] 检测到全局信号，非追问");
+            return null;
+        }
+        
+        // ✅ 延续信号词（confidence=0.95 -> 追问）
+        if (lowerMsg.matches(".*(总结|概括|概述|分析一下|帮我看看|解读).*")) {
+            log.debug("[L1] 检测到总结类信号，是追问");
+            return "summarize_result";
+        }
+        
+        if (lowerMsg.matches(".*(图表|画图|可视化|柱状图|折线图|饼图|生成图).*")) {
+            log.debug("[L1] 检测到图表类信号，是追问");
+            return "generate_chart";
+        }
+        
+        if (lowerMsg.matches(".*(下载|导出|excel|csv).*")) {
+            log.debug("[L1] 检测到下载类信号，是追问");
+            return "download_excel";
+        }
+        
+        // ✅ 指代模式（confidence=0.95 -> 追问）
+        if (lowerMsg.matches("^(按|按照|根据|以).*")) {
+            log.debug("[L1] 检测到介词开头，是追问");
+            return determineFollowUpSkill(message);
+        }
+        
+        if (lowerMsg.matches("^(只|仅|只要|只要看).*")) {
+            log.debug("[L1] 检测到限制词开头，是追问");
+            return determineFollowUpSkill(message);
+        }
+        
+        if (lowerMsg.matches("^(对比|比较|和.*比).*")) {
+            log.debug("[L1] 检测到对比词开头，是追问");
+            return determineFollowUpSkill(message);
+        }
+        
+        // ========== L2: 边界区域处理 ==========
+        
+        // 滑动窗口衰减：计算与历史消息的相关性
+        double contextRelevance = calculateContextRelevance(message, sessionId);
+        
+        if (contextRelevance > 0.15) {
+            log.info("[L2] 上下文相关性 {:.2f} > 0.15，是追问", contextRelevance);
+            return determineFollowUpSkill(message);
+        }
+        
+        // 极短消息且无主语，默认视为追问
+        if (message.length() < 10 && !lowerMsg.matches(".*(我|你|他|她|它|我们|你们|他们).*")) {
+            log.info("[L2] 极短消息且无主语，视为追问");
+            return determineFollowUpSkill(message);
+        }
+        
+        log.debug("[L2] 默认视为新查询");
+        return null;  // 不是追问
+    }
+    
+    /**
+     * 根据消息内容确定追问技能类型
+     */
+    private String determineFollowUpSkill(String message) {
+        String lowerMsg = message.toLowerCase().trim();
+        
+        if (lowerMsg.matches(".*(总结|概括|概述|分析|解读).*")) {
+            return "summarize_result";
+        }
+        
+        if (lowerMsg.matches(".*(图表|画图|可视化|柱状|折线|饼图).*")) {
+            return "generate_chart";
+        }
+        
+        if (lowerMsg.matches(".*(下载|导出|excel|csv).*")) {
+            return "download_excel";
+        }
+        
+        // 默认返回总结
+        return "summarize_result";
+    }
+    
+    /**
+     * 计算上下文相关性（滑动窗口衰减）
+     */
+    private double calculateContextRelevance(String currentMessage, String sessionId) {
+        if (historyService == null || sessionId == null) {
+            return 0;
+        }
+        
+        try {
+            // 获取最近历史消息（ConversationHistoryService 内部已限制为 5 轮）
+            List<Map<String, Object>> history = historyService.getHistory(sessionId);
+            
+            if (history == null || history.isEmpty()) {
+                return 0;
+            }
+            
+            double maxRelevance = 0;
+            int historySize = history.size();
+            
+            // 遍历历史消息，计算加权相关性
+            for (int i = 0; i < historySize; i++) {
+                Map<String, Object> msg = history.get(i);
+                String historicalMessage = (String) msg.get("userMessage");
+                
+                if (historicalMessage == null || historicalMessage.trim().isEmpty()) {
+                    continue;
+                }
+                
+                // 1. 时间衰减因子（越近的消息权重越高）
+                double timeWeight = Math.exp(-0.3 * (historySize - 1 - i));
+                
+                // 2. 实体重叠度（Jaccard 相似度）
+                double overlap = calculateEntityOverlap(currentMessage, historicalMessage);
+                
+                // 3. 综合得分
+                double relevance = timeWeight * overlap;
+                maxRelevance = Math.max(maxRelevance, relevance);
+            }
+            
+            return maxRelevance;
+            
+        } catch (Exception e) {
+            log.warn("[滑动窗口] 计算相关性失败", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * 计算两个消息的实体重叠度（Jaccard 相似度）
+     */
+    private double calculateEntityOverlap(String msg1, String msg2) {
+        if (msg1 == null || msg2 == null || msg1.trim().isEmpty() || msg2.trim().isEmpty()) {
+            return 0;
+        }
+        
+        // 简单分词：按字符分割（中文场景）
+        Set<Character> words1 = new HashSet<>();
+        Set<Character> words2 = new HashSet<>();
+        
+        for (char c : msg1.toCharArray()) {
+            if (Character.isLetterOrDigit(c) || (c >= '\u4e00' && c <= '\u9fa5')) {
+                words1.add(c);
+            }
+        }
+        
+        for (char c : msg2.toCharArray()) {
+            if (Character.isLetterOrDigit(c) || (c >= '\u4e00' && c <= '\u9fa5')) {
+                words2.add(c);
+            }
+        }
+        
+        if (words1.isEmpty() || words2.isEmpty()) {
+            return 0;
+        }
+        
+        // 计算交集
+        Set<Character> intersection = new HashSet<>(words1);
+        intersection.retainAll(words2);
+        
+        // Jaccard 相似度 = 交集 / 并集
+        Set<Character> union = new HashSet<>(words1);
+        union.addAll(words2);
+        
+        return (double) intersection.size() / union.size();
+    }
+    
+    /**
+     * 执行追问 Tool（直接使用前端传递的数据）
+     * TODO: 后期按钮追问也迁移到此逻辑，统一追问入口
+     */
+    private String executeFollowUpTool(String skillName, ChatRequest request, AuthService.UserInfo userInfo) {
+        try {
+            // ✅ 从前端请求中获取上次查询的数据
+            List<Map<String, Object>> data = null;
+            if (request.getContext() != null && request.getContext().containsKey("followUpData")) {
+                data = (List<Map<String, Object>>) request.getContext().get("followUpData");
+            }
+            
+            if (data == null || data.isEmpty()) {
+                log.warn("[追问执行] 没有可操作的数据: skill={}", skillName);
+                return "{\"success\":false,\"error\":\"没有可操作的数据，请先执行查询\"}";
+            }
+            
+            log.info("[追问执行] 开始执行: skill={}, dataRows={}", skillName, data.size());
+            
+            switch (skillName) {
+                case "summarize_result":
+                    return executeSummarizeTool(data);
+                    
+                case "generate_chart":
+                    return executeChartTool(data, request);
+                    
+                case "download_excel":
+                    // 下载由前端处理，返回标识
+                    return "{\"success\":true,\"type\":\"download_ready\",\"message\":\"准备下载Excel\"}";
+                    
+                default:
+                    log.warn("[追问执行] 不支持的追问类型: {}", skillName);
+                    return "{\"success\":false,\"error\":\"不支持的追问类型: " + skillName + "\"}";
+            }
+            
+        } catch (Exception e) {
+            log.error("[追问执行] 失败: skill={}", skillName, e);
+            return "{\"success\":false,\"error\":\"追问执行失败: " + e.getMessage() + "\"}";
+        }
+    }
+    
+    /**
+     * 执行总结 Tool
+     */
+    private String executeSummarizeTool(List<Map<String, Object>> data) {
+        try {
+            // 通过 ToolRegistry 调用（保持与按钮追问一致）
+            if (toolRegistry == null) {
+                log.warn("[追问执行] ToolRegistry 未注入，降级到直接调用");
+                return executeSummarizeDirectly(data);
+            }
+            
+            Map<String, Object> args = new HashMap<>();
+            args.put("data", data);  // Tool 参数名必须与 @Tool 注解一致
+            
+            String result = (String) toolRegistry.callToolAsString("summarize_result", args);
+            log.info("[追问执行] summarize_result 完成");
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[追问执行] summarize_result 失败", e);
+            return "{\"success\":false,\"error\":\"总结失败: " + e.getMessage() + "\"}";
+        }
+    }
+    
+    /**
+     * 执行图表 Tool
+     */
+    private String executeChartTool(List<Map<String, Object>> data, ChatRequest request) {
+        try {
+            // 解析图表类型（如果有指定）
+            String chartType = "bar";  // 默认柱状图
+            if (request.getContext() != null && request.getContext().containsKey("chartType")) {
+                chartType = (String) request.getContext().get("chartType");
+            }
+            
+            // 通过 ToolRegistry 调用
+            if (toolRegistry == null) {
+                log.warn("[追问执行] ToolRegistry 未注入，降级到直接调用");
+                return executeChartDirectly(data, chartType);
+            }
+            
+            Map<String, Object> args = new HashMap<>();
+            args.put("data", data);
+            args.put("chartType", chartType);
+            
+            String result = (String) toolRegistry.callToolAsString("generate_chart", args);
+            log.info("[追问执行] generate_chart 完成: chartType={}", chartType);
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[追问执行] generate_chart 失败", e);
+            return "{\"success\":false,\"error\":\"图表生成失败: " + e.getMessage() + "\"}";
+        }
+    }
+    
+    /**
+     * 降级方案：直接调用 AISummaryTool（当 ToolRegistry 不可用时）
+     */
+    private String executeSummarizeDirectly(List<Map<String, Object>> data) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String dataJson = mapper.writeValueAsString(data);
+            
+            // 反射调用 AISummaryTool
+            Class<?> toolClass = AISummaryTool.class;
+            Object toolInstance = toolClass.getDeclaredConstructor().newInstance();
+            java.lang.reflect.Method method = toolClass.getMethod("summarize", String.class);
+            
+            String result = (String) method.invoke(toolInstance, dataJson);
+            log.info("[追问执行-降级] summarize_result 完成");
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[追问执行-降级] summarize_result 失败", e);
+            return "{\"success\":false,\"error\":\"总结失败: " + e.getMessage() + "\"}";
+        }
+    }
+    
+    /**
+     * 降级方案：直接调用 ChartDetectionTool（当 ToolRegistry 不可用时）
+     */
+    private String executeChartDirectly(List<Map<String, Object>> data, String chartType) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String dataJson = mapper.writeValueAsString(data);
+            
+            // 反射调用 ChartDetectionTool
+            Class<?> toolClass = ChartDetectionTool.class;
+            Object toolInstance = toolClass.getDeclaredConstructor().newInstance();
+            java.lang.reflect.Method method = toolClass.getMethod("detectAndGenerateChart", String.class, List.class);
+            
+            String result = (String) method.invoke(toolInstance, "生成" + chartType + "图表", data);
+            log.info("[追问执行-降级] generate_chart 完成");
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[追问执行-降级] generate_chart 失败", e);
+            return "{\"success\":false,\"error\":\"图表生成失败: " + e.getMessage() + "\"}";
+        }
+    }
+    
     public static class ChatRequest {
         @jakarta.validation.constraints.NotBlank(message = "消息不能为空")
         private String message;
         private Long datasourceId;
         private String sessionId;
         private Map<String, Object> context;
+        
+        // ✅ 追问上下文标识（过渡期：按钮追问暂不传，自然语言追问会传）
+        private String contextId;      // 上次查询的唯一ID
+        private Boolean hasData;       // 是否有可追问的数据
         
         // Getters and Setters
         public String getMessage() { return message; }
@@ -602,5 +1053,11 @@ public class AgentChatService {
         public void setSessionId(String sessionId) { this.sessionId = sessionId; }
         public Map<String, Object> getContext() { return context; }
         public void setContext(Map<String, Object> context) { this.context = context; }
+        
+        // ✅ 追问上下文 Getter/Setter
+        public String getContextId() { return contextId; }
+        public void setContextId(String contextId) { this.contextId = contextId; }
+        public Boolean getHasData() { return hasData; }
+        public void setHasData(Boolean hasData) { this.hasData = hasData; }
     }
 }

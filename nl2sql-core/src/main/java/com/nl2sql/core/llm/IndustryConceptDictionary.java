@@ -1,6 +1,7 @@
 package com.nl2sql.core.llm;
 
 import com.nl2sql.core.llm.extension.IndustryConceptExtension;
+import com.nl2sql.metadata.mapper.IndustryConceptAdminMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,9 @@ public class IndustryConceptDictionary {
     
     @Autowired(required = false)
     private List<IndustryConceptExtension> conceptExtensions;
+    
+    @Autowired(required = false)
+    private IndustryConceptAdminMapper adminMapper;
     
     public IndustryConceptDictionary() {
         initializeDefaultIndustries();
@@ -80,17 +84,27 @@ public class IndustryConceptDictionary {
         
         try {
             // 1. 从 datasource_industry_mapping 表查询行业代码
-            String industryCode = jdbcTemplate.queryForObject(
-                "SELECT industry_code FROM datasource_industry_mapping WHERE datasource_id = ? ORDER BY priority LIMIT 1",
-                String.class, datasourceId
-            );
+            String industryCode = null;
+            if (adminMapper != null) {
+                industryCode = adminMapper.selectIndustryCodeByDatasourceId(datasourceId);
+            } else {
+                industryCode = jdbcTemplate.queryForObject(
+                    "SELECT industry_code FROM datasource_industry_mapping WHERE datasource_id = ? ORDER BY priority LIMIT 1",
+                    String.class, datasourceId
+                );
+            }
             
             if (industryCode == null) {
                 // 2. fallback到 business_category 字段匹配
-                String businessCategory = jdbcTemplate.queryForObject(
-                    "SELECT business_category FROM datasource_config WHERE id = ?",
-                    String.class, datasourceId
-                );
+                String businessCategory = null;
+                if (adminMapper != null) {
+                    businessCategory = adminMapper.selectBusinessCategory(datasourceId);
+                } else {
+                    businessCategory = jdbcTemplate.queryForObject(
+                        "SELECT business_category FROM datasource_config WHERE id = ?",
+                        String.class, datasourceId
+                    );
+                }
                 
                 if (businessCategory != null && !businessCategory.isEmpty()) {
                     industryCode = matchIndustryCodeByCategory(businessCategory);
@@ -120,29 +134,40 @@ public class IndustryConceptDictionary {
     private IndustryConcepts loadConceptsFromDatabase(String industryCode) {
         try {
             // 查询行业基本信息
-            List<Map<String, Object>> industryList = jdbcTemplate.queryForList(
-                "SELECT industry_code, industry_name FROM industry_template WHERE industry_code = ? AND is_active = 1",
-                industryCode
-            );
-            
-            if (industryList == null || industryList.isEmpty()) {
-                return null;
+            Map<String, Object> industryInfo = null;
+            if (adminMapper != null) {
+                industryInfo = adminMapper.selectIndustryTemplate(industryCode);
+            } else {
+                List<Map<String, Object>> industryList = jdbcTemplate.queryForList(
+                    "SELECT industry_code, industry_name FROM industry_template WHERE industry_code = ? AND is_active = 1",
+                    industryCode
+                );
+                if (industryList != null && !industryList.isEmpty()) {
+                    industryInfo = industryList.get(0);
+                }
             }
             
-            Map<String, Object> industryInfo = industryList.get(0);
+            if (industryInfo == null) {
+                return null;
+            }
             
             IndustryConcepts concepts = new IndustryConcepts();
             concepts.setIndustryCode((String) industryInfo.get("industry_code"));
             concepts.setIndustryName((String) industryInfo.get("industry_name"));
             
             // 查询所有已审核的概念
-            List<Map<String, Object>> conceptRows = jdbcTemplate.queryForList(
-                "SELECT concept_type, concept_key, concept_aliases, description " +
-                "FROM industry_concept " +
-                "WHERE industry_code = ? AND status = 'approved' " +
-                "ORDER BY usage_count DESC, confidence DESC",
-                industryCode
-            );
+            List<Map<String, Object>> conceptRows = null;
+            if (adminMapper != null) {
+                conceptRows = adminMapper.selectApprovedConcepts(industryCode);
+            } else {
+                conceptRows = jdbcTemplate.queryForList(
+                    "SELECT concept_type, concept_key, concept_aliases, description " +
+                    "FROM industry_concept " +
+                    "WHERE industry_code = ? AND status = 'approved' " +
+                    "ORDER BY usage_count DESC, confidence DESC",
+                    industryCode
+                );
+            }
             
             for (Map<String, Object> row : conceptRows) {
                 String type = (String) row.get("concept_type");
@@ -199,10 +224,15 @@ public class IndustryConceptDictionary {
      */
     private void loadConceptRelations(IndustryConcepts concepts, String industryCode) {
         try {
-            List<Map<String, Object>> relations = jdbcTemplate.queryForList(
-                "SELECT source_concept_key, target_concept_key FROM concept_relation WHERE industry_code = ?",
-                industryCode
-            );
+            List<Map<String, Object>> relations = null;
+            if (adminMapper != null) {
+                relations = adminMapper.selectConceptRelations(industryCode);
+            } else {
+                relations = jdbcTemplate.queryForList(
+                    "SELECT source_concept_key, target_concept_key FROM concept_relation WHERE industry_code = ?",
+                    industryCode
+                );
+            }
             
             for (Map<String, Object> rel : relations) {
                 String source = (String) rel.get("source_concept_key");

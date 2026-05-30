@@ -1,0 +1,37 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: nl2sql-mcp-server
+
+# MCP Server 配置
+nl2sql:
+  mcp:
+    # 传输方式: stdio 或 sse
+    transport: stdio
+  
+  # 数据源配置（可选，可通过管理界面动态添加）
+  datasources: {}
+  
+  # 持久化配置
+  persistence:
+    sqlite:
+      path: ./data/nl2sql.db
+  
+  # 密码加密主密钥（用于解密 ENC(AES256:...) 格式的密码）
+  security:
+    master-key: 4c75cd10656e4908acb0024ed20bb3a668749c872b8f42c2b5ae93e93d5bdc05
+  
+  # 管理后台认证
+  admin:
+    username: ${NL2SQL_ADMIN_USER:admin}
+    password: ${NL2SQL_ADMIN_PASSWORD:admin}
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.nl2sql.mcp: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

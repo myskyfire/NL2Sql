@@ -26,4 +26,11 @@
         LIMIT 1
     </select>
     
+<!-- 获取数据源的数据库类型 -->
+    <select id="getDbType" resultType="java.lang.String">
+        SELECT db_type 
+        FROM datasource_config 
+        WHERE id = #{datasourceId}
+    </select>
+    
 </mapper>

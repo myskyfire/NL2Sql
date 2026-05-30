@@ -16,6 +16,7 @@ public class DataSourceConfig {
     private String encryptionAlgorithm;
     private Integer isActive;
     private String description;
+    private String businessCategory; // 业务类别标签（逗号分隔）
     private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

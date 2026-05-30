@@ -169,7 +169,14 @@ public class NL2SQLService {
                                 boolean isStatQuestion = item.getQuestion().contains("统计") || 
                                                        item.getQuestion().contains("汇总") ||
                                                        item.getQuestion().contains("平均") ||
-                                                       item.getQuestion().contains("合计");
+                                                       item.getQuestion().contains("合计") ||
+                                                       item.getQuestion().contains("趋势") ||
+                                                       item.getQuestion().contains("对比") ||
+                                                       item.getQuestion().contains("分布") ||
+                                                       item.getQuestion().contains("排名") ||
+                                                       item.getQuestion().contains("每天") ||
+                                                       item.getQuestion().contains("每月") ||
+                                                       item.getQuestion().contains("各");
                                 
                                 // 如果SQL有GROUP BY但问题不是统计类，跳过此示例
                                 if (hasGroupBy && !isStatQuestion) {
@@ -216,9 +223,9 @@ public class NL2SQLService {
                 log.info("[NL2SQLService] 检测到LLM请求缺失表，启用智能扩展");
             }
             
-            // 第一次：基于LLM选的表获取关联关系
+            // 第一次：获取表关联关系（始终获取，不再受shouldExpand条件限制）
             String fullRelationshipInfo = relationshipInfo;
-            if (fullRelationshipInfo.isEmpty() && shouldExpand) {
+            if (fullRelationshipInfo.isEmpty()) {
                 fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
                     datasourceId, new ArrayList<>(allTables));
             }
@@ -256,7 +263,8 @@ public class NL2SQLService {
             
             // ⚠️ 关键：基于扩展后的表重新获取完整的关联关系
             if (expandedTables.size() > allTables.size()) {
-                fullRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                // ✅ SQL生成阶段：使用过滤后的关联关系（只包含源表和目标表都在expandedTables中的关系）
+                fullRelationshipInfo = relationshipService.getFilteredRelationshipsForSQLGeneration(
                     datasourceId, new ArrayList<>(expandedTables));
             }
             
@@ -313,93 +321,36 @@ public class NL2SQLService {
             // ✅ 关键：明确列出可用表清单，分级提示（不再硬性限制）
             String availableTablesList = String.join(", ", expandedTables);
             
+            // ✅ 获取数据源对应的数据库类型
+            String dbType = metadataMapper.getDbType(datasourceId);
+            if (dbType == null || dbType.isEmpty()) {
+                dbType = "MySQL";
+            }
+            String dialectTitle = dbType.toUpperCase() + " SQL";
+            
             sessionContextManager.publishProgress(this, "generating_final_sql", "🤖 生成最终SQL...");
             
             String sqlPrompt = String.format(
-                "你是一个MySQL SQL专家。根据以下数据库结构和用户问题，生成一条MySQL查询SQL。\n\n" +
-                "📋 **可用表清单（共 %d 张）**：%s\n" +
-                "💡 **建议**：优先使用与用户问题最相关的表。如果单表无法满足需求，可以根据'表之间的关联关系'进行JOIN。\n\n" +
-                "数据库表结构：\n%s\n\n" +
+                "你是" + dialectTitle + "专家。请根据数据库结构和用户问题生成" + dbType.toUpperCase() + " SQL。\n\n" +
+                "数据库类型：" + dbType.toUpperCase() + "\n\n" +
+                "可用表（%d张）：%s\n\n" +
+                "表结构：\n%s\n\n" +
                 "%s" +
                 "%s" +
                 "%s" +  // ✅ Layer 1: 负面示例
-                "⏰ **时间查询关键区分（重要）**：\n" +
-                "- ❌ 错误理解：'查询2026年4月10号的订单' → WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY ...\n" +
-                "- ✅ 正确理解：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （单表查询，不要GROUP BY）\n" +
-                "- **判断规则**：用户说'X月X号'或'X年X月X日'是查具体某一天的数据，不是按天统计！\n\n" +
-                "🚫 **严禁同义词替换（极其重要）**：\n" +
-                "- 永远不要对用户原句做字面同义词替换改写，不要把词语强行换成近义词\n" +
-                "- 若问句中已经出现具体日期、具体数字、具体名称、具体对象等明确实体：\n" +
-                "  所有代词：当天、当日、该月、这家、此项、该商品、其上、对应等\n" +
-                "  一律就近绑定前面已出现的具体实体\n" +
-                "- 严禁私自泛化替换成全局默认值：今天、当前本月、全部、本店、系统当前时间\n" +
-                "- 生成 SQL 禁止同时出现固定指定值 + 系统动态当前值，避免逻辑冲突\n\n" +
+                "⚠️ **时间查询**：'X月X号'查具体某天→WHERE DATE(created_at)='2026-04-10'，不要GROUP BY\n\n" +
+                "🚫 **禁止同义词替换**：具体实体（日期/数字/名称）的代词（当天/该月等）必须就近绑定，严禁泛化为今天/本月\n\n" +
                 "用户问题：%s\n\n" +
                 "要求：\n" +
-                "1. 只输出SQL语句，不要包含```sql或其他标记\n" +
-                "2. **表使用规范**：\n" +
-                "   - 优先使用'可用表清单'中的表\n" +
-                "   - ❌ 错误：SELECT u.province ... FROM orders o JOIN user_addresses ua ... （u表不在FROM/JOIN中）\n" +
-                "   - ✅ 正确：SELECT ua.province ... FROM orders o JOIN user_addresses ua ... （ua在JOIN中）\n" +
-                "   - **所有SELECT中的字段必须属于FROM或JOIN中的表**\n" +
-                "3. 添加LIMIT限制返回行数（但如果是GROUP BY统计查询，可以不设LIMIT或设为较大值）\n" +
-                "4. **别名规范（重要）**：\n" +
-                "   - **所有SELECT字段都必须使用 AS 指定中文别名**，这样前端表格会直接显示中文表头\n" +
-                "   - 例如：SELECT category_name AS '分类名称', SUM(amount) AS '订单总金额', COUNT(*) AS '订单数量'\n" +
-                "   - 聚合函数必须加别名：SUM(xxx) AS '总和', COUNT(*) AS '数量', AVG(xxx) AS '平均值'\n" +
-                "   - 分组字段也必须加别名：GROUP BY 的字段也要 AS '中文名'\n" +
-                "5. **重要：识别统计类问题并使用聚合函数**\n" +
-                "   - ⚠️ **关键判断规则**：只有当用户明确要求'统计'、'汇总'、'合计'、'平均'、'分组'时，才使用 GROUP BY\n" +
-                "   - ❌ 错误场景：用户问'查最近7天的订单'、'显示订单列表'、'查看所有订单' → 这是查询详情，不要加 GROUP BY\n" +
-                "   - ✅ 正确场景：用户问'统计每天的订单数'、'按地区汇总销售额'、'各城市的平均金额' → 这是统计汇总，需要 GROUP BY\n" +
-                "   - **判断依据**：如果用户想看'每条记录'，就不要 GROUP BY；如果想看'汇总数据'，才用 GROUP BY\n" +
-                "   - 常用聚合函数：SUM()求和、COUNT()计数、AVG()平均、MAX()最大、MIN()最小\n" +
-                "   - 例如（统计）：'统计每个地区的销售额' -> SELECT region, SUM(amount) FROM orders GROUP BY region\n" +
-                "   - 例如（详情）：'查最近7天的订单' -> SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY\n" +
-                "6. **SELECT字段规则**：\n" +
-                "   - GROUP BY查询：SELECT中只能包含GROUP BY字段和聚合函数，不能直接选择非分组字段\n" +
-                "   - 错误示例：SELECT user_id, province, SUM(amount) ... GROUP BY province （user_id不在GROUP BY中）\n" +
-                "   - 正确示例：SELECT province, SUM(amount) ... GROUP BY province\n" +
-                "7. **时间格式化规范**：\n" +
-                "   - 如果用户要求按天/月/年统计（如'最近10天每天的订单金额'），必须使用 DATE_FORMAT() 函数格式化时间\n" +
-                "   - 按天统计：DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期'\n" +
-                "   - 按月统计：DATE_FORMAT(created_at, '%%Y-%%m') AS '订单月份'\n" +
-                "   - 按年统计：DATE_FORMAT(created_at, '%%Y') AS '订单年份'\n" +
-                "   - ❌ 错误：DATE(created_at) 会返回带时分秒的格式\n" +
-                "   - ✅ 正确：DATE_FORMAT(created_at, '%%Y-%%m-%%d') 只返回日期部分\n" +
-                "   - ⚠️ **重要区分**：\n" +
-                "     * **指定具体日期**：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （不要GROUP BY）\n" +
-                "     * **按天分组统计**：'统计最近7天每天的订单数' → GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d') （需要GROUP BY）\n" +
-                "     * **关键判断**：用户说'X月X号'是查那一天的数据，不是按天分组！\n" +
-                "8. **ORDER BY 别名一致性规则（重要）**：\n" +
-                "   - ⚠️ **强制规则**：ORDER BY 中使用的字段名或别名，必须与 SELECT 中定义的完全一致\n" +
-                "   - 错误示例：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY order_date\n" +
-                "     （SELECT 中是 '订单日期'，但 ORDER BY 用了 order_date）\n" +
-                "   - 正确示例1：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY '订单日期'\n" +
-                "   - 正确示例2：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS order_date ... ORDER BY order_date\n" +
-                "   - **关键**：SELECT 和 ORDER BY 必须使用相同的别名，不能混用\n" +
-                "9. **表关联规则**：\n" +
-                "   - 如果上面提供了'表之间的关联关系'，直接使用这些关系进行JOIN\n" +
-                "   - **必须使用直接JOIN，禁止使用子查询或IN子句进行表关联**\n" +
-                "   - 错误示例：JOIN tableB ON colA IN (SELECT id FROM tableB WHERE ...)\n" +
-                "   - 正确示例：JOIN tableB ON tableA.ref_id = tableB.id\n" +
-                "   - **重要：关联字段必须是外键或ID字段，不能是文本字段**\n" +
-                "   - 错误示例：JOIN user_addresses ua ON orders.shipping_address = ua.id （shipping_address是文本，不是ID）\n" +
-                "   - 正确示例：JOIN users u ON orders.user_id = u.id （通过用户ID关联）\n" +
-                "   - **一对多关联时必须添加过滤条件避免笛卡尔积**\n" +
-                "   - 错误示例：JOIN user_addresses ua ON orders.user_id = ua.user_id （一个用户可能有多个地址，导致订单金额重复计算）\n" +
-                "   - 正确示例：JOIN user_addresses ua ON orders.user_id = ua.user_id AND ua.is_default = 1 （只取默认地址）\n" +
-                "   - 或者优先使用主表的字段：直接使用users表的地区字段，而非user_addresses\n" +
-                "10. **⚠️ 语义一致性强制规则（重要）**：\n" +
-                "    - **对于相同语义的查询（如'查询用户X的订单'），必须保持SQL结构完全一致**\n" +
-                "    - 例如：'查询用户张三的订单'和'查询用户李四的订单'应该生成相同的SQL结构，只是WHERE条件不同\n" +
-                "    - **表选择一致性**：如果第一次选择了orders JOIN users，第二次也必须使用相同的表组合\n" +
-                "    - **字段映射一致性**：同一概念必须映射到相同字段（如用户名始终用u.username，不用o.receiver_name）\n" +
-                "    - **JOIN顺序一致性**：FROM orders o JOIN users u ON ... 的顺序必须保持一致\n" +
-                "    - ❌ 错误：第一次用 JOIN users，第二次用 JOIN order_items\n" +
-                "    - ✅ 正确：两次都用 JOIN users u ON o.user_id = u.id\n" +
-                "    - **关键原则**：优先使用业务主键关联（user_id），而非文本字段匹配（receiver_name）\n" +
-                "\nSQL：",
+                "1. 只输出SQL，无标记\n" +
+                "2. SELECT字段必须属于FROM/JOIN中的表\n" +
+                "3. 所有SELECT字段用AS指定中文别名\n" +
+                "4. 需要GROUP BY的场景：统计/汇总/平均/趋势/对比/分布/排名/每天/每月/各X等聚合查询；不需要GROUP BY的场景：查详情/查列表/查具体某天的数据\n" +
+                "5. JOIN必须用ID字段，禁止子查询，一对多需加过滤条件\n" +
+                "6. 按天/月统计请使用该数据库对应的日期格式化函数\n" +
+                "7. GROUP BY和ORDER BY必须使用与SELECT相同的原始表达式，禁止用中文别名或数字位置\n" +
+                "8. 相同语义查询保持SQL结构一致\n" +
+                "SQL：",
                 expandedTables.size(), availableTablesList,
                 finalSchemaInfo, fullRelationshipInfo.isEmpty() ? "" : fullRelationshipInfo + "\n\n", ragEnhancement, negativeExamples, expandedQuery
             );
@@ -432,7 +383,8 @@ public class NL2SQLService {
                 // 补充缺失表的schema
                 expandedTables.addAll(missingTables);
                 String updatedSchemaInfo = buildTableSchemaInfo(new ArrayList<>(expandedTables), datasourceId);
-                String updatedRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                // ✅ SQL生成阶段：使用过滤后的关联关系
+                String updatedRelationshipInfo = relationshipService.getFilteredRelationshipsForSQLGeneration(
                     datasourceId, new ArrayList<>(expandedTables));
                 
                 log.info("[NL2SQLService] 已补充表schema，重新生成SQL");
@@ -441,90 +393,26 @@ public class NL2SQLService {
                 // 重新构建Prompt
                 String updatedAvailableTablesList = String.join(", ", expandedTables);
                 String updatedSqlPrompt = String.format(
-                    "你是一个MySQL SQL专家。根据以下数据库结构和用户问题，生成一条MySQL查询SQL。\n\n" +
-                    "📋 **可用表清单（共 %d 张）**：%s\n" +
-                    "💡 **建议**：优先使用与用户问题最相关的表。如果单表无法满足需求，可以根据'表之间的关联关系'进行JOIN。\n\n" +
-                    "数据库表结构：\n%s\n\n" +
+                    "你是" + dialectTitle + "专家。请根据数据库结构和用户问题生成" + dbType.toUpperCase() + " SQL。\n\n" +
+                    "数据库类型：" + dbType.toUpperCase() + "\n\n" +
+                    "可用表（%d张）：%s\n\n" +
+                    "表结构：\n%s\n\n" +
                     "%s" +
                     "%s" +
                     "%s" +  // ✅ Layer 1: 负面示例
-                    "⏰ **时间查询关键区分（重要）**：\n" +
-                    "- ❌ 错误理解：'查询2026年4月10号的订单' → WHERE created_at >= NOW() - INTERVAL 7 DAY GROUP BY ...\n" +
-                    "- ✅ 正确理解：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （单表查询，不要GROUP BY）\n" +
-                    "- **判断规则**：用户说'X月X号'或'X年X月X日'是查具体某一天的数据，不是按天统计！\n\n" +
-                    "🚫 **严禁同义词替换（极其重要）**：\n" +
-                    "- 永远不要对用户原句做字面同义词替换改写，不要把词语强行换成近义词\n" +
-                    "- 若问句中已经出现具体日期、具体数字、具体名称、具体对象等明确实体：\n" +
-                    "  所有代词：当天、当日、该月、这家、此项、该商品、其上、对应等\n" +
-                    "  一律就近绑定前面已出现的具体实体\n" +
-                    "- 严禁私自泛化替换成全局默认值：今天、当前本月、全部、本店、系统当前时间\n" +
-                    "- 生成 SQL 禁止同时出现固定指定值 + 系统动态当前值，避免逻辑冲突\n\n" +
+                    "⚠️ **时间查询**：'X月X号'查具体某天→WHERE DATE(created_at)='2026-04-10'，不要GROUP BY\n\n" +
+                    "🚫 **禁止同义词替换**：具体实体（日期/数字/名称）的代词（当天/该月等）必须就近绑定，严禁泛化为今天/本月\n\n" +
                     "用户问题：%s\n\n" +
                     "要求：\n" +
-                    "1. 只输出SQL语句，不要包含```sql或其他标记\n" +
-                    "2. **表使用规范**：\n" +
-                    "   - 优先使用'可用表清单'中的表\n" +
-                    "   - ❌ 错误：SELECT u.province ... FROM orders o JOIN user_addresses ua ... （u表不在FROM/JOIN中）\n" +
-                    "   - ✅ 正确：SELECT ua.province ... FROM orders o JOIN user_addresses ua ... （ua在JOIN中）\n" +
-                    "   - **所有SELECT中的字段必须属于FROM或JOIN中的表**\n" +
-                    "3. 添加LIMIT限制返回行数（但如果是GROUP BY统计查询，可以不设LIMIT或设为较大值）\n" +
-                    "4. **别名规范（重要）**：\n" +
-                    "   - **所有SELECT字段都必须使用 AS 指定中文别名**，这样前端表格会直接显示中文表头\n" +
-                    "   - 例如：SELECT category_name AS '分类名称', SUM(amount) AS '订单总金额', COUNT(*) AS '订单数量'\n" +
-                    "   - 聚合函数必须加别名：SUM(xxx) AS '总和', COUNT(*) AS '数量', AVG(xxx) AS '平均值'\n" +
-                    "   - 分组字段也必须加别名：GROUP BY 的字段也要 AS '中文名'\n" +
-                    "5. **重要：识别统计类问题并使用聚合函数**\n" +
-                    "   - ⚠️ **关键判断规则**：只有当用户明确要求'统计'、'汇总'、'合计'、'平均'、'分组'时，才使用 GROUP BY\n" +
-                    "   - ❌ 错误场景：用户问'查最近7天的订单'、'显示订单列表'、'查看所有订单' → 这是查询详情，不要加 GROUP BY\n" +
-                    "   - ✅ 正确场景：用户问'统计每天的订单数'、'按地区汇总销售额'、'各城市的平均金额' → 这是统计汇总，需要 GROUP BY\n" +
-                    "   - **判断依据**：如果用户想看'每条记录'，就不要 GROUP BY；如果想看'汇总数据'，才用 GROUP BY\n" +
-                    "   - 常用聚合函数：SUM()求和、COUNT()计数、AVG()平均、MAX()最大、MIN()最小\n" +
-                    "   - 例如（统计）：'统计每个地区的销售额' -> SELECT region, SUM(amount) FROM orders GROUP BY region\n" +
-                    "   - 例如（详情）：'查最近7天的订单' -> SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL 7 DAY\n" +
-                    "6. **SELECT字段规则**：\n" +
-                    "   - GROUP BY查询：SELECT中只能包含GROUP BY字段和聚合函数，不能直接选择非分组字段\n" +
-                    "   - 错误示例：SELECT user_id, province, SUM(amount) ... GROUP BY province （user_id不在GROUP BY中）\n" +
-                    "   - 正确示例：SELECT province, SUM(amount) ... GROUP BY province\n" +
-                    "7. **时间格式化规范**：\n" +
-                    "   - 如果用户要求按天/月/年统计（如'最近10天每天的订单金额'），必须使用 DATE_FORMAT() 函数格式化时间\n" +
-                    "   - 按天统计：DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期'\n" +
-                    "   - 按月统计：DATE_FORMAT(created_at, '%%Y-%%m') AS '订单月份'\n" +
-                    "   - 按年统计：DATE_FORMAT(created_at, '%%Y') AS '订单年份'\n" +
-                    "   - ❌ 错误：DATE(created_at) 会返回带时分秒的格式\n" +
-                    "   - ✅ 正确：DATE_FORMAT(created_at, '%%Y-%%m-%%d') 只返回日期部分\n" +
-                    "   - ⚠️ **重要区分**：\n" +
-                    "     * **指定具体日期**：'查询2026年4月10号的订单' → WHERE DATE(created_at) = '2026-04-10' （不要GROUP BY）\n" +
-                    "     * **按天分组统计**：'统计最近7天每天的订单数' → GROUP BY DATE_FORMAT(created_at, '%%Y-%%m-%%d') （需要GROUP BY）\n" +
-                    "     * **关键判断**：用户说'X月X号'是查那一天的数据，不是按天分组！\n" +
-                    "8. **ORDER BY 别名一致性规则（重要）**：\n" +
-                    "   - ⚠️ **强制规则**：ORDER BY 中使用的字段名或别名，必须与 SELECT 中定义的完全一致\n" +
-                    "   - 错误示例：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY order_date\n" +
-                    "     （SELECT 中是 '订单日期'，但 ORDER BY 用了 order_date）\n" +
-                    "   - 正确示例1：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS '订单日期' ... ORDER BY '订单日期'\n" +
-                    "   - 正确示例2：SELECT DATE_FORMAT(created_at, '%%Y-%%m-%%d') AS order_date ... ORDER BY order_date\n" +
-                    "   - **关键**：SELECT 和 ORDER BY 必须使用相同的别名，不能混用\n" +
-                    "9. **表关联规则**：\n" +
-                    "   - 如果上面提供了'表之间的关联关系'，直接使用这些关系进行JOIN\n" +
-                    "   - **必须使用直接JOIN，禁止使用子查询或IN子句进行表关联**\n" +
-                    "   - 错误示例：JOIN tableB ON colA IN (SELECT id FROM tableB WHERE ...)\n" +
-                    "   - 正确示例：JOIN tableB ON tableA.ref_id = tableB.id\n" +
-                    "   - **重要：关联字段必须是外键或ID字段，不能是文本字段**\n" +
-                    "   - 错误示例：JOIN user_addresses ua ON orders.shipping_address = ua.id （shipping_address是文本，不是ID）\n" +
-                    "   - 正确示例：JOIN users u ON orders.user_id = u.id （通过用户ID关联）\n" +
-                    "   - **一对多关联时必须添加过滤条件避免笛卡尔积**\n" +
-                    "   - 错误示例：JOIN user_addresses ua ON orders.user_id = ua.user_id （一个用户可能有多个地址，导致订单金额重复计算）\n" +
-                    "   - 正确示例：JOIN user_addresses ua ON orders.user_id = ua.user_id AND ua.is_default = 1 （只取默认地址）\n" +
-                    "   - 或者优先使用主表的字段：直接使用users表的地区字段，而非user_addresses\n" +
-                    "10. **⚠️ 语义一致性强制规则（重要）**：\n" +
-                    "    - **对于相同语义的查询（如'查询用户X的订单'），必须保持SQL结构完全一致**\n" +
-                    "    - 例如：'查询用户张三的订单'和'查询用户李四的订单'应该生成相同的SQL结构，只是WHERE条件不同\n" +
-                    "    - **表选择一致性**：如果第一次选择了orders JOIN users，第二次也必须使用相同的表组合\n" +
-                    "    - **字段映射一致性**：同一概念必须映射到相同字段（如用户名始终用u.username，不用o.receiver_name）\n" +
-                    "    - **JOIN顺序一致性**：FROM orders o JOIN users u ON ... 的顺序必须保持一致\n" +
-                    "    - ❌ 错误：第一次用 JOIN users，第二次用 JOIN order_items\n" +
-                    "    - ✅ 正确：两次都用 JOIN users u ON o.user_id = u.id\n" +
-                    "    - **关键原则**：优先使用业务主键关联（user_id），而非文本字段匹配（receiver_name）\n" +
-                    "\nSQL：",
+                    "1. 只输出SQL，无标记\n" +
+                    "2. SELECT字段必须属于FROM/JOIN中的表\n" +
+                    "3. 所有SELECT字段用AS指定中文别名\n" +
+                    "4. 需要GROUP BY的场景：统计/汇总/平均/趋势/对比/分布/排名/每天/每月/各X等聚合查询；不需要GROUP BY的场景：查详情/查列表/查具体某天的数据\n" +
+                    "5. JOIN必须用ID字段，禁止子查询，一对多需加过滤条件\n" +
+                    "6. 按天/月统计请使用该数据库对应的日期格式化函数\n" +
+                    "7. GROUP BY和ORDER BY必须使用与SELECT相同的原始表达式，禁止用中文别名或数字位置\n" +
+                    "8. 相同语义查询保持SQL结构一致\n" +
+                    "SQL：",
                     expandedTables.size(), updatedAvailableTablesList,
                     updatedSchemaInfo, updatedRelationshipInfo.isEmpty() ? "" : updatedRelationshipInfo + "\n\n", ragEnhancement, negativeExamples, expandedQuery
                 );
@@ -589,7 +477,8 @@ public class NL2SQLService {
                 Set<String> allTablesForCorrection = new HashSet<>(expandedTables);
                 allTablesForCorrection.addAll(missingTablesForCorrection);
                 correctionSchemaInfo = buildTableSchemaInfo(new ArrayList<>(allTablesForCorrection), datasourceId);
-                correctionRelationshipInfo = relationshipService.getRelationshipsForPrompt(
+                // ✅ SQL验证阶段：使用过滤后的关联关系
+                correctionRelationshipInfo = relationshipService.getFilteredRelationshipsForSQLGeneration(
                     datasourceId, new ArrayList<>(allTablesForCorrection));
                 
                 log.info("[NL2SQLService] 已补充纠错用 schema，包含 {} 张表", allTablesForCorrection.size());
@@ -602,6 +491,7 @@ public class NL2SQLService {
             // ⚠️ RAG优化：设置学习上下文（供后续 SQL 执行后自动学习）
             RagLearningContext.setCurrentQuestion(expandedQuery);
             RagLearningContext.setCurrentSql(sql);
+            RagLearningContext.setCurrentDatasourceId(datasourceId);
             
             // ✅ 关键修复：保存当前 SQL 和查询问题到 ThreadLocal（用于 AI 总结/图表生成）
             sessionContextManager.saveCurrentContext(sql, expandedQuery);
@@ -760,8 +650,14 @@ public class NL2SQLService {
                 log.info("[NL2SQLService] 已加载 {} 张表的 schema: {}", tablesInSQL.size(), tablesInSQL);
             }
             
+            String autoFixDbType = metadataMapper.getDbType(datasourceId);
+            if (autoFixDbType == null || autoFixDbType.isEmpty()) {
+                autoFixDbType = "MySQL";
+            }
+            
             String fixPrompt = String.format(
-                "你是一个MySQL SQL专家。以下SQL执行失败，请根据表结构修正。\n\n" +
+                "你是" + autoFixDbType.toUpperCase() + " SQL专家。以下SQL执行失败，请根据表结构修正。\n\n" +
+                "数据库类型：" + autoFixDbType.toUpperCase() + "\n\n" +
                 "%s" +
                 "失败的SQL:\n%s\n\n" +
                 "错误信息:\n%s\n\n" +
@@ -802,8 +698,13 @@ public class NL2SQLService {
             }
             
             // 构建 Prompt
+            String dbTypeExt = metadataMapper.getDbType(datasourceId);
+            if (dbTypeExt == null || dbTypeExt.isEmpty()) {
+                dbTypeExt = "MySQL";
+            }
             String prompt = String.format(
-                "请根据以下表结构和用户问题生成 SQL 语句。\n\n" +
+                "你是" + dbTypeExt.toUpperCase() + " SQL专家。根据以下表结构和用户问题生成" + dbTypeExt.toUpperCase() + " SQL 语句。\n\n" +
+                "数据库类型：" + dbTypeExt.toUpperCase() + "\n\n" +
                 "表结构信息：\n%s\n\n" +
                 "用户问题：%s\n\n" +
                 "要求：\n" +

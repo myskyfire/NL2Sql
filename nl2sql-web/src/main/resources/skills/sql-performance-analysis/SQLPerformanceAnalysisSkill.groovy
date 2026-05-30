@@ -1,10 +1,12 @@
 import com.nl2sql.core.agent.skills.SkillContext
 import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
 
 /**
  * SQL性能分析 Skill - 演示多Tool协同工作
  * 
  * ✅ 这是真正的 Skill：只负责流程编排，不直接操作数据库
+ * ✅ P0优化：使用 SkillResult 统一响应格式
  * 
  * 流程：
  * 1. 调用 validate_sql Tool 验证SQL语法
@@ -21,10 +23,14 @@ def execute(SkillContext context) {
     Long datasourceId = context.getParameter("datasourceId")
     
     if (!sql || !datasourceId) {
-        return [
-            status: "error",
-            message: "缺少必需参数: sql 和 datasourceId"
-        ]
+        return JsonOutput.toJson([
+            success: false,
+            type: "error",
+            error: [
+                errorCode: "MISSING_PARAMS",
+                errorMessage: "缺少必需参数: sql 和 datasourceId"
+            ]
+        ])
     }
     
     println "[SQLPerformanceAnalysisSkill] SQL: ${sql}"
@@ -43,13 +49,19 @@ def execute(SkillContext context) {
         
         if (!validateResult.valid) {
             log.warn("SQL验证失败: {}", validateResult.error)
-            return [
-                status: "validation_failed",
-                message: "SQL验证失败",
-                error: validateResult.error,
-                riskLevel: validateResult.riskLevel,
-                datasourceId: datasourceId
-            ]
+            return JsonOutput.toJson([
+                success: false,
+                type: "error",
+                error: [
+                    errorCode: "SQL_VALIDATION_FAILED",
+                    errorMessage: "SQL验证失败",
+                    context: [
+                        riskLevel: validateResult.riskLevel,
+                        error: validateResult.error,
+                        datasourceId: datasourceId
+                    ]
+                ]
+            ])
         }
         
         analysisResults.validation = validateResult
@@ -95,28 +107,37 @@ def execute(SkillContext context) {
         
         analysisResults.suggestions = optimizationSuggestions
         
-        // 7. 返回完整分析报告
-        return [
-            status: "success",
-            sql: sql,
-            datasourceId: datasourceId,
-            analysis: analysisResults,
-            summary: [
-                overallRisk: calculateOverallRisk(explainResult, indexResult, costResult),
-                suggestionCount: optimizationSuggestions.size(),
-                recommendations: optimizationSuggestions
+        // 7. 返回完整分析报告（SkillResult 统一格式）
+        return JsonOutput.toJson([
+            success: true,
+            type: "analysis_result",
+            data: [
+                sql: sql,
+                analysis: analysisResults,
+                summary: [
+                    overallRisk: calculateOverallRisk(explainResult, indexResult, costResult),
+                    suggestionCount: optimizationSuggestions.size(),
+                    recommendations: optimizationSuggestions
+                ]
+            ],
+            metadata: [
+                datasourceId: datasourceId
             ]
-        ]
+        ])
         
     } catch (Exception e) {
         log.error("[SQLPerformanceAnalysisSkill] 执行失败: {}", e.message)
         e.printStackTrace()
         
-        return [
-            status: "error",
-            message: "执行失败: ${e.message}",
-            datasourceId: datasourceId
-        ]
+        return JsonOutput.toJson([
+            success: false,
+            type: "error",
+            error: [
+                errorCode: "SKILL_EXECUTION_ERROR",
+                errorMessage: "执行失败: ${e.message}",
+                context: [datasourceId: datasourceId]
+            ]
+        ])
     }
 }
 

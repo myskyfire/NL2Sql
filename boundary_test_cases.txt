@@ -1,0 +1,43 @@
+# NL2SQL 边界测试用例 - trade库
+# 格式：问题|预期SQL模式|难度等级|测试目标
+# 难度：1-简单 2-中等 3-困难 4-复杂 5-极限
+
+# ===== 难度1：基础单表查询 (1-6) =====
+最近一周有多少订单|SELECT COUNT(*) FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)|1|COUNT+时间范围
+订单总金额是多少|SELECT SUM(total_amount) FROM orders|1|SUM聚合
+平均订单金额|SELECT AVG(total_amount) FROM orders|1|AVG聚合
+最高订单金额是多少|SELECT MAX(total_amount) FROM orders|1|MAX聚合
+最低订单金额是多少|SELECT MIN(total_amount) FROM orders|1|MIN聚合
+有多少种支付方式|SELECT COUNT(DISTINCT payment_method) FROM orders WHERE payment_method IS NOT NULL|1|COUNT DISTINCT
+
+# ===== 难度2：条件过滤 (7-12) =====
+已完成的订单有多少|SELECT COUNT(*) FROM orders WHERE status = '已完成'|2|WHERE等值过滤
+待支付的订单数量|SELECT COUNT(*) FROM orders WHERE status = '待支付'|2|WHERE等值过滤
+微信支付的订单有多少|SELECT COUNT(*) FROM orders WHERE payment_method = '微信支付'|2|WHERE字符串匹配
+订单金额超过10000的有多少|SELECT COUNT(*) FROM orders WHERE total_amount > 10000|2|WHERE数值比较
+有折扣的订单数量|SELECT COUNT(*) FROM orders WHERE discount_amount > 0|2|WHERE数值比较
+4月28日的订单有多少|SELECT COUNT(*) FROM orders WHERE DATE(created_at) = '2026-04-28'|2|DATE函数
+
+# ===== 难度3：分组统计 (13-18) =====
+每天有多少订单|SELECT DATE(created_at), COUNT(*) FROM orders GROUP BY DATE(created_at) ORDER BY DATE(created_at)|3|GROUP BY+日期
+每种状态的订单数量|SELECT status, COUNT(*) FROM orders GROUP BY status|3|GROUP BY分类统计
+每种支付方式的订单数|SELECT payment_method, COUNT(*) FROM orders WHERE payment_method IS NOT NULL GROUP BY payment_method|3|GROUP BY+NULL处理
+每个用户的订单数量|SELECT user_id, COUNT(*) as order_count FROM orders GROUP BY user_id ORDER BY order_count DESC|3|GROUP BY+排序
+每天的订单总金额|SELECT DATE(created_at), SUM(total_amount) FROM orders GROUP BY DATE(created_at)|3|GROUP BY+SUM
+有折扣和无折扣订单的平均金额|SELECT CASE WHEN discount_amount > 0 THEN '有折扣' ELSE '无折扣' END, AVG(total_amount) FROM orders GROUP BY CASE WHEN discount_amount > 0 THEN '有折扣' ELSE '无折扣' END|3|CASE WHEN+GROUP BY
+
+# ===== 难度4：多表JOIN (19-24) =====
+每个订单的商品数量|SELECT o.id, COUNT(oi.id) as item_count FROM orders o LEFT JOIN order_items oi ON o.id = oi.order_id WHERE o.id >= 151 GROUP BY o.id|4|LEFT JOIN+COUNT
+订单及其商品信息|SELECT o.order_no, oi.product_name, oi.quantity, oi.unit_price FROM orders o JOIN order_items oi ON o.id = oi.order_id WHERE o.id >= 151 LIMIT 10|4|JOIN多字段
+有退货的订单列表|SELECT DISTINCT o.order_no FROM orders o JOIN returns r ON o.id = r.order_id|4|JOIN+DISTINCT
+每个订单的物流信息|SELECT o.order_no, s.tracking_no, s.status FROM orders o JOIN shipments s ON o.id = s.order_id WHERE o.id >= 151|4|JOIN三表
+使用优惠券的订单及优惠金额|SELECT o.order_no, od.discount_name, od.discount_amount FROM orders o JOIN order_discounts od ON o.id = od.order_id WHERE o.discount_amount > 0|4|JOIN条件过滤
+用户收货地址及订单|SELECT u.real_name, ua.city, o.order_no FROM users u JOIN user_addresses ua ON u.id = ua.user_id JOIN orders o ON u.id = o.user_id WHERE ua.is_default = 1 LIMIT 10|4|三表JOIN
+
+# ===== 难度5：复杂查询 (25-30) =====
+最近7天每天的订单数和总金额|SELECT DATE(created_at) as date, COUNT(*) as order_count, SUM(total_amount) as daily_total FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY DATE(created_at) ORDER BY date|5|时间范围+GROUP BY+多聚合
+订单金额排名前10的用户|SELECT user_id, COUNT(*) as order_count, SUM(total_amount) as total_spent FROM orders GROUP BY user_id ORDER BY total_spent DESC LIMIT 10|5|GROUP BY+ORDER BY+LIMIT+多聚合
+完成率最高的3天|SELECT DATE(created_at) as date, COUNT(*) as total, SUM(CASE WHEN status = '已完成' THEN 1 ELSE 0 END) as completed, ROUND(SUM(CASE WHEN status = '已完成' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as completion_rate FROM orders GROUP BY DATE(created_at) ORDER BY completion_rate DESC LIMIT 3|5|CASE WHEN+百分比计算
+每个商品分类的销售总额|SELECT c.category_name, SUM(oi.subtotal) as sales FROM product_categories c JOIN products p ON c.id = p.category_id JOIN order_items oi ON p.id = oi.product_id GROUP BY c.category_name ORDER BY sales DESC|5|四表JOIN+SUM
+复购用户分析（下单2次以上）|SELECT user_id, COUNT(*) as order_count, SUM(total_amount) as total_spent, AVG(total_amount) as avg_order FROM orders GROUP BY user_id HAVING COUNT(*) >= 2 ORDER BY total_spent DESC|5|HAVING过滤+多聚合
+最近一周各支付方式的销售对比|SELECT payment_method, COUNT(*) as order_count, SUM(total_amount) as total_sales, AVG(total_amount) as avg_order FROM orders WHERE payment_method IS NOT NULL AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY payment_method ORDER BY total_sales DESC|5|多维度统计+时间过滤

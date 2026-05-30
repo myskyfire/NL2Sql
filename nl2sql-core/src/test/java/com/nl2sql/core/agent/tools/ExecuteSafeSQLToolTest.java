@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -22,6 +23,8 @@ class ExecuteSafeSQLToolTest {
     
     @InjectMocks
     private ExecuteSafeSQLTool tool;
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
     
     @BeforeEach
     void setUp() {
@@ -46,8 +49,9 @@ class ExecuteSafeSQLToolTest {
             true, mockData, mockData.size(), 150.0, null
         );
         
+        String jsonResult = objectMapper.writeValueAsString(execResult);
         when(sqlExecutionTool.executeSQL(eq(sql), eq(datasourceId), eq(userId), eq(username)))
-            .thenReturn(execResult);
+            .thenReturn(jsonResult);
         
         // 执行测试
         String result = tool.executeSafeSQL(sql, datasourceId, userId, username);
@@ -71,8 +75,9 @@ class ExecuteSafeSQLToolTest {
             false, null, 0, null, "表不存在"
         );
         
+        String jsonResult = objectMapper.writeValueAsString(execResult);
         when(sqlExecutionTool.executeSQL(anyString(), anyLong(), anyLong(), anyString()))
-            .thenReturn(execResult);
+            .thenReturn(jsonResult);
         
         String result = tool.executeSafeSQL(sql, 1L, 123L, "user");
         
@@ -90,8 +95,9 @@ class ExecuteSafeSQLToolTest {
             true, new ArrayList<>(), 0, 50.0, null
         );
         
+        String jsonResult = objectMapper.writeValueAsString(execResult);
         when(sqlExecutionTool.executeSQL(anyString(), anyLong(), anyLong(), anyString()))
-            .thenReturn(execResult);
+            .thenReturn(jsonResult);
         
         String result = tool.executeSafeSQL(sql, 1L, 123L, "user");
         
@@ -121,8 +127,9 @@ class ExecuteSafeSQLToolTest {
             true, new ArrayList<>(), 0, null, null
         );
         
+        String jsonResult = objectMapper.writeValueAsString(execResult);
         when(sqlExecutionTool.executeSQL(anyString(), isNull(), anyLong(), anyString()))
-            .thenReturn(execResult);
+            .thenReturn(jsonResult);
         
         String result = tool.executeSafeSQL("SELECT 1", null, 123L, "user");
         

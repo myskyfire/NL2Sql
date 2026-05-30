@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,8 @@ public class ConversationMemoryTool {
     
     @Autowired(required = false)
     private StringRedisTemplate redisTemplate;
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
     
     // 降级方案：内存存储
     private static final Map<String, ConversationSession> memoryStore = new HashMap<>();
@@ -171,19 +174,27 @@ public class ConversationMemoryTool {
     }
     
     /**
-     * 序列化（简化版）
+     * 序列化会话为JSON
      */
     private String serializeSession(ConversationSession session) {
-        // TODO: 使用 Jackson 序列化
-        return "{}";
+        try {
+            return objectMapper.writeValueAsString(session);
+        } catch (Exception e) {
+            log.error("[Memory] 序列化失败", e);
+            throw new RuntimeException("序列化失败", e);
+        }
     }
     
     /**
-     * 反序列化（简化版）
+     * 从JSON反序列化为会话
      */
     private ConversationSession parseSession(String json) {
-        // TODO: 使用 Jackson 反序列化
-        return new ConversationSession();
+        try {
+            return objectMapper.readValue(json, ConversationSession.class);
+        } catch (Exception e) {
+            log.error("[Memory] 反序列化失败: {}", json, e);
+            throw new RuntimeException("反序列化失败", e);
+        }
     }
     
     /**

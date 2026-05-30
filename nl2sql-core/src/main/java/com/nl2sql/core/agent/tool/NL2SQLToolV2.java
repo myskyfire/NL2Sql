@@ -209,15 +209,10 @@ public class NL2SQLToolV2 implements BaseTool {
     }
     
     /**
-     * 同义词扩展
+     * ✅ P0优化：删除空的同义词扩展，直接返回原始query
      */
     private String expandSynonyms(String query, Long datasourceId) {
-        try {
-            return synonymService.expandSynonyms(query, datasourceId);
-        } catch (Exception e) {
-            log.warn("[NL2SQLToolV2] 同义词扩展失败，使用原始查询", e);
-            return query;
-        }
+        return query;
     }
     
     /**

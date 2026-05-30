@@ -1,0 +1,52 @@
+feat(P1-1): ReActAgent 构造函数集成 SkillRouter（阶段1/2）
+
+## 改动内容
+
+### 1. ReActAgent.java
+- ✅ 添加 SkillRouter 依赖注入
+- ✅ 修改构造函数接受 SkillRouter 参数
+- ✅ 添加必要的 imports（RoutingResult, RoutingStrategy, SkillRouter, SkillResult, Collectors）
+- ⏸️ execute() 方法的路由逻辑集成留待下一阶段完成
+
+### 2. AgentConfig.java
+- ✅ reActAgent() Bean 方法注入 SkillRouter 参数
+- ✅ 更新日志信息反映新的架构
+- ✅ 添加 SkillRouter import
+
+## 当前状态
+
+**已完成**：
+- SkillRouter、RoutingStrategy、RoutingResult 核心组件（P1-1 前期工作）
+- ReActAgent 构造函数接受 SkillRouter
+- AgentConfig 正确注入 SkillRouter Bean
+- 编译通过，基础架构就绪
+
+**待完成**（详见 P1_1_REACT_AGENT_INTEGRATION_TODO.md）：
+- ReActAgent.execute() 方法的路由逻辑集成
+- 添加 executeDirectSkill() 方法（DIRECT 策略）
+- 添加 executeWithFilteredTools() 方法（LLM_ASSISTED 策略）
+- 添加 executeFullReAct() 方法（FALLBACK 策略）
+- 提取 executeReActLoop() 公共方法
+
+## 为什么分阶段实施
+
+ReActAgent 是 NL2SQL 系统的核心组件，execute() 方法包含复杂的 ReAct 循环逻辑。
+为避免一次性大规模重构带来的风险，采用渐进式策略：
+
+1. **阶段1（本次提交）**：完成依赖注入和基础架构
+2. **阶段2（下次会话）**：谨慎实施 execute() 方法的路由逻辑集成
+
+这样可以：
+- 降低单次修改的风险
+- 每步都可验证编译通过
+- 便于代码审查和问题定位
+- 避免长上下文导致的工具调用失败
+
+## 测试
+
+- ✅ mvn clean compile -DskipTests 通过
+- ⏸️ 完整功能测试留待阶段2完成后进行
+
+## 下一步
+
+参考 P1_1_REACT_AGENT_INTEGRATION_TODO.md 文档，在新会话中完成 execute() 方法的路由逻辑集成。

@@ -2,9 +2,15 @@ package com.nl2sql.core.rag;
 
 import com.nl2sql.core.rag.dto.BatchImportResult;
 import com.nl2sql.core.rag.dto.QAImportRequest;
+import com.nl2sql.core.rag.dto.RagQAPairDTO;
+import com.nl2sql.core.rag.mapper.RagKnowledgeBaseServiceMapper;
 import com.nl2sql.core.rag.provider.VectorSearchResult;
 import com.nl2sql.core.rag.provider.VectorStoreManager;
 import com.nl2sql.core.rag.provider.VectorStoreProvider;
+import com.nl2sql.core.rerank.Reranker;
+import com.nl2sql.core.tracing.TraceSpan;
+import com.nl2sql.core.tracing.TracingService;
+import com.nl2sql.core.tracing.TracingContext;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,8 +32,19 @@ public class RagKnowledgeBaseService {
     
     private final JdbcTemplate jdbcTemplate;
     private final VectorStoreManager vectorStoreManager;
-    private static final double SIMILARITY_THRESHOLD = 0.85;
-    private static final int MAX_EXAMPLES = 3;
+    
+    @Autowired
+    private RagKnowledgeBaseServiceMapper ragMapper;
+    
+    @Autowired(required = false)
+    private Reranker reranker;  // Reranker 重排序服务
+    
+    @Autowired(required = false)
+    private TracingService tracingService;
+    
+    private static final double SIMILARITY_THRESHOLD = 0.9;
+    private static final int MAX_EXAMPLES = 5;  // ✅ 电商场景推荐 5 个示例
+    private static final int RERANK_CANDIDATE_COUNT = 20;  // ✅ Rerank 候选数量（top-k * 4）
     
     public RagKnowledgeBaseService(JdbcTemplate jdbcTemplate,
                                    VectorStoreManager vectorStoreManager) {
@@ -40,12 +57,18 @@ public class RagKnowledgeBaseService {
      */
     public Long saveQAPair(String question, String answer, String sqlExample, 
                           String category, float qualityScore) {
-        // 1. 保存到MySQL（持久化）
-        String sql = "INSERT INTO rag_knowledge_base (question, answer, sql_example, category, quality_score, usage_count, created_at) " +
-                    "VALUES (?, ?, ?, ?, ?, 0, NOW())";
+        // 1. 保存到MySQL（持久化）- 使用 MyBatis
+        RagQAPairDTO qaPair = new RagQAPairDTO();
+        qaPair.setQuestion(question);
+        qaPair.setAnswer(answer);
+        qaPair.setSqlExample(sqlExample);
+        qaPair.setCategory(category);
+        qaPair.setQualityScore(qualityScore);
         
-        jdbcTemplate.update(sql, question, answer, sqlExample, category, qualityScore);
-        Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        ragMapper.insertQAPair(qaPair);
+        
+        // MyBatis useGeneratedKeys 会自动填充 ID 到对象
+        Long id = qaPair.getId();
         
         // 2. 同步到向量数据库（使用活跃提供者）
         VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
@@ -65,22 +88,78 @@ public class RagKnowledgeBaseService {
     }
     
     /**
-     * 检索相似的问答对（多提供者架构，自动降级）
+     * 检索相似的问答对（多提供者架构，自动降级 + Reranker 精排）
      */
     public List<KnowledgeItem> searchSimilarQuestions(String question, int maxResults) {
-        // 使用活跃的向量数据库提供者
+        TraceSpan run = startRetrieverTrace(question, maxResults);
+        try {
+            List<KnowledgeItem> results = doSearchSimilarQuestions(question, maxResults);
+            endRetrieverTrace(run, results, null);
+            return results;
+        } catch (Exception e) {
+            endRetrieverTrace(run, null, e.getMessage());
+            throw e;
+        }
+    }
+
+    private List<KnowledgeItem> doSearchSimilarQuestions(String question, int maxResults) {
         VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
         
         if (activeProvider != null) {
             try {
-                List<VectorSearchResult> providerResults = 
-                    activeProvider.searchSimilar(question, maxResults, SIMILARITY_THRESHOLD);
+                int candidateCount = (reranker != null && reranker.isAvailable()) 
+                    ? RERANK_CANDIDATE_COUNT 
+                    : maxResults;
                 
-                if (!providerResults.isEmpty()) {
-                    log.info("RAG检索成功({}): question={}, found={} items", 
-                        activeProvider.getName(), question, providerResults.size());
-                    return convertFromProviderResults(providerResults);
+                List<VectorSearchResult> candidates = 
+                    activeProvider.searchSimilar(question, candidateCount, 0.7);
+                
+                if (candidates.isEmpty()) {
+                    log.debug("{}向量搜索无结果，降级到MySQL", activeProvider.getName());
+                    return searchByMySQL(question, maxResults);
                 }
+                
+                if (reranker != null && reranker.isAvailable()) {
+                    log.info("[RAG-Rerank] 启动重排序: provider={}, candidates={}", 
+                        reranker.getName(), candidates.size());
+                    
+                    List<String> candidateDocs = candidates.stream()
+                        .map(VectorSearchResult::getQuestion)
+                        .collect(java.util.stream.Collectors.toList());
+                    
+                    List<Reranker.RerankedDocument> reranked = reranker.rerank(question, candidateDocs);
+                    
+                    if (!reranked.isEmpty()) {
+                        log.info("[RAG-Rerank] 重排序完成: top_score={}", 
+                            String.format("%.3f", reranked.get(0).getRelevanceScore()));
+                        
+                        int topK = Math.min(maxResults, reranked.size());
+                        List<VectorSearchResult> finalResults = new ArrayList<>();
+                        
+                        for (int i = 0; i < topK; i++) {
+                            Reranker.RerankedDocument doc = reranked.get(i);
+                            VectorSearchResult original = candidates.stream()
+                                .filter(c -> c.getQuestion().equals(doc.getContent()))
+                                .findFirst()
+                                .orElse(null);
+                            
+                            if (original != null) {
+                                original.setScore(doc.getRelevanceScore());
+                                finalResults.add(original);
+                            }
+                        }
+                        
+                        log.info("[RAG-Rerank] 最终返回 {} 条结果", finalResults.size());
+                        return convertFromProviderResults(finalResults);
+                    } else {
+                        log.warn("[RAG-Rerank] 重排序失败，使用原始向量排序");
+                    }
+                }
+                
+                log.info("RAG检索成功({}): question={}, found={} items", 
+                    activeProvider.getName(), question, candidates.size());
+                return convertFromProviderResults(candidates.subList(0, Math.min(maxResults, candidates.size())));
+                
             } catch (Exception e) {
                 log.warn("{}向量搜索失败，降级到MySQL全文检索: {}", 
                     activeProvider.getName(), e.getMessage());
@@ -89,8 +168,42 @@ public class RagKnowledgeBaseService {
             log.debug("没有可用的向量数据库提供者，直接使用MySQL全文检索");
         }
         
-        // 降级到MySQL全文检索
         return searchByMySQL(question, maxResults);
+    }
+
+    private TraceSpan startRetrieverTrace(String question, int maxResults) {
+        if (tracingService == null || !tracingService.isEnabled()) return null;
+        try {
+            Map<String, Object> inputs = new HashMap<>();
+            inputs.put("question", question);
+            inputs.put("maxResults", maxResults);
+            return tracingService.traceRetriever("RAG检索", inputs, TracingContext.currentRunId());
+        } catch (Exception e) {
+            log.debug("[LangSmith] startRetrieverTrace 失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void endRetrieverTrace(TraceSpan run, List<KnowledgeItem> results, String error) {
+        if (tracingService == null || run == null) return;
+        try {
+            Map<String, Object> outputs = new HashMap<>();
+            outputs.put("resultCount", results != null ? results.size() : 0);
+            if (results != null && !results.isEmpty()) {
+                List<Map<String, Object>> items = new ArrayList<>();
+                for (int i = 0; i < Math.min(3, results.size()); i++) {
+                    KnowledgeItem item = results.get(i);
+                    Map<String, Object> itemMap = new HashMap<>();
+                    itemMap.put("question", item.getQuestion());
+                    itemMap.put("score", item.getRelevance());
+                    items.add(itemMap);
+                }
+                outputs.put("topResults", items);
+            }
+            tracingService.endRun(run, outputs, error);
+        } catch (Exception e) {
+            log.debug("[LangSmith] endRetrieverTrace 失败: {}", e.getMessage());
+        }
     }
     
     /**
@@ -154,26 +267,8 @@ public class RagKnowledgeBaseService {
      */
     private List<KnowledgeItem> searchByMySQL(String question, int maxResults) {
         // ✅ 关键优化：结合用户反馈评分调整排序权重
-        String sql = "SELECT k.id, k.question, k.answer, k.sql_example, k.category, k.quality_score, k.usage_count, " +
-                    "MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) as relevance, " +
-                    "COALESCE(avg_feedback.rating, 3.0) as avg_rating " +  // 平均评分，默认3.0
-                    "FROM rag_knowledge_base k " +
-                    "LEFT JOIN (" +
-                    "    SELECT knowledge_id, AVG(rating) as rating " +
-                    "    FROM rag_feedback " +
-                    "    WHERE rating >= 4 " +  // ✅ 只统计4-5星正面反馈
-                    "    GROUP BY knowledge_id" +
-                    ") avg_feedback ON k.id = avg_feedback.knowledge_id " +
-                    "WHERE MATCH(k.question) AGAINST(? IN NATURAL LANGUAGE MODE) " +
-                    "AND k.quality_score >= ? " +  // ✅ 过滤低质量示例（>=0.8）
-                    "ORDER BY (relevance * 0.6 + (avg_rating / 5.0) * 0.4) DESC, k.quality_score DESC " +  // 综合评分
-                    "LIMIT ?";
-        
-        List<KnowledgeItem> results = jdbcTemplate.query(
-            sql, 
-            new KnowledgeRowMapper(),
-            question, question, 0.8f, maxResults  // ✅ 阈值从SIMILARITY_THRESHOLD改为0.8
-        );
+        // 使用 MyBatis Mapper
+        List<KnowledgeItem> results = ragMapper.searchByFullText(question, 0.8f, maxResults);
         
         if (!results.isEmpty()) {
             log.info("RAG检索成功(MySQL+Feedback): question={}, found={} items", question, results.size());
@@ -217,16 +312,24 @@ public class RagKnowledgeBaseService {
      * 记录使用（增加使用次数）
      */
     public void recordUsage(Long knowledgeId) {
-        String sql = "UPDATE rag_knowledge_base SET usage_count = usage_count + 1 WHERE id = ?";
-        jdbcTemplate.update(sql, knowledgeId);
+        ragMapper.incrementUsageCount(knowledgeId);
     }
     
     /**
      * 更新质量评分（基于用户反馈）
      */
     public void updateQualityScore(Long knowledgeId, float scoreChange) {
-        String sql = "UPDATE rag_knowledge_base SET quality_score = LEAST(1.0, GREATEST(0.0, quality_score + ?)) WHERE id = ?";
-        jdbcTemplate.update(sql, scoreChange, knowledgeId);
+        // 获取当前分数
+        KnowledgeItem item = ragMapper.getHighQualitySamples(null, 1).stream()
+            .filter(i -> i.getId().equals(knowledgeId))
+            .findFirst()
+            .orElse(null);
+        
+        if (item != null) {
+            float newScore = Math.min(1.0f, Math.max(0.0f, item.getQualityScore() + scoreChange));
+            ragMapper.updateQualityScore(knowledgeId, newScore);
+        }
+        
         log.debug("更新RAG质量评分: id={}, change={}", knowledgeId, scoreChange);
     }
     
@@ -234,30 +337,24 @@ public class RagKnowledgeBaseService {
      * 获取高质量样本（用于few-shot学习）
      */
     public List<KnowledgeItem> getHighQualitySamples(String category, int limit) {
-        String sql = "SELECT id, question, answer, sql_example, category, quality_score, usage_count " +
-                    "FROM rag_knowledge_base " +
-                    "WHERE quality_score >= 0.9";
-        
-        if (category != null && !category.isEmpty()) {
-            sql += " AND category = ?";
-        }
-        
-        sql += " ORDER BY usage_count DESC LIMIT ?";
-        
-        Object[] params = category != null && !category.isEmpty() ? 
-            new Object[]{category, limit} : 
-            new Object[]{limit};
-        
-        return jdbcTemplate.query(sql, new KnowledgeRowMapper(), params);
+        return ragMapper.getHighQualitySamples(category, limit);
     }
     
     /**
      * 删除低质量样本
      */
     public void removeLowQualitySamples(float threshold) {
-        String sql = "DELETE FROM rag_knowledge_base WHERE quality_score < ?";
-        int deleted = jdbcTemplate.update(sql, threshold);
-        log.info("清理低质量RAG样本: threshold={}, deleted={}", threshold, deleted);
+        // 先查询低质量条目
+        List<KnowledgeItem> lowQualityItems = ragMapper.getLowQualityItems(threshold);
+        
+        if (!lowQualityItems.isEmpty()) {
+            List<Long> ids = lowQualityItems.stream()
+                .map(KnowledgeItem::getId)
+                .collect(java.util.stream.Collectors.toList());
+            
+            int deleted = ragMapper.batchDelete(ids);
+            log.info("清理低质量RAG样本: threshold={}, deleted={}", threshold, deleted);
+        }
     }
     
     /**
@@ -266,11 +363,14 @@ public class RagKnowledgeBaseService {
      */
     public int clearAllKnowledge() {
         try {
-            // 1. 清空MySQL表
+            // 1. 获取总数
+            Long totalCount = ragMapper.getTotalCount();
+            
+            // 2. 清空MySQL表 - 需要添加 truncate 方法到 Mapper
             String sql = "DELETE FROM rag_knowledge_base";
             int deleted = jdbcTemplate.update(sql);
             
-            // 2. 清空向量数据库（如果有活跃提供者）
+            // 3. 清空向量数据库（如果有活跃提供者）
             VectorStoreProvider activeProvider = vectorStoreManager.getActiveProvider();
             if (activeProvider != null) {
                 try {
@@ -284,7 +384,7 @@ public class RagKnowledgeBaseService {
             log.warn("⚠️ RAG知识库已全部清空: deleted={}条", deleted);
             return deleted;
         } catch (Exception e) {
-            log.error("清空RAG知识库失败", e);
+            log.error("清空RAG知 识库失败", e);
             throw new RuntimeException("清空失败: " + e.getMessage(), e);
         }
     }
@@ -372,25 +472,23 @@ public class RagKnowledgeBaseService {
         
         try {
             // 总知识条目数
-            Long totalCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM rag_knowledge_base", Long.class
-            );
+            Long totalCount = ragMapper.getTotalCount();
             stats.put("totalCount", totalCount != null ? totalCount : 0);
             
-            // 平均质量评分
+            // 平均质量评分 - 保留 jdbcTemplate（复杂聚合查询）
             Double avgQuality = jdbcTemplate.queryForObject(
                 "SELECT AVG(quality_score) FROM rag_knowledge_base", Double.class
             );
             stats.put("avgQuality", avgQuality != null ? String.format("%.2f", avgQuality) : "0.00");
             
-            // 本月新增数量
+            // 本月新增数量 - 保留 jdbcTemplate（日期函数）
             Integer monthlyAdded = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM rag_knowledge_base WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)",
                 Integer.class
             );
             stats.put("monthlyAdded", monthlyAdded != null ? monthlyAdded : 0);
             
-            // 用户反馈总数
+            // 用户反馈总数 - 保留 jdbcTemplate（跨表查询）
             Long feedbackCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM rag_feedback", Long.class
             );
@@ -477,7 +575,7 @@ public class RagKnowledgeBaseService {
      */
     public boolean deleteKnowledge(Long id) {
         try {
-            int deleted = jdbcTemplate.update("DELETE FROM rag_knowledge_base WHERE id = ?", id);
+            int deleted = ragMapper.deleteById(id);
             if (deleted > 0) {
                 log.info("删除RAG知识库条目: id={}", id);
                 return true;

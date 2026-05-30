@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +17,11 @@ import java.util.Map;
 @Component
 public class TableRelationshipClarificationTool {
     
-    @Autowired
+    @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+    
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
     
     /**
      * 获取表的业务描述（用中文注释）
@@ -32,20 +36,14 @@ public class TableRelationshipClarificationTool {
             log.info("[TableRelationshipClarificationTool] 获取表业务描述: {}", tableName);
             
             // 获取表注释
-            String tableComment = jdbcTemplate.queryForObject(
-                "SELECT DISTINCT table_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? LIMIT 1",
-                String.class, datasourceId, tableName
-            );
+            String tableComment = metadataMapper.selectTableComment(datasourceId, tableName);
             
             if (tableComment == null || tableComment.isEmpty()) {
                 tableComment = tableName;
             }
             
             // 获取所有字段的中文名
-            List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                "SELECT column_name, column_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ? ORDER BY ordinal_position",
-                datasourceId, tableName
-            );
+            List<Map<String, Object>> columns = metadataMapper.selectColumnNameAndComment(datasourceId, tableName);
             
             StringBuilder description = new StringBuilder();
             description.append("【").append(tableComment).append("】\n");

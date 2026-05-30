@@ -109,10 +109,139 @@
         .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         
         .hidden { display: none; }
+        
+        .datasource-selector {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .datasource-selector h2 {
+            color: white;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+            margin-bottom: 15px;
+        }
+        
+        .selector-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .selector-row label {
+            font-weight: 600;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        
+        .selector-row select {
+            padding: 10px 15px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            font-size: 14px;
+            background: rgba(255,255,255,0.95);
+            color: #333;
+            min-width: 250px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .selector-row select:hover {
+            border-color: rgba(255,255,255,0.6);
+        }
+        
+        .selector-row select:focus {
+            outline: none;
+            border-color: white;
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
+        }
+        
+        .selector-row button {
+            padding: 10px 25px;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .selector-row button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        
+        .selector-row button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .datasource-info {
+            margin-top: 15px;
+            padding: 10px 15px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        
+        .datasource-info span {
+            margin-right: 20px;
+        }
+        
+        .no-datasource-tip {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+            font-size: 16px;
+        }
+        
+        .no-datasource-tip .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .content-section {
+            display: none;
+        }
+        
+        .content-section.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="datasource-selector">
+            <h2>📊 表授权管理</h2>
+            <div class="selector-row">
+                <label>选择数据源：</label>
+                <select id="datasourceSelect" onchange="onDatasourceChange()">
+                    <option value="">-- 请选择数据源 --</option>
+                </select>
+                <button id="queryBtn" onclick="loadDatasourceData()" disabled>
+                    🔍 查询
+                </button>
+            </div>
+            <div id="datasourceInfo" class="datasource-info" style="display:none;">
+                <span id="infoName"></span>
+                <span id="infoHost"></span>
+                <span id="infoDatabase"></span>
+            </div>
+        </div>
+        
+        <div id="noDatasourceTip" class="card no-datasource-tip">
+            <div class="icon">🔒</div>
+            <div>请先选择数据源，然后点击查看授权信息</div>
+        </div>
+        
+        <div id="contentSections" class="content-section">
         <!-- 生产库表信息 -->
         <div class="card">
             <h2>🗄️ 生产库表信息</h2>
@@ -241,24 +370,87 @@
                 </tbody>
             </table>
         </div>
+        </div>
     </div>
     
     <script>
         let token = localStorage.getItem('token');
         let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+        let currentDatasourceId = null;
+        let currentDatasourceInfo = null;
         
-        // 检查管理员权限
         if (!token || userInfo.role !== 'admin') {
             alert('需要管理员权限');
             window.location.href = '/login.html';
         }
         
-        // 页面加载时初始化
         window.onload = function() {
+            loadDatasources();
+        };
+        
+        async function loadDatasources() {
+            try {
+                const response = await fetch('/api/admin/metadata/datasource/list', {
+                    headers: { 'Authorization': token }
+                });
+                const result = await response.json();
+                
+                if (result.code === 200 && result.data) {
+                    const select = document.getElementById('datasourceSelect');
+                    result.data.forEach(ds => {
+                        const option = new Option(
+                            `${ds.name} (${ds.databaseName || ds.type})`, 
+                            ds.id || ds.datasourceId
+                        );
+                        option.dataset.info = JSON.stringify(ds);
+                        select.add(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载数据源列表失败:', error);
+            }
+        }
+        
+        function onDatasourceChange() {
+            const select = document.getElementById('datasourceSelect');
+            const queryBtn = document.getElementById('queryBtn');
+            
+            if (select.value) {
+                queryBtn.disabled = false;
+                const selectedOption = select.options[select.selectedIndex];
+                currentDatasourceInfo = JSON.parse(selectedOption.dataset.info || '{}');
+                currentDatasourceId = select.value;
+            } else {
+                queryBtn.disabled = true;
+                currentDatasourceId = null;
+                currentDatasourceInfo = null;
+                document.getElementById('datasourceInfo').style.display = 'none';
+                document.getElementById('noDatasourceTip').style.display = 'block';
+                document.getElementById('contentSections').classList.remove('active');
+            }
+        }
+        
+        async function loadDatasourceData() {
+            if (!currentDatasourceId) {
+                alert('请先选择数据源');
+                return;
+            }
+            
+            document.getElementById('noDatasourceTip').style.display = 'none';
+            document.getElementById('contentSections').classList.add('active');
+            
+            if (currentDatasourceInfo) {
+                document.getElementById('infoName').textContent = `📌 数据源：${currentDatasourceInfo.name || '-'}`;
+                document.getElementById('infoHost').textContent = `🌐 地址：${currentDatasourceInfo.host || '-'}:${currentDatasourceInfo.port || '-'}`;
+                document.getElementById('infoDatabase').textContent = `🗄️ 数据库：${currentDatasourceInfo.databaseName || '-'}`;
+                document.getElementById('datasourceInfo').style.display = 'block';
+            }
+            
             loadUsers();
             loadDatabases();
+            loadTableMetadata();
             loadAllPermissions();
-        };
+        }
         
         // 加载用户列表
         async function loadUsers() {
@@ -285,10 +477,9 @@
             }
         }
         
-        // 加载数据库列表
         async function loadDatabases() {
             try {
-                const response = await fetch('/api/admin/metadata/datasource/list', {
+                const response = await fetch(`/api/admin/metadata/databases?datasourceId=${currentDatasourceId}`, {
                     headers: { 'Authorization': token }
                 });
                 const result = await response.json();
@@ -296,11 +487,13 @@
                 if (result.code === 200 && result.data) {
                     const databaseSelect = document.getElementById('databaseSelect');
                     const viewDatabaseSelect = document.getElementById('viewDatabaseSelect');
+                    databaseSelect.innerHTML = '<option value="">请选择数据库</option>';
+                    viewDatabaseSelect.innerHTML = '<option value="">请选择数据库</option>';
                     
-                    result.data.forEach(ds => {
-                        const dbName = ds.databaseName || ds.name;
-                        const option1 = new Option(`${dbName} (${ds.name})`, dbName);
-                        const option2 = new Option(`${dbName} (${ds.name})`, dbName);
+                    result.data.forEach(db => {
+                        const dbName = db.name || db.databaseName;
+                        const option1 = new Option(dbName, dbName);
+                        const option2 = new Option(dbName, dbName);
                         databaseSelect.add(option1);
                         viewDatabaseSelect.add(option2);
                     });
@@ -310,12 +503,10 @@
             }
         }
         
-        // 根据数据库加载表列表
         async function loadTablesByDatabase() {
             const databaseName = document.getElementById('databaseSelect').value;
             const tableSelect = document.getElementById('tableSelect');
             
-            // 清空表选择
             tableSelect.innerHTML = '<option value="">请选择表</option>';
             
             if (!databaseName) {
@@ -323,7 +514,7 @@
             }
             
             try {
-                const response = await fetch(`/api/admin/metadata/tables?databaseName=${encodeURIComponent(databaseName)}`, {
+                const response = await fetch(`/api/admin/metadata/tables?datasourceId=${currentDatasourceId}&databaseName=${encodeURIComponent(databaseName)}`, {
                     headers: { 'Authorization': token }
                 });
                 const result = await response.json();
@@ -339,12 +530,10 @@
             }
         }
         
-        // 为查看权限加载表列表
         async function loadTablesForView() {
             const databaseName = document.getElementById('viewDatabaseSelect').value;
             const viewTableSelect = document.getElementById('viewTableSelect');
             
-            // 清空表选择
             viewTableSelect.innerHTML = '<option value="">请选择表</option>';
             
             if (!databaseName) {
@@ -352,7 +541,7 @@
             }
             
             try {
-                const response = await fetch(`/api/admin/metadata/tables?databaseName=${encodeURIComponent(databaseName)}`, {
+                const response = await fetch(`/api/admin/metadata/tables?datasourceId=${currentDatasourceId}&databaseName=${encodeURIComponent(databaseName)}`, {
                     headers: { 'Authorization': token }
                 });
                 const result = await response.json();
@@ -368,10 +557,9 @@
             }
         }
         
-        // 加载表元数据
         async function loadTableMetadata() {
             try {
-                const response = await fetch('/api/admin/metadata/list', {
+                const response = await fetch(`/api/admin/metadata/list?datasourceId=${currentDatasourceId}`, {
                     headers: { 'Authorization': token }
                 });
                 const result = await response.json();
@@ -380,8 +568,7 @@
                     const tables = result.data.tables;
                     const tbody = document.getElementById('metadataBody');
                     
-                    // 获取所有表的授权统计
-                    const statsResponse = await fetch('/api/auth/table-permission/all', {
+                    const statsResponse = await fetch(`/api/auth/table-permission/all?datasourceId=${currentDatasourceId}`, {
                         headers: { 'Authorization': token }
                     });
                     const statsResult = await statsResponse.json();
@@ -438,7 +625,6 @@
             });
         }
         
-        // 授权
         async function grantPermission() {
             const userId = document.getElementById('userSelect').value;
             const databaseName = document.getElementById('databaseSelect').value;
@@ -456,7 +642,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': token
                     },
-                    body: JSON.stringify({ userId, databaseName, tableName })
+                    body: JSON.stringify({ userId, databaseName, tableName, datasourceId: currentDatasourceId })
                 });
                 
                 const result = await response.json();
@@ -465,6 +651,7 @@
                     showMessage('授权成功', 'success');
                     loadUserPermissions();
                     loadAllPermissions();
+                    loadTableMetadata();
                 } else {
                     showMessage(result.message || '授权失败', 'error');
                 }
@@ -474,7 +661,6 @@
             }
         }
         
-        // 撤销权限
         async function revokePermission(userId, databaseName, tableName) {
             if (!confirm(`确定要撤销用户对 ${databaseName}.${tableName} 的访问权限吗？`)) {
                 return;
@@ -487,7 +673,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': token
                     },
-                    body: JSON.stringify({ userId, databaseName, tableName })
+                    body: JSON.stringify({ userId, databaseName, tableName, datasourceId: currentDatasourceId })
                 });
                 
                 const result = await response.json();
@@ -496,6 +682,7 @@
                     showMessage('撤销成功', 'success');
                     loadUserPermissions();
                     loadAllPermissions();
+                    loadTableMetadata();
                 } else {
                     showMessage(result.message || '撤销失败', 'error');
                 }
@@ -505,7 +692,6 @@
             }
         }
         
-        // 加载用户权限
         async function loadUserPermissions() {
             const userId = document.getElementById('viewUserSelect').value;
             
@@ -516,7 +702,7 @@
             }
             
             try {
-                const response = await fetch(`/api/auth/table-permission/user/${userId}`, {
+                const response = await fetch(`/api/auth/table-permission/user/${userId}?datasourceId=${currentDatasourceId}`, {
                     headers: { 'Authorization': token }
                 });
                 
@@ -526,7 +712,7 @@
                     const tbody = document.getElementById('permissionsBody');
                     
                     if (result.data.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">该用户暂无任何表权限</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">该用户在该数据源下暂无表权限</td></tr>';
                         return;
                     }
                     
@@ -547,7 +733,6 @@
             }
         }
         
-        // 按表查询已授权用户
         async function loadTablePermissions() {
             const databaseName = document.getElementById('viewDatabaseSelect').value;
             const tableName = document.getElementById('viewTableSelect').value;
@@ -559,7 +744,7 @@
             }
             
             try {
-                const response = await fetch(`/api/auth/table-permission/table/${encodeURIComponent(tableName)}?databaseName=${encodeURIComponent(databaseName)}`, {
+                const response = await fetch(`/api/auth/table-permission/table/${encodeURIComponent(tableName)}?datasourceId=${currentDatasourceId}&databaseName=${encodeURIComponent(databaseName)}`, {
                     headers: { 'Authorization': token }
                 });
                 
@@ -594,10 +779,9 @@
             }
         }
         
-        // 加载所有表的授权统计
         async function loadAllPermissions() {
             try {
-                const response = await fetch('/api/auth/table-permission/all', {
+                const response = await fetch(`/api/auth/table-permission/all?datasourceId=${currentDatasourceId}`, {
                     headers: { 'Authorization': token }
                 });
                 
@@ -607,7 +791,7 @@
                     const tbody = document.getElementById('statsBody');
                     
                     if (result.data.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;">暂无授权记录</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;">该数据源下暂无授权记录</td></tr>';
                         return;
                     }
                     

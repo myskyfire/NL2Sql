@@ -1,5 +1,6 @@
 package com.nl2sql.conversation;
 
+import com.nl2sql.conversation.mapper.ConversationHistoryMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,10 +18,10 @@ import java.util.*;
 public class ConversationHistoryService {
     
     @Autowired(required = false)
-    private JdbcTemplate jdbcTemplate;
+    private com.nl2sql.conversation.mapper.ConversationMapper conversationMapper;
     
     @Autowired(required = false)
-    private com.nl2sql.conversation.mapper.ConversationMapper conversationMapper;
+    private ConversationHistoryMapper historyMapper;
     
     private static final int MAX_HISTORY_ROUNDS = 5; // 最多保留5轮对话
     private static final int MAX_MESSAGES_PER_ROUND = 4; // 每轮最多4条消息(user/assistant/tool_calls/tool_result)
@@ -32,22 +33,10 @@ public class ConversationHistoryService {
      * @return 历史消息列表
      */
     public List<Map<String, Object>> getHistory(String sessionId) {
-        if (jdbcTemplate == null) {
-            log.warn("[ConversationHistory] JdbcTemplate未注入，返回空历史");
-            return Collections.emptyList();
-        }
-        
         try {
             // 查询最近N轮对话的消息
-            String sql = "SELECT role, content, name, tool_call_id " +
-                        "FROM conversation_history " +
-                        "WHERE session_id = ? " +
-                        "ORDER BY created_at ASC " +
-                        "LIMIT ?";
-            
-            List<Map<String, Object>> messages = jdbcTemplate.queryForList(
-                sql, 
-                sessionId, 
+            List<Map<String, Object>> messages = historyMapper.selectMessagesBySessionId(
+                sessionId,
                 MAX_HISTORY_ROUNDS * MAX_MESSAGES_PER_ROUND
             );
             
@@ -73,10 +62,6 @@ public class ConversationHistoryService {
      * @param messages 消息列表
      */
     public void saveHistory(String sessionId, Long userId, List<Map<String, Object>> messages) {
-        if (jdbcTemplate == null) {
-            log.warn("[ConversationHistory] JdbcTemplate未注入，跳过保存");
-            return;
-        }
         
         if (messages == null || messages.isEmpty()) {
             return;
@@ -158,9 +143,6 @@ public class ConversationHistoryService {
      * @param sessionId 会话ID
      */
     public void clearHistory(String sessionId) {
-        if (jdbcTemplate == null) {
-            return;
-        }
         
         try {
             conversationMapper.clearHistory(sessionId);

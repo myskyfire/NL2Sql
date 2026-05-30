@@ -4,6 +4,7 @@ import com.nl2sql.core.datasource.DataSourceManager;
 import com.nl2sql.core.metadata.ValueMappingService;
 import com.nl2sql.auth.service.AuthService;  // ✅ 新增：权限服务
 import com.nl2sql.core.service.NL2SQLService;
+import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,8 +36,14 @@ public class SQLExecutor {
     private final com.nl2sql.core.cache.QueryCacheService queryCacheService;  // 查询结果缓存
     private final com.nl2sql.core.cache.MetadataCacheService metadataCacheService;  // 元数据缓存服务
     
+    @Autowired
+    private MetadataQueryMapper metadataMapper;
+    
     @Autowired(required = false)
     private AuthService authService;  // ✅ 新增：权限服务（可选注入）
+    
+    @Autowired(required = false)
+    private com.nl2sql.metadata.service.TableQueryStatsService tableQueryStatsService;  // ✅ 新增：查询统计服务
     
     @Value("${sql.execution.query-timeout:30}")
     private int queryTimeout;
@@ -136,6 +143,16 @@ public class SQLExecutor {
                 log.error("[权限校验失败] 继续执行SQL: {}", e.getMessage());
                 // 权限校验失败不阻断执行，仅记录日志
             }
+        }
+        
+        // ✅ 关键校验：检查是否为 LLM 错误信息（避免死循环）
+        if (sql.contains("LLM调用失败") || 
+            sql.contains("API调用失败") || 
+            sql.contains("request timed out")) {
+            result.setError("SQL生成失败：LLM服务异常，请稍后重试");
+            result.setExecutionTime(0);
+            log.error("[SQL拦截] 检测到 LLM 错误信息: {}", sql);
+            return result;
         }
         
         // 最终安全检查：确保只执行查询操作
@@ -311,6 +328,20 @@ public class SQLExecutor {
                 }
             }
             
+            // ✅ 新增：记录查询统计（用于元数据增强决策）
+            if (tableQueryStatsService != null && datasourceId != null && result.getError() == null) {
+                try {
+                    String tableName = extractTableName(sql);
+                    if (tableName != null) {
+                        // 默认评分为5分（成功执行），实际评分会在用户反馈时更新
+                        tableQueryStatsService.recordQuery(datasourceId, tableName, 5);
+                        log.debug("[查询统计] 记录查询: datasourceId={}, table={}", datasourceId, tableName);
+                    }
+                } catch (Exception e) {
+                    log.warn("[查询统计] 记录失败，不影响主流程: {}", e.getMessage());
+                }
+            }
+            
         } catch (Exception e) {
             long endTime = System.currentTimeMillis();
             String errorMsg = e.getMessage();
@@ -398,8 +429,7 @@ public class SQLExecutor {
         
         // 缓存未命中，查询数据库
         try {
-            String querySql = "SELECT column_name, column_comment FROM column_metadata WHERE datasource_id = ? AND table_name = ?";
-            List<Map<String, Object>> metadataList = jdbcTemplate.queryForList(querySql, datasourceId, tableName);
+            List<Map<String, Object>> metadataList = metadataMapper.selectColumnNameAndComment(datasourceId, tableName);
             
             Map<String, String> columnNameMap = new HashMap<>();
             for (Map<String, Object> meta : metadataList) {

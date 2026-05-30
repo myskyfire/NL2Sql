@@ -1,5 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
+import com.nl2sql.common.util.JsonUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.config.TableSelectionConfig;
 import com.nl2sql.core.llm.LLMService;
@@ -62,16 +63,38 @@ public class DatasourceClarificationTool {
             }
                 
             // 情况2：使用LLM智能匹配
-            Map<String, Object> matchedDs = llmIntelligentMatch(userQuery, datasources);
+            Map<String, Object> matchResult = llmIntelligentMatch(userQuery, datasources);
                         
-            if (matchedDs != null) {
+            if (matchResult != null && matchResult.containsKey("datasource")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> matchedDs = (Map<String, Object>) matchResult.get("datasource");
                 Long dsId = ((Number) matchedDs.get("id")).longValue();
                 String dsName = (String) matchedDs.get("name");
-                return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(matchedDs), false);
-            }
+                double confidence = matchResult.containsKey("confidence") ? 
+                    ((Number) matchResult.get("confidence")).doubleValue() : 0.0;
                 
-            // 情况3：LLM无法确定，返回所有候选让用户选择
-            return buildDatasourceSelectionResponse(datasources);
+                // ✅ 三层分级策略
+                if (confidence > 0.8) {
+                    // 高置信度：根据配置决定自动执行或推荐确认
+                    return buildAutoSelectedResponse(dsId, dsName, formatDatasourceInfo(matchedDs), false);
+                } else if (confidence >= 0.6) {
+                    // 中置信度：推荐+确认，提供"拒绝后选择其他"选项
+                    return buildMediumConfidenceRecommendation(matchedDs, confidence, 
+                        String.valueOf(matchResult.get("reason")), datasources);
+                } else {
+                    // 低置信度（<0.6）：返回候选集供选择（而非所有数据源）
+                    log.info("[DatasourceClarification] 低置信度({})，返回候选集", confidence);
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> candidates = (List<Map<String, Object>>) matchResult.get("candidates");
+                    return buildDatasourceSelectionResponse(candidates != null ? candidates : datasources);
+                }
+            }
+            
+            // ✅ 情况3：LLM无法确定或置信度不足，返回候选集让用户选择
+            log.info("[DatasourceClarification] LLM未能高置信度匹配，返回候选集供用户选择");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> candidates = (List<Map<String, Object>>) matchResult.get("candidates");
+            return buildDatasourceSelectionResponse(candidates != null ? candidates : datasources);
                 
         } catch (Exception e) {
             log.error("[DatasourceClarification] 处理失败", e);
@@ -89,207 +112,369 @@ public class DatasourceClarificationTool {
     }
     
     /**
-     * 使用LLM智能匹配数据源（分层传递策略）
+     * 使用LLM智能匹配数据源（动态分层策略）
+     * @return Map包含: datasource(匹配的数据源), confidence(置信度), reason(推荐理由), candidates(候选集，用于降级)
      */
     private Map<String, Object> llmIntelligentMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
-            // ✅ 第一层：构建数据源基本信息
-            StringBuilder datasourceInfo = new StringBuilder();
-            for (Map<String, Object> ds : datasources) {
-                datasourceInfo.append(String.format(
-                    "- ID: %d, 名称: %s, 数据库: %s, 类型: %s, 说明: %s, 业务类别: %s\n",
-                    ds.get("id"),
-                    ds.get("name"),
-                    ds.get("database_name"),
-                    ds.get("db_type"),
-                    ds.get("description") != null ? ds.get("description") : "无",
-                    ds.get("business_category") != null ? ds.get("business_category") : "无"
-                ));
-            }
-            
-            // ✅ 第一层Prompt：基于数据源基本信息进行初步匹配
-            String firstLayerPrompt = String.format(
-                "你是一个数据源选择助手。根据用户问题和可用数据源列表，判断应该使用哪个数据源。\n\n" +
-                "## 用户问题\n%s\n\n" +
-                "## 可用数据源（基本信息）\n%s\n\n" +
-                "## 业务领域映射规则（重要！）\n" +
-                "- **销售/订单/交易类**：销售额、订单数、GMV、成交金额、客户购买 → 优先匹配包含'订单/交易/trade/order'的数据源\n" +
-                "- **财务/会计类**：利润、成本、资产负债、财务报表、会计科目 → 优先匹配包含'财务/会计/finance/accounting'的数据源\n" +
-                "- **用户/会员类**：用户数、DAU、活跃度、注册 → 优先匹配包含'用户/user/customer'的数据源\n" +
-                "- **地区/地理类**：地区分布、城市统计、区域分析 → 通常与订单/销售数据关联\n\n" +
-                "## 任务\n" +
-                "1. 分析用户问题的意图和业务领域\n" +
-                "2. 根据业务领域映射规则匹配数据源\n" +
-                "3. 如果只有一个数据源明显匹配，返回其ID\n" +
-                "4. 如果有多个候选或无法确定，返回null并标记需要查看表结构\n\n" +
-                "## 输出格式\n" +
-                "只返回JSON格式，不要有其他文字：\n" +
-                "{\"matched_datasource_id\": 数据源ID或null, \"confidence\": \"high/medium/low\", \"need_table_info\": true/false, \"reason\": \"匹配原因\"}\n\n" +
-                "## 示例\n" +
-                "用户问：'统计每个地区的销售额' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"销售额属于交易/订单领域，该数据源包含订单相关表\"}\n" +
-                "用户问：'查询财务报表数据' -> {\"matched_datasource_id\": 2, \"confidence\": \"high\", \"need_table_info\": false, \"reason\": \"财务报表属于会计领域，该数据源包含财务相关表\"}\n" +
-                "用户问：'分析某领域数据' -> {\"matched_datasource_id\": null, \"confidence\": \"low\", \"need_table_info\": true, \"reason\": \"相关数据可能在多个数据源中\"}",
-                userQuery,
-                datasourceInfo.toString()
-            );
-            
-            log.info("[DatasourceClarification] 第一层：调用LLM进行数据源初步匹配");
-            String firstResponse = llmService.generateSQL(firstLayerPrompt);
-            log.info("[DatasourceClarification] 第一层LLM响应: {}", firstResponse);
-            
-            // 解析第一层响应
-            Map<String, Object> firstResult = parseLlmResponse(firstResponse);
-            
-            if (firstResult == null) {
-                log.info("[DatasourceClarification] 第一层解析失败，进入第二层");
-                return secondLayerMatch(userQuery, datasources);
-            }
-            
-            Integer matchedId = (Integer) firstResult.get("matched_datasource_id");
-            Boolean needTableInfo = (Boolean) firstResult.getOrDefault("need_table_info", false);
-            String confidence = (String) firstResult.get("confidence");
-
-            // 情况1：LLM明确匹配到唯一数据源且不需要表信息
-            if (matchedId != null && !needTableInfo) {
-                for (Map<String, Object> ds : datasources) {
-                    if (((Number) ds.get("id")).intValue() == matchedId && "high".equalsIgnoreCase(confidence)) {
-                        log.info("[DatasourceClarification] 第一层匹配成功: {}", ds.get("name"));
-                        return ds;
-                    }
+            // ✅ 动态分层：数据源>5个时先筛选候选集
+            if (datasources.size() > 5) {
+                log.info("[DatasourceClarification] 数据源数量={}，启用双层策略", datasources.size());
+                return twoLayerMatch(userQuery, datasources);
+            } else {
+                log.info("[DatasourceClarification] 数据源数量={}，使用单层策略", datasources.size());
+                Map<String, Object> result = singleLayerMatch(userQuery, datasources);
+                if (result != null) {
+                    result.put("candidates", datasources);  // 单层策略的候选集就是全部
                 }
+                return result;
             }
-            
-            // 情况2：需要查看表结构才能确定，进入第二层
-            if (needTableInfo || matchedId == null) {
-                log.info("[DatasourceClarification] 需要表结构信息，进入第二层匹配");
-                return secondLayerMatch(userQuery, datasources);
-            }
-            
-            log.info("[DatasourceClarification] LLM未能确定数据源");
-            return null;
-            
         } catch (Exception e) {
             log.error("[DatasourceClarification] LLM匹配失败", e);
-            return null; // LLM失败时返回null，降级为列出所有选项
+            return null;
         }
     }
     
     /**
-     * ✅ 第二层匹配：包含表结构信息
+     * 单层策略：直接展示所有表（适用于≤5个数据源）
+     * @return Map包含: datasource(匹配的数据源), confidence(置信度), reason(推荐理由)
      */
-    private Map<String, Object> secondLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
+    private Map<String, Object> singleLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
-            // 构建包含表结构的详细信息
-            StringBuilder detailedInfo = new StringBuilder();
+            // ✅ P1优化：合并两层为单层，qwen3.5-plus可直接从精简表结构做出准确判断
+            StringBuilder datasourceInfo = new StringBuilder();
             
             for (Map<String, Object> ds : datasources) {
                 Long dsId = ((Number) ds.get("id")).longValue();
                 String dbName = String.valueOf(ds.get("database_name"));
                 
-                detailedInfo.append(String.format(
+                datasourceInfo.append(String.format(
                     "\n### 数据源 [%d] %s\n",
                     ds.get("id"),
                     ds.get("name")
                 ));
-                detailedInfo.append(String.format("- 数据库: %s\n", dbName));
-                detailedInfo.append(String.format("- 类型: %s\n", ds.get("db_type")));
+                datasourceInfo.append(String.format("- 数据库: %s\n", dbName));
                 if (ds.get("description") != null) {
-                    detailedInfo.append(String.format("- 说明: %s\n", ds.get("description")));
+                    datasourceInfo.append(String.format("- 说明: %s\n", ds.get("description")));
                 }
                 if (ds.get("business_category") != null) {
-                    detailedInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
+                    datasourceInfo.append(String.format("- 业务类别: %s\n", ds.get("business_category")));
                 }
                 
-                // ✅ 查询该数据源的核心表（限制为前10个表，避免Token爆炸）
+                // ✅ 从本地元数据表查询表列表（避免连接远程业务数据库）
                 try {
                     List<Map<String, Object>> tables = jdbcTemplate.queryForList(
-                        "SELECT table_name, table_comment FROM information_schema.tables " +
-                        "WHERE table_schema = ? AND table_type = 'BASE TABLE' " +
-                        "ORDER BY table_name LIMIT 10",
-                        dbName
+                        "SELECT table_name, table_comment FROM table_metadata " +
+                        "WHERE datasource_id = ? " +
+                        "ORDER BY table_name",
+                        dsId
                     );
                     
                     if (!tables.isEmpty()) {
-                        detailedInfo.append("- 核心表:\n");
+                        datasourceInfo.append("- 表列表:\n");
                         for (Map<String, Object> table : tables) {
                             String tableName = String.valueOf(table.get("table_name"));
                             String tableComment = table.get("table_comment") != null ? 
-                                String.valueOf(table.get("table_comment")) : "无说明";
-                            detailedInfo.append(String.format("  - %s: %s\n", tableName, tableComment));
+                                String.valueOf(table.get("table_comment")) : "";
+                            // 仅展示表名+简短注释，控制Token
+                            String shortComment = tableComment.length() > 20 ? 
+                                tableComment.substring(0, 20) + "..." : tableComment;
+                            datasourceInfo.append(String.format("  - %s: %s\n", tableName, shortComment));
                         }
                     } else {
-                        detailedInfo.append("- 核心表: 无表或无法访问\n");
+                        datasourceInfo.append("- 表列表: 无表或无法访问\n");
                     }
                 } catch (Exception e) {
                     log.warn("[DatasourceClarification] 查询数据源{}的表结构失败: {}", dsId, e.getMessage());
-                    detailedInfo.append("- 核心表: 查询失败\n");
+                    datasourceInfo.append("- 表列表: 查询失败\n");
                 }
             }
             
-            // ✅ 第二层Prompt：基于详细表结构信息进行精确匹配
-            String secondLayerPrompt = String.format(
-                "你是一个数据源选择专家。现在提供了更详细的数据源信息（包括核心表结构），请重新判断。\n\n" +
-                "## 用户问题\n%s\n\n" +
-                "## 可用数据源（含表结构）\n%s\n\n" +
-                "## 任务\n" +
-                "1. 仔细分析用户问题涉及的表和字段\n" +
-                "2. 根据表名和表注释，找到最匹配的数据源\n" +
-                "3. 如果仍然无法确定，返回null\n\n" +
-                "## 输出格式\n" +
-                "只返回JSON格式：\n" +
-                "{\"matched_datasource_id\": 数据源ID或null, \"confidence\": \"high/medium/low\", \"reason\": \"详细说明匹配原因，包括涉及的表\"}\n\n" +
-                "## 示例\n" +
-                "用户问：'统计某类数据' -> {\"matched_datasource_id\": 1, \"confidence\": \"high\", \"reason\": \"数据源1包含相关表，适合查询该类数据\"}",
+            // ✅ 单层Prompt：直接提供精简表结构进行匹配
+            String prompt = String.format(
+                "你是数据源选择专家。根据用户问题和表结构，匹配最相关的数据源。\n\n" +
+                "用户问题：%s\n\n" +
+                "可用数据源（含核心表）：\n%s\n\n" +
+                "请返回JSON格式：{\"matched_datasource_id\": 整数, \"confidence\": 0.0-1.0, \"reason\": \"字符串\"}",
                 userQuery,
-                detailedInfo.toString()
+                datasourceInfo.toString()
             );
             
-            log.info("[DatasourceClarification] 第二层：调用LLM进行精确匹配");
-            String secondResponse = llmService.generateSQL(secondLayerPrompt);
-            log.info("[DatasourceClarification] 第二层LLM响应: {}", secondResponse);
+            log.info("[DatasourceClarification] 调用LLM进行数据源匹配");
+            String response = llmService.generateSQL(prompt);
+            log.info("[DatasourceClarification] LLM响应: {}", response);
             
-            // 解析第二层响应
-            Map<String, Object> secondResult = parseLlmResponse(secondResponse);
+            // 解析响应
+            Map<String, Object> result = parseLlmResponse(response);
             
-            if (secondResult != null && secondResult.containsKey("matched_datasource_id")) {
-                Integer matchedId = (Integer) secondResult.get("matched_datasource_id");
-                if (matchedId != null) {
+            if (result != null && result.containsKey("matched_datasource_id")) {
+                Object matchedIdObj = result.get("matched_datasource_id");
+                log.info("[DatasourceClarification] matched_datasource_id 原始值: {}, 类型: {}", matchedIdObj, matchedIdObj != null ? matchedIdObj.getClass().getName() : "null");
+                
+                Integer matchedId = null;
+                if (matchedIdObj instanceof Number) {
+                    matchedId = ((Number) matchedIdObj).intValue();
+                } else if (matchedIdObj instanceof String) {
+                    try {
+                        matchedId = Integer.parseInt((String) matchedIdObj);
+                    } catch (NumberFormatException e) {
+                        log.warn("[DatasourceClarification] matched_datasource_id 字符串解析失败: {}", matchedIdObj);
+                    }
+                }
+                
+                log.info("[DatasourceClarification] 转换后的 matchedId: {}", matchedId);
+                
+                // ✅ 修复：confidence可能是Double或String，统一处理
+                double confidence = 0.0;
+                Object confObj = result.get("confidence");
+                if (confObj instanceof Number) {
+                    confidence = ((Number) confObj).doubleValue();
+                } else if (confObj instanceof String) {
+                    try {
+                        confidence = Double.parseDouble((String) confObj);
+                    } catch (NumberFormatException e) {
+                        confidence = 0.0;
+                    }
+                }
+                
+                // 置信度 > 0.6 认为匹配成功（平衡准确率与召回率）
+                if (matchedId != null && confidence > 0.6) {
+                    log.info("[DatasourceClarification] 开始遍历数据源，查找 matchedId={}", matchedId);
                     for (Map<String, Object> ds : datasources) {
-                        if (((Number) ds.get("id")).intValue() == matchedId && "high".equalsIgnoreCase((String) secondResult.get("confidence"))) {
-                            log.info("[DatasourceClarification] 第二层匹配成功: {}", ds.get("name"));
-                            return ds;
+                        Object dsIdObj = ds.get("id");
+                        int dsId = ((Number) dsIdObj).intValue();
+                        log.info("[DatasourceClarification] 检查数据源: id={}, 类型={}, 是否匹配={}", 
+                            dsId, dsIdObj.getClass().getName(), dsId == matchedId);
+                        if (dsId == matchedId) {
+                            log.info("[DatasourceClarification] 匹配成功: {}, confidence={}", ds.get("name"), confidence);
+                            // ✅ 返回完整结果，包含置信度和理由
+                            Map<String, Object> matchResult = new HashMap<>();
+                            matchResult.put("datasource", ds);
+                            matchResult.put("confidence", confidence);
+                            matchResult.put("reason", result.get("reason"));
+                            return matchResult;
+                        }
+                    }
+                } else if (matchedId != null) {
+                    // ✅ 低置信度匹配，仍返回结果供前端展示
+                    log.info("[DatasourceClarification] 低置信度匹配: {}, confidence={}", matchedId, confidence);
+                    for (Map<String, Object> ds : datasources) {
+                        if (((Number) ds.get("id")).intValue() == matchedId) {
+                            Map<String, Object> matchResult = new HashMap<>();
+                            matchResult.put("datasource", ds);
+                            matchResult.put("confidence", confidence);
+                            matchResult.put("reason", result.get("reason"));
+                            matchResult.put("lowConfidence", true);  // 标记为低置信度
+                            return matchResult;
                         }
                     }
                 }
             }
             
-            log.info("[DatasourceClarification] 第二层仍未能确定数据源");
+            log.info("[DatasourceClarification] 未能确定数据源");
             return null;
             
         } catch (Exception e) {
-            log.error("[DatasourceClarification] 第二层匹配失败", e);
+            log.error("[DatasourceClarification] 单层匹配失败", e);
             return null;
         }
     }
     
     /**
-     * 解析LLM返回的JSON
+     * 双层策略：第一层筛选候选集，第二层精确匹配（适用于>5个数据源）
      */
-    private Map<String, Object> parseLlmResponse(String response) {
+    private Map<String, Object> twoLayerMatch(String userQuery, List<Map<String, Object>> datasources) {
         try {
-            // 去除可能的Markdown代码块
-            String cleaned = response.trim();
-            if (cleaned.startsWith("```") && cleaned.endsWith("```")) {
-                cleaned = cleaned.substring(3, cleaned.length() - 3).trim();
-                if (cleaned.startsWith("json")) {
-                    cleaned = cleaned.substring(4).trim();
+            // 第一层：基于数据源基本信息筛选候选集（~2-3个）
+            StringBuilder basicInfo = new StringBuilder();
+            for (Map<String, Object> ds : datasources) {
+                basicInfo.append(String.format(
+                    "- ID: %d, 名称: %s, 数据库: %s, 说明: %s, 业务类别: %s\n",
+                    ds.get("id"),
+                    ds.get("name"),
+                    ds.get("database_name"),
+                    ds.get("description") != null ? ds.get("description") : "无",
+                    ds.get("business_category") != null ? ds.get("business_category") : "无"
+                ));
+            }
+            
+            String firstPrompt = String.format(
+                "你是数据源选择助手。根据用户问题和数据源列表，筛选最相关的2-3个候选数据源。\n\n" +
+                "用户问题：%s\n\n" +
+                "可用数据源：\n%s\n\n" +
+                "请返回JSON格式：{\"candidate_ids\": [整数数组], \"reason\": \"字符串\"}",
+                userQuery,
+                basicInfo.toString()
+            );
+            
+            log.info("[DatasourceClarification] 第一层：筛选候选集");
+            String firstResponse = llmService.generateSQL(firstPrompt);
+            log.info("[DatasourceClarification] 第一层LLM响应: {}", firstResponse);
+            
+            Map<String, Object> firstResult = parseLlmResponse(firstResponse);
+            if (firstResult == null || !firstResult.containsKey("candidate_ids")) {
+                log.warn("[DatasourceClarification] 第一层解析失败，降级为单层策略");
+                return singleLayerMatch(userQuery, datasources);
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Integer> candidateIds = (List<Integer>) firstResult.get("candidate_ids");
+            if (candidateIds == null || candidateIds.isEmpty()) {
+                log.warn("[DatasourceClarification] 第一层未找到候选集，降级为单层策略");
+                return singleLayerMatch(userQuery, datasources);
+            }
+            
+            // 过滤出候选数据源
+            List<Map<String, Object>> candidates = new ArrayList<>();
+            for (Map<String, Object> ds : datasources) {
+                if (candidateIds.contains(((Number) ds.get("id")).intValue())) {
+                    candidates.add(ds);
                 }
             }
             
-            return objectMapper.readValue(cleaned, Map.class);
+            log.info("[DatasourceClarification] 第一层筛选结果: {} 个候选数据源", candidates.size());
+            
+            // 第二层：展示候选集的完整表列表，精确匹配
+            Map<String, Object> result = singleLayerMatch(userQuery, candidates);
+            if (result != null) {
+                result.put("candidates", candidates);  // 保存候选集，用于降级
+            }
+            return result;
+            
         } catch (Exception e) {
-            log.warn("[DatasourceClarification] 解析LLM响应失败: {}", e.getMessage());
-            return null;
+            log.error("[DatasourceClarification] 双层匹配失败，降级为单层策略", e);
+            return singleLayerMatch(userQuery, datasources);
+        }
+    }
+
+    
+    /**
+     * 解析LLM返回的JSON（使用公共工具类 + YAML容错）
+     */
+    private Map<String, Object> parseLlmResponse(String response) {
+        // 尝试直接解析 JSON
+        Map<String, Object> result = JsonUtils.parseToJsonMap(response);
+        if (result != null && !result.isEmpty()) {
+            return result;
+        }
+        
+        // ✅ 容错：如果 JSON 解析失败，尝试将 YAML 格式转换为 JSON
+        log.warn("[DatasourceClarification] JSON解析失败，尝试YAML转JSON: {}", response.substring(0, Math.min(100, response.length())));
+        try {
+            String yamlFixed = convertYamlToJson(response);
+            result = JsonUtils.parseToJsonMap(yamlFixed);
+            if (result != null && !result.isEmpty()) {
+                log.info("[DatasourceClarification] YAML转JSON成功");
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("[DatasourceClarification] YAML转JSON也失败: {}", e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * ✅ 简单YAML转JSON：处理 key: value 格式
+     */
+    private String convertYamlToJson(String yamlText) {
+        StringBuilder json = new StringBuilder("{");
+        String[] lines = yamlText.split("\n");
+        boolean first = true;
+        
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            
+            // 匹配 key: value 格式
+            int colonIndex = line.indexOf(':');
+            if (colonIndex > 0) {
+                String key = line.substring(0, colonIndex).trim();
+                String value = line.substring(colonIndex + 1).trim();
+                
+                if (!first) json.append(",");
+                
+                // 处理值类型
+                if (value.matches("\\d+")) {
+                    // 整数
+                    json.append("\"").append(key).append("\":").append(value);
+                } else if (value.matches("\\d+\\.\\d+")) {
+                    // 浮点数
+                    json.append("\"").append(key).append("\":").append(value);
+                } else if (value.startsWith("[") && value.endsWith("]")) {
+                    // 数组（简单处理）
+                    json.append("\"").append(key).append("\":").append(value);
+                } else {
+                    // 字符串（去除引号）
+                    String cleanValue = value.replaceAll("^['\"]|['\"]$", "");
+                    json.append("\"").append(key).append("\":\"").append(cleanValue).append("\"");
+                }
+                
+                first = false;
+            }
+        }
+        
+        json.append("}");
+        return json.toString();
+    }
+    
+    /**
+     * ✅ 新增：构建中置信度推荐响应（推荐+确认+拒绝后选择其他）
+     */
+    private String buildMediumConfidenceRecommendation(Map<String, Object> recommendedDs, 
+                                                        double confidence, 
+                                                        String reason,
+                                                        List<Map<String, Object>> allDatasources) {
+        try {
+            Long dsId = ((Number) recommendedDs.get("id")).longValue();
+            String dsName = (String) recommendedDs.get("name");
+            
+            // 构建推荐理由
+            String recommendationMsg = String.format(
+                "💡 根据您的问句，**推荐使用数据源：%s**\n\n" +
+                "**匹配理由：** %s\n" +
+                "**置信度：** %.0f%%\n\n" +
+                "您可以：\n" +
+                "1️⃣ **使用此数据源** - 直接执行查询\n" +
+                "2️⃣ **选择其他数据源** - 查看所有可用数据源",
+                escapeJson(dsName),
+                escapeJson(reason != null ? reason : "无"),
+                confidence * 100
+            );
+            
+            // 构建所有数据源列表（供用户选择其他）
+            List<Map<String, Object>> datasourceList = new ArrayList<>();
+            for (Map<String, Object> ds : allDatasources) {
+                Map<String, Object> dsInfo = new HashMap<>();
+                dsInfo.put("id", ds.get("id"));
+                dsInfo.put("name", ds.get("name"));
+                dsInfo.put("db_type", ds.get("db_type"));
+                dsInfo.put("database_name", ds.get("database_name"));
+                if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
+                    dsInfo.put("description", ds.get("description"));
+                }
+                datasourceList.add(dsInfo);
+            }
+            
+            // ✅ 构建统一响应
+            return ToolResponseBuilder.clarification("datasource_medium_confidence")
+                .withMessage(recommendationMsg)
+                .withRecommendedDatasourceId(dsId)
+                .withContext(Map.of(
+                    "recommendedDatasource", recommendedDs,
+                    "availableDatasources", datasourceList,
+                    "confidence", confidence,
+                    "reason", reason
+                ))
+                .addMetadata("toolName", "clarify_datasource")
+                .addMetadata("confidenceLevel", "medium")
+                .build();
+            
+        } catch (Exception e) {
+            log.error("[DatasourceClarification] 构建中置信度推荐响应失败", e);
+            return ToolResponseBuilder.error("BUILD_ERROR", "构建响应失败: " + e.getMessage())
+                .addMetadata("toolName", "clarify_datasource")
+                .build();
         }
     }
     
@@ -311,12 +496,29 @@ public class DatasourceClarificationTool {
             datasourceList.add(dsInfo);
         }
         
+        // ✅ 获取所有激活的数据源（用于兜底）
+        List<Map<String, Object>> allActiveDatasources = getActiveDatasources();
+        int totalDatasourceCount = allActiveDatasources.size();
+        
         // ✅ 构建统一响应
         return ToolResponseBuilder.clarification("datasource_selection")
             .withMessage("📋 请选择数据源：")
-            .withContext(Map.of("availableDatasources", datasourceList))
+            .withContext(Map.of(
+                "availableDatasources", datasourceList,
+                "allDatasources", allActiveDatasources.stream().map(ds -> {
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("id", ds.get("id"));
+                    info.put("name", ds.get("name"));
+                    info.put("db_type", ds.get("db_type"));
+                    info.put("database_name", ds.get("database_name"));
+                    if (ds.get("description") != null && !String.valueOf(ds.get("description")).isEmpty()) {
+                        info.put("description", ds.get("description"));
+                    }
+                    return info;
+                }).toList()
+            ))
             .addMetadata("toolName", "clarify_datasource")
-            .addMetadata("datasourceCount", datasources.size())
+            .addMetadata("datasourceCount", totalDatasourceCount)
             .build();
     }
     

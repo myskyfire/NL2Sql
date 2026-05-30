@@ -105,13 +105,12 @@ public class SQLResultSummarizer {
      */
     private String buildSummaryPrompt(List<Map<String, Object>> data, String question, String sql) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一个数据分析助手。请根据以下查询结果，用简洁的中文总结关键发现。\n\n");
-        prompt.append("用户问题：").append(question).append("\n\n");
-        prompt.append("执行的SQL：\n```sql\n").append(sql).append("\n```\n\n");
+        prompt.append("根据查询结果总结关键发现。\n\n");
+        prompt.append("问题：").append(question).append("\n\n");
+        prompt.append("SQL：\n```sql\n").append(sql).append("\n```\n\n");
         
-        // 限制数据量，避免超出token限制
         int maxRows = Math.min(data.size(), 10);
-        prompt.append("查询结果（前").append(maxRows).append("条）：\n");
+        prompt.append("结果（前").append(maxRows).append("条）：\n");
         
         try {
             String jsonData = objectMapper.writeValueAsString(data.subList(0, maxRows));
@@ -120,11 +119,7 @@ public class SQLResultSummarizer {
             prompt.append("共").append(data.size()).append("条记录\n\n");
         }
         
-        prompt.append("要求：\n");
-        prompt.append("1. 突出关键指标和趋势\n");
-        prompt.append("2. 如果有异常值或显著变化，请指出\n");
-        prompt.append("3. 控制在100字以内\n");
-        prompt.append("4. 只返回总结文本，不要其他内容\n\n");
+        prompt.append("要求：100字以内，只返回总结\n\n");
         prompt.append("总结：");
         
         return prompt.toString();

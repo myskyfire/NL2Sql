@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.metadata.mapper.TableRelationshipMapper">
+
+    <!-- ==================== 查询方法 ==================== -->
+
+    <select id="selectTableMetadata" resultType="java.util.HashMap">
+        SELECT table_name, table_comment 
+        FROM table_metadata 
+        WHERE datasource_id = #{datasourceId}
+    </select>
+
+    <select id="selectColumnsBatch" resultType="java.util.HashMap">
+        SELECT table_name, column_name, data_type, column_comment, is_primary_key
+        FROM column_metadata 
+        WHERE datasource_id = #{datasourceId} 
+          AND table_name IN
+        <foreach collection="tableNames" item="tableName" open="(" separator="," close=")">
+            #{tableName}
+        </foreach>
+        ORDER BY table_name, ordinal_position
+    </select>
+
+    <select id="selectDatabaseName" resultType="java.lang.String">
+        SELECT database_name FROM datasource_config WHERE id = #{datasourceId}
+    </select>
+
+    <select id="selectRealForeignKeys" resultType="java.util.HashMap">
+        SELECT 
+            kcu.TABLE_NAME AS source_table,
+            kcu.COLUMN_NAME AS source_column,
+            kcu.REFERENCED_TABLE_NAME AS target_table,
+            kcu.REFERENCED_COLUMN_NAME AS target_column,
+            rc.UPDATE_RULE,
+            rc.DELETE_RULE
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+        JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc 
+            ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+        WHERE kcu.TABLE_SCHEMA = #{schemaName}
+          AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+    </select>
+
+    <resultMap id="TableRelationshipResultMap" type="com.nl2sql.metadata.entity.TableRelationship">
+        <id property="id" column="id"/>
+        <result property="datasourceId" column="datasource_id"/>
+        <result property="sourceTable" column="source_table"/>
+        <result property="sourceColumn" column="source_column"/>
+        <result property="targetTable" column="target_table"/>
+        <result property="targetColumn" column="target_column"/>
+        <result property="relationshipType" column="relationship_type"/>
+        <result property="confidence" column="confidence"/>
+        <result property="description" column="description"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="TableRelationshipResultMap">
+        SELECT * FROM table_relationships WHERE id = #{id}
+    </select>
+
+    <select id="selectByDatasourceId" resultMap="TableRelationshipResultMap">
+        SELECT * FROM table_relationships 
+        WHERE datasource_id = #{datasourceId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectBySourceTable" resultMap="TableRelationshipResultMap">
+        SELECT * FROM table_relationships 
+        WHERE datasource_id = #{datasourceId}
+          AND source_table = #{tableName}
+          AND is_active = 1
+    </select>
+
+    <select id="selectByTargetTable" resultMap="TableRelationshipResultMap">
+        SELECT * FROM table_relationships 
+        WHERE datasource_id = #{datasourceId}
+          AND target_table = #{tableName}
+          AND is_active = 1
+    </select>
+
+    <!-- ==================== 插入方法 ==================== -->
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO table_relationships (
+            datasource_id, source_table, source_column, target_table, target_column,
+            relationship_type, confidence, description, is_active, created_by, created_at
+        ) VALUES (
+            #{datasourceId}, #{sourceTable}, #{sourceColumn}, #{targetTable}, #{targetColumn},
+            #{relationshipType}, #{confidence}, #{description}, #{isActive}, #{createdBy}, NOW()
+        )
+    </insert>
+
+    <insert id="batchInsert">
+        INSERT INTO table_relationships (
+            datasource_id, source_table, source_column, target_table, target_column,
+            relationship_type, confidence, description, is_active, created_by, created_at
+        ) VALUES
+        <foreach collection="relationships" item="rel" separator=",">
+            (
+                #{rel.datasourceId}, #{rel.sourceTable}, #{rel.sourceColumn}, 
+                #{rel.targetTable}, #{rel.targetColumn}, #{rel.relationshipType}, 
+                #{rel.confidence}, #{rel.description}, #{rel.isActive}, #{rel.createdBy}, NOW()
+            )
+        </foreach>
+    </insert>
+
+    <!-- ==================== 更新方法 ==================== -->
+
+    <update id="update">
+        UPDATE table_relationships SET
+            source_table = #{sourceTable},
+            source_column = #{sourceColumn},
+            target_table = #{targetTable},
+            target_column = #{targetColumn},
+            relationship_type = #{relationshipType},
+            confidence = #{confidence},
+            description = #{description},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateActiveStatus">
+        UPDATE table_relationships SET is_active = #{active} WHERE id = #{id}
+    </update>
+
+    <!-- ==================== 删除方法 ==================== -->
+
+    <delete id="deleteById">
+        DELETE FROM table_relationships WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByDatasourceId">
+        DELETE FROM table_relationships WHERE datasource_id = #{datasourceId}
+    </delete>
+
+</mapper>

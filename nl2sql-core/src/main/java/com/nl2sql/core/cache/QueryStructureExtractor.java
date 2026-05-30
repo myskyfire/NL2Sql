@@ -1,6 +1,7 @@
 package com.nl2sql.core.cache;
 
 import com.nl2sql.common.util.EntityExtractor;
+import com.nl2sql.metadata.mapper.IndustryConceptAdminMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,6 +29,9 @@ public class QueryStructureExtractor {
     // ✅ 数据源ID（用于确定行业）
     private Long datasourceId;
     
+    // ✅ IndustryConceptAdminMapper（用于查询行业代码）
+    private IndustryConceptAdminMapper adminMapper;
+    
     // 行业目标提取器（可选，仅用于行业特有逻辑）
     private IndustryTargetExtractor industryTargetExtractor;
     
@@ -44,6 +48,13 @@ public class QueryStructureExtractor {
     public void setDataSource(JdbcTemplate jdbcTemplate, Long datasourceId) {
         this.jdbcTemplate = jdbcTemplate;
         this.datasourceId = datasourceId;
+    }
+    
+    /**
+     * ✅ 设置IndustryConceptAdminMapper（用于查询行业代码）
+     */
+    public void setAdminMapper(IndustryConceptAdminMapper adminMapper) {
+        this.adminMapper = adminMapper;
     }
     
     /**
@@ -262,6 +273,10 @@ public class QueryStructureExtractor {
      */
     private String getIndustryCode(Long datasourceId) {
         try {
+            if (adminMapper != null) {
+                return adminMapper.selectIndustryCodeByDatasourceId(datasourceId);
+            }
+            // 降级：使用jdbcTemplate
             return jdbcTemplate.queryForObject(
                 "SELECT industry_code FROM datasource_industry_mapping WHERE datasource_id = ? LIMIT 1",
                 String.class, datasourceId
