@@ -770,6 +770,10 @@
                     }
                 } else if (data.type === 'data') {
                     data.status = 'success';
+                } else if (data.type === 'summary') {
+                    data.status = 'success';
+                } else if (data.type === 'chart') {
+                    data.status = 'success';
                 } else if (data.type === 'error') {
                     data.status = 'error';
                     if (!data.error && data.message) {
@@ -919,11 +923,6 @@
                 const formattedSummary = formatAISummary(data.message);
                 html += `<div class="ai-summary"><strong>🤖 AI 智能总结:</strong><br>${formattedSummary}</div>`;
                 addMessage(html, 'agent');
-                
-                // ✅ AI总结后，重新渲染剩余追问按钮（基于原始查询数据）
-                if (currentContext && currentContext.data && Array.isArray(currentContext.data) && currentContext.data.length > 0) {
-                    renderRemainingFromCache();
-                }
                 return;
             }
             
@@ -933,10 +932,6 @@
                 html += await renderDataTable(data.data);
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
                 addMessage(html, 'agent');
-                
-                // ✅ 图表生成后，重新渲染剩余追问按钮
-                // 注意：图表响应已经更新了 currentContext.data，所以可以直接调用
-                renderRemainingFromCache();
                 return;
             }
             
@@ -1020,9 +1015,6 @@
                 // 再添加图表
                 html += renderChartFromConfig(data.echartsConfig, data.chartType);
                 addMessage(html, 'agent');
-                
-                // ✅ 图表生成后，重新渲染剩余追问按钮（基于原始查询数据）
-                renderRemainingFromCache();
                 return;
             }
             
@@ -1665,9 +1657,7 @@
                 removeTypingIndicator();
                 
                 if (result.code === 200 && result.data) {
-                    handleAgentResponse(result.data);
-                    
-                    // ✅ AI总结返回后，重新渲染剩余按钮
+                    await handleAgentResponse(result.data);
                     renderRemainingFromCache();
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
@@ -1717,9 +1707,7 @@
                 removeTypingIndicator();
                 
                 if (result.code === 200 && result.data) {
-                    handleAgentResponse(result.data);
-                    
-                    // ✅ 图表返回后，重新渲染剩余按钮
+                    await handleAgentResponse(result.data);
                     renderRemainingFromCache();
                 } else {
                     addMessage(`❌ 错误: ${result.message}`, 'agent');
@@ -1752,31 +1740,13 @@
         
         // ✅ 根据缓存渲染剩余按钮
         function renderRemainingFromCache() {
-            console.log('[追问按钮] followUpState:', followUpState);
-            console.log('[追问按钮] currentContext.data:', currentContext?.data);
-            
-            if (!followUpState.containerId || followUpState.availableActions.length === 0) {
-                console.log('[追问按钮] 跳过：containerId或availableActions为空');
-                return;
-            }
-            
-            // ✅ 关键修复：AI总结/图表生成时，不强制要求 currentContext.data
-            // 因为这些操作是基于之前的查询结果，数据已经在 currentContext 中
-            if (!currentContext) {
-                console.log('[追问按钮] 跳过：currentContext为空');
-                return;
-            }
-            
-            const sql = currentContext.sql || currentContext.generatedSQL || '';
-            const isStatistical = isStatisticalData(sql);
-            // ✅ 安全获取 hasNumeric，避免 data 为空时报错
-            const hasNumeric = currentContext.data ? hasNumericColumn(currentContext.data) : false;
-            
-            console.log('[追问按钮] SQL:', sql);
-            console.log('[追问按钮] isStatistical:', isStatistical);
-            console.log('[追问按钮] hasNumeric:', hasNumeric);
-            console.log('[追问按钮] data.length:', currentContext.data?.length);
+            console.log('[追问按钮] followUpState:', JSON.stringify(followUpState));
             console.log('[追问按钮] availableActions:', followUpState.availableActions);
+            
+            if (!followUpState.availableActions || followUpState.availableActions.length === 0) {
+                console.log('[追问按钮] 跳过：availableActions为空');
+                return;
+            }
             
             const containerId = 'follow-up-' + Date.now();
             followUpState.containerId = containerId;
@@ -1785,22 +1755,12 @@
             html += '<div style="font-size:13px;color:#666;margin-bottom:8px;">💡 您可以继续:</div>';
             html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
             
-            if (followUpState.availableActions.includes('summary') && isStatistical) {
+            if (followUpState.availableActions.includes('summary')) {
                 html += `<button class="suggestion-btn" onclick="triggerAISummary('${containerId}')">🤖 AI总结</button>`;
             }
             
-            // ✅ 图表按钮需要数据支持，放宽条件：只要有数据即可，不强制 >= 2 行
-            if (followUpState.availableActions.includes('chart') && isStatistical && hasNumeric && currentContext.data && currentContext.data.length > 0) {
-                console.log('[追问按钮] 显示图表按钮');
+            if (followUpState.availableActions.includes('chart')) {
                 html += `<button class="suggestion-btn" onclick="triggerChartGeneration('${containerId}')">📊 生成图表</button>`;
-            } else {
-                console.log('[追问按钮] 不显示图表按钮', {
-                    hasChart: followUpState.availableActions.includes('chart'),
-                    isStatistical,
-                    hasNumeric,
-                    hasData: !!currentContext.data,
-                    dataLength: currentContext.data?.length
-                });
             }
             
             if (followUpState.availableActions.includes('download')) {
