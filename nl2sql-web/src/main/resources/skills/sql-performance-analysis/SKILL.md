@@ -4,7 +4,7 @@ description: SQL性能分析：执行计划+索引检查+成本估算。多Tool�
 version: 1.0.0
 author: NL2SQL Team
 requiredParams: [sql, datasourceId]
-script: SQLPerformanceAnalysisSkill.groovy
+script: SQLPerformanceAnalysisSkill.groovy  # @Deprecated - Groovy scripts are deprecated, use workflow instead
 workflow:
   version: 1.0
   steps:

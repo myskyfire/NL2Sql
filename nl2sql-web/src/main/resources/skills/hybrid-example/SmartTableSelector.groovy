@@ -2,10 +2,13 @@ import com.nl2sql.core.agent.skills.SkillContext
 import com.fasterxml.jackson.databind.ObjectMapper
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * 智能选表脚本（混合模式示例）
  * 
  * 职责：根据用户问题和检索到的 schema，智能选择最相关的表
  */
+@Deprecated
 class SmartTableSelector {
     
     def execute(SkillContext context) {

@@ -3,11 +3,14 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * 简单数据查询 Skill - 演示正确的 Tool 调用方式
  * 
  * ✅ 这是真正的 Skill：只负责流程编排，不直接操作数据库
  * ✅ P0优化：使用 SkillResult 统一响应格式
  */
+@Deprecated
 def execute(SkillContext context) {
     println "[SimpleDataQuerySkill] 开始执行"
     

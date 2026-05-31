@@ -3,8 +3,11 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * Summarize Result Skill - 对SQL查询结果进行智能总结
  */
+@Deprecated
 def execute(SkillContext context) {
     println "[SummarizeResultSkill] 开始执行"
     

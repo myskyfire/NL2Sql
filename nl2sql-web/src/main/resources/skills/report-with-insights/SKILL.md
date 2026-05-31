@@ -5,7 +5,7 @@ description: 在标准查询基础上，增加AI智能总结和图表推荐，�
 category: analysis
 priority: 2
 version: "1.0"
-script: scripts/ReportWithInsightsSkill.groovy
+script: scripts/ReportWithInsightsSkill.groovy  # @Deprecated - Groovy scripts are deprecated, use workflow instead
 requiredParams: [question, datasourceId]
 ---
 

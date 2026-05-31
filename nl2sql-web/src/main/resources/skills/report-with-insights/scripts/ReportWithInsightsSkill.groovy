@@ -3,6 +3,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * 报表与洞察技能
  * 
  * 在标准查询基础上，增加：
@@ -11,6 +13,7 @@ import org.slf4j.LoggerFactory
  * 
  * 适用于分析型场景
  */
+@Deprecated
 class ReportWithInsightsSkill {
     
     private static final def log = LoggerFactory.getLogger(ReportWithInsightsSkill.class)

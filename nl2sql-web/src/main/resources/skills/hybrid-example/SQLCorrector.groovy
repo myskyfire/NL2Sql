@@ -2,10 +2,13 @@ import com.nl2sql.core.agent.skills.SkillContext
 import com.fasterxml.jackson.databind.ObjectMapper
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * SQL验证与修正脚本（混合模式示例）
  * 
  * 职责：验证 SQL 语法，失败时自动修正（最多 N 次）
  */
+@Deprecated
 class SQLCorrector {
     
     def execute(SkillContext context) {

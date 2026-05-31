@@ -3,6 +3,8 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * SQL验证与执行 Skill - 演示完整的 Tool 调用链
  * 
  * ✅ 这是真正的 Skill：只负责流程编排，不直接操作数据库
@@ -13,6 +15,7 @@ import groovy.json.JsonOutput
  * 2. 如果验证通过，调用 execute_sql Tool 执行查询
  * 3. 返回结果或错误信息
  */
+@Deprecated
 def execute(SkillContext context) {
     println "[SQLValidateAndExecuteSkill] 开始执行"
     

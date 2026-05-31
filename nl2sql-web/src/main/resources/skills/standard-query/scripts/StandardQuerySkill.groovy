@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * 标准查询技能
  * 
  * 封装完整的查询生命周期：
@@ -19,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher
  * 3. SQL优化与风险评估
  * 4. 执行SQL（带自动修正）
  */
+@Deprecated
 class StandardQuerySkill {
     
     private static final def log = LoggerFactory.getLogger(StandardQuerySkill.class)

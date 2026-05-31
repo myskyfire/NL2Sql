@@ -3,6 +3,8 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 
 /**
+ * @Deprecated Groovy skill scripts are deprecated. Use YAML workflow instead.
+ * 
  * SQL性能分析 Skill - 演示多Tool协同工作
  * 
  * ✅ 这是真正的 Skill：只负责流程编排，不直接操作数据库
@@ -15,6 +17,7 @@ import groovy.json.JsonOutput
  * 4. 调用 estimate_cost Tool 估算查询成本
  * 5. 综合所有分析结果，给出优化建议
  */
+@Deprecated
 def execute(SkillContext context) {
     println "[SQLPerformanceAnalysisSkill] 开始执行"
     

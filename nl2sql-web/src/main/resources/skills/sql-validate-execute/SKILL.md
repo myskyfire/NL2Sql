@@ -4,7 +4,7 @@ description: SQL验证+执行。先校验语法和安全性，再执行查询。
 version: 1.0.0
 author: NL2SQL Team
 requiredParams: [sql, datasourceId]
-script: SQLValidateAndExecuteSkill.groovy
+script: SQLValidateAndExecuteSkill.groovy  # @Deprecated - Groovy scripts are deprecated, use workflow instead
 workflow:
   version: 1.0
   steps:

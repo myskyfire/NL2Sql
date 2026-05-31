@@ -5,7 +5,7 @@ description: 执行完整的数据查询流程，包括表结构检索、SQL生�
 category: query
 priority: 1
 version: "2.0"
-script: scripts/StandardQuerySkill.groovy
+script: scripts/StandardQuerySkill.groovy  # @Deprecated - Groovy scripts are deprecated, use workflow instead
 requiredParams: [question, datasourceId]
 workflow:
   version: 2.0
