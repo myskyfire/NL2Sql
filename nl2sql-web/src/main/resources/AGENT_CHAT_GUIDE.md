@@ -5,7 +5,7 @@
 
 ## 📖 功能概述
 
-AI Agent 对话是 DataMind AI 的核心功能，基于 ReAct（Reasoning + Acting）架构，支持多轮对话、自动追问、图表推荐和数据分析。
+AI Agent 对话是 DataMind AI 的核心功能，采用 **SupervisorAgent 统一路由**，根据用户意图自动选择最优执行模式（标准查询 / 规划执行 / 数据探索），支持多轮对话、自动追问、图表推荐和数据分析。
 
 ## 🎯 核心特性
 

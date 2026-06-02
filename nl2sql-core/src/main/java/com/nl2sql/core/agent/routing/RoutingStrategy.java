@@ -1,32 +1,32 @@
 package com.nl2sql.core.agent.routing;
 
 /**
- * 路由策略枚举
- * 
- * 定义 Skill 路由的三种策略：
- * - DIRECT: 直接调用，无需 LLM
- * - LLM_ASSISTED: LLM 辅助决策（缩小范围）
- * - FALLBACK: 降级到完整 ReAct 流程
+ * Routing Strategy - defines how the system executes a user request
+ *
+ * Three execution modes:
+ * - DIRECT: SKILL.md Workflow (deterministic orchestration)
+ * - PLAN_AND_EXECUTE: LLM generates plan, then execute steps sequentially
+ * - REACT: Thought-Action-Observation loop for open-ended exploration
  */
 public enum RoutingStrategy {
     /**
-     * 直接调用：无需 LLM，直接执行指定 Skill
-     * 适用场景：意图明确（QUERY/SUMMARY/CHART/CLARIFY）且置信度高
-     * 优势：响应速度快（<100ms），Token 消耗为 0
+     * Direct execution via SKILL.md Workflow
+     * Best for: well-defined queries with fixed steps (QUERY/CHART/SUMMARY/CLARIFY)
+     * Speed: fastest (1 LLM call for SQL generation)
      */
     DIRECT,
-    
+
     /**
-     * LLM 辅助决策：缩小工具范围，由 LLM 最终选择
-     * 适用场景：意图不明确，但可缩小范围（如 UNKNOWN 意图）
-     * 优势：减少 LLM 决策空间，降低 Token 消耗 50-70%
+     * Plan and Execute: LLM generates a structured plan, then execute sequentially
+     * Best for: complex but enumerable steps (COMPLEX multi-table queries)
+     * Speed: moderate (2 LLM calls: plan + SQL generation)
      */
-    LLM_ASSISTED,
-    
+    PLAN_AND_EXECUTE,
+
     /**
-     * 降级到完整 ReAct 流程
-     * 适用场景：未知意图、路由失败或低置信度
-     * 优势：保证系统鲁棒性，避免错误路由
+     * ReAct: Thought-Action-Observation loop
+     * Best for: open-ended exploration where next step depends on previous results
+     * Speed: slowest (3-5 LLM calls, each round decides next action)
      */
-    FALLBACK
+    REACT
 }

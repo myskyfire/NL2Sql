@@ -21,34 +21,13 @@ public class WorkflowLoader {
         this.yamlMapper = new ObjectMapper(new YAMLFactory());
     }
 
+    /**
+     * Deprecated - migrated to SKILL.md workflow, use loadSkillWorkflow() instead.
+     */
+    @Deprecated
     public WorkflowDefinition loadWorkflow(QueryPlan.ComplexityLevel complexity) {
-        String resourcePath;
-        switch (complexity) {
-            case COMPLEX:
-                resourcePath = "workflow/complex-query.yml";
-                break;
-            case MODERATE:
-                resourcePath = "workflow/moderate-query.yml";
-                break;
-            case SIMPLE:
-            default:
-                return null;
-        }
-
-        try {
-            ClassPathResource resource = new ClassPathResource(resourcePath);
-            if (!resource.exists()) {
-                log.warn("[WorkflowLoader] 工作流配置文件不存在: {}", resourcePath);
-                return null;
-            }
-
-            try (InputStream is = resource.getInputStream()) {
-                return yamlMapper.readValue(is, WorkflowDefinition.class);
-            }
-        } catch (Exception e) {
-            log.error("[WorkflowLoader] 加载工作流配置失败: {}", resourcePath, e);
-            return null;
-        }
+        log.warn("[WorkflowLoader] @Deprecated loadWorkflow(complexity) 被调用，应统一使用 loadSkillWorkflow()");
+        return null;
     }
 
     @SuppressWarnings("unchecked")

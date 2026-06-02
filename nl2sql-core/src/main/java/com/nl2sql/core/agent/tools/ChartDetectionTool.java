@@ -6,9 +6,7 @@ import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -17,12 +15,14 @@ public class ChartDetectionTool {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Tool("检测用户问题中是否包含图表生成意图（柱状图/折线图/饼图/面积图），如果检测到则生成ECharts配置。")
+    @Deprecated
+    @Tool("检测用户问题中是否包含图表生成意图（柱状图/折线图/饼图/面积图），如果检测到则生成ECharts配置。@Deprecated - 建议使用 detectChartIntent + generateChartConfig 组合")
     public String detectAndGenerateChart(
         @P("用户原始问题") String question,
-        @P("查询结果数据") List<Map<String, Object>> data
+        @P("查询结果数据") Object data
     ) {
         try {
+            log.info("[ChartDetectionTool] @Deprecated - 建议使用 detectChartIntent + generateChartConfig 组合");
             log.info("[ChartDetectionTool] 检测图表意图: question={}", question);
 
             Map<String, Object> response = new LinkedHashMap<>();
@@ -47,11 +47,6 @@ public class ChartDetectionTool {
             response.put("cleanedQuestion", cleanedQuestion);
 
             log.info("[ChartDetectionTool] 检测到图表意图: type={}", chartType);
-
-            if (data != null && !data.isEmpty()) {
-                Map<String, Object> echartsConfig = generateEChartsConfig(chartType, data);
-                response.put("echartsConfig", echartsConfig);
-            }
 
             return objectMapper.writeValueAsString(response);
 
@@ -107,53 +102,5 @@ public class ChartDetectionTool {
             case "area": return "面积图";
             default: return chartType;
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> generateEChartsConfig(String chartType, List<Map<String, Object>> data) {
-        Map<String, Object> config = new LinkedHashMap<>();
-        config.put("type", chartType);
-
-        if (data == null || data.isEmpty()) {
-            return config;
-        }
-
-        List<String> categories = new ArrayList<>();
-        Map<String, List<Object>> seriesMap = new LinkedHashMap<>();
-
-        List<String> keys = new ArrayList<>(data.get(0).keySet());
-        String categoryKey = keys.get(0);
-
-        for (Map<String, Object> row : data) {
-            categories.add(String.valueOf(row.get(categoryKey)));
-        }
-
-        for (int i = 1; i < keys.size(); i++) {
-            String valueKey = keys.get(i);
-            List<Object> values = new ArrayList<>();
-
-            for (Map<String, Object> row : data) {
-                Object val = row.get(valueKey);
-                if (val instanceof Number) {
-                    values.add(val);
-                } else if (val != null) {
-                    try {
-                        values.add(Double.parseDouble(String.valueOf(val)));
-                    } catch (Exception e) {
-                        values.add(0);
-                    }
-                } else {
-                    values.add(0);
-                }
-            }
-
-            seriesMap.put(valueKey, values);
-        }
-
-        config.put("categories", categories);
-        config.put("series", seriesMap);
-        config.put("title", getChartTypeName(chartType));
-
-        return config;
     }
 }

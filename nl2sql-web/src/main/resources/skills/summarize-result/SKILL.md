@@ -1,7 +1,15 @@
 ---
+name: summarize-result
+displayName: 结果总结技能
+description: 对SQL查询结果进行智能分析和总结，提取关键洞察。基于标准查询流程后追加AI总结。
+category: analysis
+priority: 3
+version: "2.0"
+script: scripts/SummarizeResultSkill.groovy  # @Deprecated - Groovy scripts are deprecated, use workflow instead
+requiredParams: [question, datasourceId]
 workflow:
-  name: summarize-result
-  description: 对SQL查询结果进行智能分析和总结，提取关键洞察
+  version: 2.0
+  description: 结果总结工作流v2（原子Tool编排版，调用标准查询后追加AI总结）
   steps:
     - id: execute_query
       type: call_workflow
@@ -12,71 +20,64 @@ workflow:
         userId: "{{userId}}"
         username: "{{username}}"
       output_var: query_result
+
     - id: check_success
       action: condition
       condition: "${query_result.success}==true"
       on_true: summarize
       on_false: respond_error
+
     - id: summarize
       action: call_tool
       tool: summarize_result
-      on_next: respond
       input:
-        userQuery: "{{question}}"
+        question: "{{question}}"
         sql: "{{query_result.sql}}"
         dataJson: "{{query_result.data}}"
+        rowCount: "{{query_result.rowCount}}"
       output_var: summary_result
+      on_next: generate_follow_up
+
+    - id: generate_follow_up
+      action: call_tool
+      tool: generateFollowUpSuggestions
+      input:
+        sql: "{{query_result.sql}}"
+        rowCount: "{{query_result.rowCount}}"
+        dataJson: "{{query_result.data}}"
+      output_var: follow_up_result
+      on_next: respond
+
     - id: respond
       action: respond
       output:
-        type: summary
-        data: "{{summary_result}}"
+        success: true
+        type: "summary"
+        data: "{{query_result.data}}"
+        rowCount: "{{query_result.rowCount}}"
+        sql: "{{query_result.sql}}"
+        aiSummary: "{{summary_result.data.summary}}"
+        followUpSuggestions: "{{follow_up_result.data.followUpSuggestions}}"
+      on_next: null
+
     - id: respond_error
       action: respond
       output:
         success: false
+        type: "error"
         error: "{{query_result.error}}"
+      on_next: null
 ---
 
-# Summarize Result Skill
+# 结果总结技能 v2.0
 
 ## 描述
-对SQL查询结果进行智能分析和总结，提取关键洞察。
+对SQL查询结果进行智能分析和总结，提取关键洞察。基于标准查询流程后追加AI总结。
 
 ## 参数
-- `question`: 用户原始问题
-- `sql`: 执行的SQL语句
-- `dataJson`: 查询结果数据（JSON字符串）
-
-## 执行流程
-
-### Workflow 步骤
-
-1. **retrieve_schema**: 调用 `retrieveSchema` Tool 检索相关表结构
-2. **generate_sql**: 调用 `generateSQL` Tool 生成 SQL
-3. **execute_sql**: 调用 `executeSQL` Tool 执行查询（条件：sql_result.success==true）
-4. **summarize**: 调用 `summarize_result` Tool 对结果进行 AI 总结（条件：exec_result.success==true）
-5. **respond**: 返回总结结果
-
-## 示例
-
-**输入**:
-```json
-{
-  "question": "查询最近10天订单统计",
-  "sql": "SELECT DATE(order_date) as date, COUNT(*) as count FROM orders GROUP BY DATE(order_date)",
-  "dataJson": "[{\"date\":\"2026-05-01\",\"count\":150},{\"date\":\"2026-05-02\",\"count\":180}]"
-}
-```
-
-**输出**:
-```json
-{
-  "success": true,
-  "type": "summary",
-  "data": "最近10天订单量呈现波动上升趋势，5月2日达到峰值180单...",
-  "metadata": {
-    "executionTime": 1234
-  }
-}
-```
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| question | string | ✅ | 用户原始问题 |
+| datasourceId | long | ✅ | 数据源ID |
+| userId | long | ✅ | 用户ID |
+| username | string | ✅ | 用户名 |

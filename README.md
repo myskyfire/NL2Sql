@@ -67,7 +67,7 @@
 
 ## ✨ 核心亮点
 
-**DataMind AI（数智洞察）** 是一款基于 **Spring Boot 3.2 + LangChain4j** 构建的企业级自然语言数据分析平台，采用业界前沿的 **Plan-and-Execute（规划-执行）多智能体协作架构**，将自然语言查询拆解为结构化的执行计划，由 SupervisorAgent 全局调度、PlannerAgent 路径规划、WorkflowEngine 工作流编排，协调 49 个原子 Tool 和 3 个专用 Worker 动态编排执行，实现从"自然语言"到"数据洞察"的全链路自动化。
+**DataMind AI（数智洞察）** 是一款基于 **Spring Boot 3.2 + LangChain4j** 构建的企业级自然语言数据分析平台，采用业界前沿的 **Plan-and-Execute（规划-执行）多智能体协作架构**，将自然语言查询拆解为结构化的执行计划，由 SupervisorAgent 全局调度路由（DIRECT / PLAN_AND_EXECUTE / REACT 三种模式）、PlannerAgent 路径规划、WorkflowEngine 工作流编排，协调 56 个原子 Tool 动态编排执行，实现从"自然语言"到"数据洞察"的全链路自动化。
 
 ### 一句话价值主张
 
@@ -155,7 +155,7 @@ graph TB
         
         Planner["PlannerAgent<br/>━━━━━━━━━━━━━━━━<br/>📐 复杂度评估 (SIMPLE/MEDIUM/COMPLEX)<br/>📐 生成结构化 QueryPlan (JSON)<br/>📐 避免 LLM 长上下文幻觉"]
         
-        WorkflowEngine["WorkflowEngine (纯 Java)<br/>━━━━━━━━━━━━━━━━━━━━━━━━━━<br/>⚙️ 解析 SKILL.md YAML 工作流定义<br/>⚙️ 顺序执行 · 条件分支 · 变量传递<br/>⚙️ 49 个原子 Tool 动态编排<br/>⚙️ on_failure 错误处理 · LangSmith 追踪"]
+        WorkflowEngine["WorkflowEngine (纯 Java)<br/>━━━━━━━━━━━━━━━━━━━━━━━━━━<br/>⚙️ 解析 SKILL.md YAML 工作流定义<br/>⚙️ 顺序执行 · 条件分支 · 变量传递<br/>⚙️ 56 个原子 Tool 动态编排<br/>⚙️ on_failure 错误处理 · LangSmith 追踪"]
 
         Supervisor --> IntentClassifier
         Supervisor --> SkillRouter
@@ -174,7 +174,7 @@ graph TB
     WorkflowEngine --> ChartWorker
     WorkflowEngine --> SummaryWorker
 
-    subgraph Tool层["🔧 原子 Tool 层 (49 Tools)"]
+    subgraph Tool层["🔧 原子 Tool 层 (56 Tools)"]
         direction LR
         T1["SchemaRetriever<br/>表结构检索"]
         T2["SQLGenerator<br/>SQL 生成"]
@@ -336,11 +336,11 @@ WorkflowEngine 执行流程
 - **声明式编排**：YAML 定义工作流，业务逻辑与代码完全解耦，新增技能无需写 Java 代码
 - **条件分支**：支持 `condition` 字段，根据运行时变量动态决定执行路径
 - **变量传递**：通过 `{{variable}}` Mustache 模板语法在步骤间传递数据
-- **Worker 注册**：`SqlWorker` / `ChartWorker` / `SummaryWorker` 分别处理不同阶段任务
+- **原子 Tool 编排**：56 个原子 Tool 按需编排，覆盖查询全生命周期
 - **错误处理**：`on_failure` / `on_condition_false` 配置，支持失败后重试或降级
 - **链路追踪**：内置 `WorkflowTracingHelper`，每一步执行自动上报 LangSmith
 
-> ⚠️ **历史演进说明：** 系统早期使用 `ReActAgent`（基于 Ollama 原生 Tool Calling 的推理-行动循环）和 `GroovySkillExecutor`（Groovy 脚本执行 Skills），两者已标记为 `@Deprecated`。当前架构为 **SupervisorAgent + PlannerAgent + WorkflowEngine (纯 Java)** 的 Plan-and-Execute 模式。
+> ⚠️ **历史演进说明：** 系统早期使用 `ReActAgent`（基于 Ollama 原生 Tool Calling 的推理-行动循环）和 `GroovySkillExecutor`（Groovy 脚本执行 Skills），两者已标记为 `@Deprecated`。当前架构为 **SupervisorAgent 统一路由 + 三种执行模式（DIRECT / PLAN_AND_EXECUTE / REACT）**，由 PlanValidator 事前校验 + StepReflector 事中校验保障 Plan 执行质量。
 
 ### 3. 系统交互流程（时序图）
 
@@ -430,14 +430,15 @@ flowchart TD
 
 | 组件 | 职责 | 决策方式 | 文件 |
 |------|------|---------|------|
-| **SupervisorAgent** | 意图分类、路由分发、全局调度、缓存检查 | 规则 + LLM | [SupervisorAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/SupervisorAgent.java) |
-| **IntentClassifier** | 识别 QUERY/CHART/REPORT/CLARIFY 意图 | 关键词匹配 + LLM | [IntentClassifier.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/intent/IntentClassifier.java) |
-| **SkillRouter** | 匹配最合适的 Skill（6 个内置 Skill） | 规则引擎 + LLM 辅助 | [SkillRouter.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/routing/SkillRouter.java) |
+| **SupervisorAgent** | 意图分类、路由分发、三种模式调度（DIRECT/PLAN_AND_EXECUTE/REACT）、降级管理 | 规则 + LLM | [SupervisorAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/SupervisorAgent.java) |
+| **IntentClassifier** | 识别 QUERY/CHART/SUMMARY/EXPLORE/CLARIFY 意图 | 关键词匹配 + LLM | [IntentClassifier.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/intent/IntentClassifier.java) |
+| **SkillRouter** | 意图 + confidence 路由决策，选择最优执行模式 | 规则引擎 + LLM 辅助 | [SkillRouter.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/routing/SkillRouter.java) |
 | **PlannerAgent** | 三级复杂度评估 + 生成结构化 QueryPlan | LLM (JSON 结构化输出) | [PlannerAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/PlannerAgent.java) |
-| **WorkflowEngine** | 解析 SKILL.md YAML，编排 Tool 执行链 | YAML 声明式 | [WorkflowEngine.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowEngine.java) |
-| **SqlWorker** | SQL 生成、校验、修正、执行一体化 | 专用逻辑 + LLM | [SqlWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SqlWorker.java) |
-| **ChartWorker** | 图表意图检测、ECharts 配置生成 | 规则 + LLM | [ChartWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/ChartWorker.java) |
-| **SummaryWorker** | AI 驱动数据洞察总结 | LLM | [SummaryWorker.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/worker/SummaryWorker.java) |
+| **PlanExecutor** | 执行 QueryPlan，集成三层风险评估、自动修正、RAG 学习 | LLM + Tool 编排 | [PlanExecutor.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/PlanExecutor.java) |
+| **PlanValidator** | 事前校验 QueryPlan（表名、步骤、复杂度），校验失败自动降级 | 规则校验 | [PlanValidator.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/PlanValidator.java) |
+| **StepReflector** | 事中校验每步执行结果，决策 CONTINUE/REPLAN/TERMINATE | 规则 + LLM | [StepReflector.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/planner/StepReflector.java) |
+| **WorkflowEngine** | 解析 SKILL.md YAML，编排 56 个原子 Tool 执行链 | YAML 声明式 | [WorkflowEngine.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/engine/WorkflowEngine.java) |
+| **DataExplorationAgent** | ReAct 模式，LLM 自主决策工具调用，开放式数据探索 | LLM ReAct 循环 | [DataExplorationAgent.java](nl2sql-core/src/main/java/com/nl2sql/core/agent/DataExplorationAgent.java) |
 
 **架构演进历程：**
 
@@ -447,6 +448,7 @@ timeline
     V0.x 原型期 : ReAct Agent (单循环) : Groovy 脚本执行 : 硬编码 Prompt
     V1.0 重构期 : Plan-and-Execute 架构 : 纯 Java WorkflowEngine : SKILL.md 声明式工作流 : 49 个原子 Tool
     V2.0 企业级 : 三级缓存 + 双层 RAG : Reranker 重排序 : LangSmith 全链路追踪 : MCP 协议支持 : 反馈学习闭环
+    V3.0 智能路由 : SupervisorAgent 统一路由 : 三种执行模式 : PlanValidator+StepReflector : 56 个原子 Tool
 ```
 
 ### 2. 三级缓存架构
@@ -1377,7 +1379,7 @@ CREATE TABLE sql_execution_logs (
 | | ⭐ 本项目 | Python RAG 框架 | GenBI 上下文层 | Headless BI | 数据库工具 | AI SQL 助手 | 阿里云析言 GBI 开源版 |
 | **开发语言** | **Java 21** | Python | Rust + Python | Java | Java | TypeScript | Java |
 | **架构模式** | **Plan-and-Execute 多智能体** | ReAct / CoT | Semantic MDL | Semantic Layer | LLM + Rule | Agent | Agent + Schema Recall |
-| **多智能体协作** | ✅ Supervisor+Planner+3 Workers | ❌ 单 Agent | ❌ | ❌ | ❌ | ❌ | ⚠️ 固定流程 |
+| **多智能体协作** | ✅ Supervisor+Planner+PlanExecutor+DataExploration | ❌ 单 Agent | ❌ | ❌ | ❌ | ❌ | ⚠️ 固定流程 |
 | **复杂度自适应** | ✅ 三级评估(S/M/C) + 模型路由 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **工作流编排** | ✅ SKILL.md YAML 声明式 | ❌ 硬编码 | ⚠️ MDL 建模 | ❌ | ❌ | ❌ | ❌ |
 | **三级缓存** | ✅ L1 Redis + L2 Template + L3 Chroma | ❌ | ❌ | ⚠️ 基础缓存 | ⚠️ 基础缓存 | ❌ | ❌ |
@@ -1657,7 +1659,7 @@ NL2Sql/
 │   │   │   ├── WorkflowStepExecutor.java  # 步骤执行器
 │   │   │   ├── WorkflowExpressionResolver # 变量解析（{{variable}}）
 │   │   │   └── WorkflowTracingHelper.java # 追踪辅助
-│   │   ├── tools/                         # 49 个原子 Tool 实现
+│   │   ├── tools/                         # 56 个原子 Tool 实现
 │   │   │   ├── SchemaRetrieverTool.java   # 表结构检索
 │   │   │   ├── SQLGeneratorTool.java      # SQL 生成
 │   │   │   ├── SQLAutoFixTool.java        # SQL 自动修复
@@ -1667,7 +1669,8 @@ NL2Sql/
 │   │   │   ├── IndustryConceptInjectorTool # 行业概念注入
 │   │   │   ├── ... (41 more)
 │   │   │   └── ToolRegistry.java          # Tool 自动注册中心
-│   │   ├── worker/                        # 专用 Worker (Sql/Chart/Summary)
+│   │   ├── worker/                        # [@Deprecated] 旧 Worker (Sql/Chart/Summary)
+│   │   ├── planner/                       # PlannerAgent + PlanValidator + StepReflector
 │   │   ├── prompt/                        # 动态 Prompt 模块化构建 (7 模块)
 │   │   ├── intent/                        # IntentClassifier 意图识别
 │   │   ├── routing/                       # SkillRouter 技能路由

@@ -17,9 +17,14 @@
 - ✅ 管理员权限校验
 
 ### 2. **Agent对话模块** (`AgentController.java`)
-- ✅ ReAct Agent智能对话
+- ✅ **SupervisorAgent 统一路由** — 三种执行模式：
+  - **DIRECT（SKILL.md Workflow）**：确定性编排，30+ 原子 Tool 步骤，含三层风险评估、自动修正、RAG 学习
+  - **PLAN_AND_EXECUTE（PlanExecutor）**：LLM 生成 QueryPlan → PlanValidator 事前校验 → 动态执行 → StepReflector 事中校验
+  - **REACT（DataExplorationAgent）**：LLM ReAct 循环，自主决定工具调用，适用于开放式数据探索
+- ✅ **SkillRouter 意图路由** — IntentClassifier 自动分类 + confidence 阈值决策
+- ✅ **自动降级链路** — PLAN_AND_EXECUTE 失败→DIRECT，DIRECT 失败→SQL Worker
 - ✅ 多轮上下文理解
-- ✅ 自动表选择与澄清
+- ✅ 自动数据源选择与澄清
 - ✅ SQL生成与执行
 - ✅ 图表推荐
 - ✅ **默认评分机制**（新）：用户不评分时自动给3星
@@ -125,11 +130,15 @@
 ### ✅ 完整实现的核心功能
 
 #### 1. **智能对话系统**
-- ReAct Agent自主决策
-- 多轮对话上下文
-- 自动澄清机制
-- 图表智能推荐
-- 流式实时响应
+- ✅ **SupervisorAgent 统一路由**：三种执行模式（DIRECT / PLAN_AND_EXECUTE / REACT）
+- ✅ **SkillRouter 意图路由**：IntentClassifier 自动分类查询/总结/图表/探索意图
+- ✅ **WorkflowEngine 确定性编排**：SKILL.md 编排 30+ 原子 Tool 步骤
+- ✅ **PlannerAgent + PlanExecutor 动态规划**：LLM 生成 QueryPlan，PlanValidator 事前校验，StepReflector 事中校验
+- ✅ **DataExplorationAgent ReAct 循环**：LLM 自主决策开放式数据探索
+- ✅ 多轮对话上下文
+- ✅ 自动数据源澄清机制
+- ✅ 图表智能推荐
+- ✅ 流式实时响应
 
 #### 2. **SQL生成优化**
 - RAG检索增强（相似度搜索）

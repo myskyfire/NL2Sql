@@ -74,13 +74,35 @@ public class WorkflowEngine {
                        "datasourceId", datasourceId != null ? datasourceId.toString() : "null"),
                 TracingContext.currentRunId());
 
-        WorkflowDefinition workflow = workflowLoader.loadWorkflow(plan.getComplexity());
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("question", userMessage);
+        params.put("datasourceId", datasourceId);
+        params.put("userId", userId);
+        params.put("username", username);
+        params.put("sessionId", com.nl2sql.common.context.UserContext.getSessionId());
+
+        if (plan != null) {
+            params.put("planComplexity", plan.getComplexity() != null ? plan.getComplexity().name() : "UNKNOWN");
+            params.put("planChartNeeded", plan.getChart() != null && plan.getChart().isNeeded());
+            params.put("planNeedSummary", plan.isNeedSummary());
+            if (plan.getTables() != null && !plan.getTables().isEmpty()) {
+                params.put("planTables", plan.getTables().stream()
+                        .map(t -> t.getTableName())
+                        .filter(Objects::nonNull)
+                        .toList());
+            }
+            if (plan.getChart() != null) {
+                params.put("planChartType", plan.getChart().getType());
+            }
+        }
+
+        WorkflowDefinition workflow = workflowLoader.loadSkillWorkflow("execute_standard_query");
         if (workflow == null) {
-            log.warn("[WorkflowEngine] 未找到对应的工作流，使用默认简单流程");
+            log.warn("[WorkflowEngine] 未找到 SKILL.md workflow，降级到简单流程");
             return executeSimplePipeline(plan, datasourceId, userId, username, userMessage);
         }
 
-        log.info("[WorkflowEngine] 使用工作流: {}", workflow.getName());
+        log.info("[WorkflowEngine] 使用 SKILL.md workflow: {}", workflow.getName());
 
         WorkflowContext ctx = new WorkflowContext();
         ctx.setPlan(plan);
@@ -88,6 +110,8 @@ public class WorkflowEngine {
         ctx.setUserId(userId);
         ctx.setUsername(username);
         ctx.setUserMessage(userMessage);
+        ctx.setSessionId(com.nl2sql.common.context.UserContext.getSessionId());
+        ctx.getContextVars().putAll(params);
 
         return executeWorkflowDefinition(workflow, ctx, workflowRun);
     }

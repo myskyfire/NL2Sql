@@ -1,5 +1,5 @@
 name: moderate-query
-description: 多表JOIN查询，使用 Tool 调用链
+description: "@Deprecated - 已迁移至 skills/standard-query/SKILL.md，由 WorkflowEngine 统一调度。原描述：多表JOIN查询，使用 Tool 调用链"
 
 steps:
   - id: resolve_datasource

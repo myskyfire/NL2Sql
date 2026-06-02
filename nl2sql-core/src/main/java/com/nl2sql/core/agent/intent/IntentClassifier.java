@@ -25,6 +25,7 @@ public class IntentClassifier {
         CHART,          // 图表生成
         CLARIFY,        // 需要澄清
         COMPLEX,        // 复杂查询（多表 JOIN/多步聚合）
+        EXPLORE,        // 数据探索（开放式、步骤不可预知）
         UNKNOWN         // 未知意图
     }
 
@@ -64,6 +65,16 @@ public class IntentClassifier {
     private static final Pattern COMPLEX_PATTERN = Pattern.compile(
         "(分析 | 深度分析 | 多维度 | 交叉分析 | 对比 | 环比 | 同比 | 趋势 | 预测 | 归因).*?(数据 | 销售 | 订单 | 用户)" +
         "|(每个 | 各 | 分).*(维度 | 城市 | 地区 | 类别 | 产品 | 时间)"
+    );
+
+    // EXPLORE 意图：开放式数据探索，步骤不可预知
+    private static final Pattern EXPLORE_PATTERN = Pattern.compile(
+        "(探索 | 挖掘 | 发现).*(数据 | 规律 | 模式 | 异常 | 有意思 | 有趣)" +
+        "|(数据).*(有什么 | 哪些 | 什么样).*(规律 | 模式 | 特点 | 趋势 | 异常)" +
+        "|(帮我 | 帮我看看 | 帮我找找).*(异常 | 问题 | 亮点 | 有意思 | 值得关注)" +
+        "|(不知道 | 不确定).*(查什么 | 想看 | 想了解)" +
+        "|(随便 | 随意 | 自由).*(看看 | 浏览 | 翻翻)" +
+        "|(有什么).*(异常 | 不对劲 | 特别 | 突出)"
     );
 
     /**
@@ -131,6 +142,9 @@ public class IntentClassifier {
         if (message.contains("[INTENT:COMPLEX]")) {
             return IntentType.COMPLEX;
         }
+        if (message.contains("[INTENT:EXPLORE]")) {
+            return IntentType.EXPLORE;
+        }
         if (message.contains("[INTENT:QUERY]")) {
             return IntentType.QUERY;
         }
@@ -152,6 +166,16 @@ public class IntentClassifier {
             );
         }
         log.debug("[IntentClassifier] SUMMARY_PATTERN 未匹配: {}", message);
+
+        // 检查是否为 EXPLORE 意图（优先于 COMPLEX，开放式探索应走 ReAct）
+        if (EXPLORE_PATTERN.matcher(message).find()) {
+            return IntentClassification.of(
+                IntentType.EXPLORE,
+                0.85,
+                "匹配数据探索关键词",
+                message
+            );
+        }
 
         // 检查是否为 COMPLEX 意图（多表 JOIN/多维度，但不含"总结"）
         if (COMPLEX_PATTERN.matcher(message).find()) {

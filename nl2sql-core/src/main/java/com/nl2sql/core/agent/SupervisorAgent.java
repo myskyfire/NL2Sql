@@ -2,9 +2,9 @@ package com.nl2sql.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.core.agent.engine.WorkflowEngine;
-import com.nl2sql.core.agent.intent.IntentClassifier;
-import com.nl2sql.core.agent.planner.PlannerAgent;
+import com.nl2sql.core.agent.planner.PlanValidator;
 import com.nl2sql.core.agent.planner.QueryPlan;
+import com.nl2sql.core.agent.planner.PlannerAgent;
 import com.nl2sql.core.agent.routing.RoutingResult;
 import com.nl2sql.core.agent.routing.SkillRouter;
 import com.nl2sql.core.agent.tools.DatasourceClarificationTool;
@@ -21,14 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.*;
 import java.util.LinkedHashMap;
 
-/**
- * Supervisor Agent - 替换 ReActAgent，采用 Plan-and-Execute + Multi-Agent 架构
- *
- * 职责：
- * 1. 意图分类 + 路由分发
- * 2. 简单查询直接执行（保留现有DIRECT路径）
- * 3. 复杂查询生成Plan，交给WorkflowEngine编排执行
- */
 @Slf4j
 public class SupervisorAgent {
 
@@ -44,6 +36,8 @@ public class SupervisorAgent {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Map<String, Worker> workers = new HashMap<>();
+    private DataExplorationAgent explorationAgent;
+    private PlanExecutor planExecutor;
 
     public SupervisorAgent(
             LLMService llmService,
@@ -71,23 +65,19 @@ public class SupervisorAgent {
             this.workers.put(w.getWorkerType(), w);
         }
 
-        log.info("[SupervisorAgent] 初始化完成，已注册 Workers: {}", this.workers.keySet());
+        this.explorationAgent = new DataExplorationAgent(llmService, toolRegistry);
+        this.planExecutor = new PlanExecutor(toolRegistry);
+
+        log.info("[SupervisorAgent] initialized with 3 execution modes: DIRECT(Workflow), PLAN_AND_EXECUTE(PlanExecutor), REACT(Explore)");
+        log.info("[SupervisorAgent] registered Workers: {}", this.workers.keySet());
     }
 
-    /**
-     * 执行用户请求（替换 ReActAgent.execute）
-     *
-     * @param userMessage      用户原始消息
-     * @param datasourceId     数据源ID（可能为null）
-     * @param historyMessages  历史消息（暂不使用）
-     * @return 执行结果 JSON
-     */
     public String execute(String userMessage, Long datasourceId,
                          List<Map<String, Object>> historyMessages) {
         Long userId = com.nl2sql.common.context.UserContext.getUserId();
         String username = com.nl2sql.common.context.UserContext.getUsername();
 
-        log.info("[SupervisorAgent] 开始执行，用户消息: {}, datasourceId={}, userId={}",
+        log.info("[SupervisorAgent] execute: message={}, datasourceId={}, userId={}",
             userMessage, datasourceId, userId);
 
         TraceSpan rootRun = null;
@@ -101,7 +91,7 @@ public class SupervisorAgent {
 
         try {
         if (datasourceId == null) {
-            log.info("[SupervisorAgent] 数据源为空，先调用澄清");
+            log.info("[SupervisorAgent] datasourceId is null, clarifying");
             if (datasourceClarificationTool != null) {
                 String clarificationResult = datasourceClarificationTool.clarifyDatasource(userMessage);
                 
@@ -115,21 +105,21 @@ public class SupervisorAgent {
                             ((Number) clarification.get("recommendedDatasourceId")).longValue() : null;
                         
                         if (Boolean.TRUE.equals(autoExecuted) && recommendedDsId != null) {
-                            log.info("[SupervisorAgent] ✅ 数据源自动选择: ID={}, 重新执行", recommendedDsId);
+                            log.info("[SupervisorAgent] auto-selected datasource: ID={}, re-executing", recommendedDsId);
                             return execute(userMessage, recommendedDsId, historyMessages);
                         }
                     }
                 } catch (Exception e) {
-                    log.warn("[SupervisorAgent] 解析澄清响应失败: {}", e.getMessage());
+                    log.warn("[SupervisorAgent] failed to parse clarification response: {}", e.getMessage());
                 }
                 
                 return clarificationResult;
             }
-            return endTrace(rootRun, "{\"success\":false,\"error\":\"数据源为空，clarify_datasource工具未注册\"}");
+            return endTrace(rootRun, "{\"success\":false,\"error\":\"datasourceId is null and clarify_datasource tool not registered\"}");
         }
 
         RoutingResult routing = skillRouter.route(userMessage, datasourceId);
-        log.info("[SupervisorAgent] 路由结果: strategy={}, skills={}, reason={}",
+        log.info("[SupervisorAgent] routing result: strategy={}, skills={}, reason={}",
             routing.getStrategy(), routing.getRecommendedSkills(), routing.getReason());
 
         String result;
@@ -138,13 +128,16 @@ public class SupervisorAgent {
                 result = executeDirect(routing.getRecommendedSkills().get(0),
                     datasourceId, userId, username, userMessage);
                 break;
-            case LLM_ASSISTED:
+            case PLAN_AND_EXECUTE:
                 result = executeWithPlan(userMessage, datasourceId, userId, username, routing);
                 break;
-            case FALLBACK:
+            case REACT:
+                result = executeWithReAct(userMessage, datasourceId);
+                break;
             default:
-                log.info("[SupervisorAgent] 降级模式，使用Plan执行");
-                result = executeWithPlan(userMessage, datasourceId, userId, username, routing);
+                log.info("[SupervisorAgent] unknown strategy, fallback to DIRECT");
+                result = executeDirect("execute_standard_query",
+                    datasourceId, userId, username, userMessage);
                 break;
         }
 
@@ -165,14 +158,13 @@ public class SupervisorAgent {
             outputs.put("resultLength", result != null ? result.length() : 0);
             tracingService.endRun(rootRun, outputs, null);
             
-            // 将 runId 注入到响应中，供前端反馈使用
             if (result != null) {
                 try {
                     Map<String, Object> resultMap = objectMapper.readValue(result, Map.class);
                     resultMap.put("runId", rootRun.getId().toString());
                     result = objectMapper.writeValueAsString(resultMap);
                 } catch (Exception e) {
-                    log.debug("[LangSmith] 注入 runId 失败: {}", e.getMessage());
+                    log.debug("[SupervisorAgent] failed to inject runId: {}", e.getMessage());
                 }
             }
         }
@@ -180,27 +172,23 @@ public class SupervisorAgent {
     }
 
     /**
-     * 直接执行（简单查询，跳过Plan）
-     * 优先使用 SKILL.md 中的 workflow 定义，如果无 workflow 则降级到 Worker
+     * Mode 1: DIRECT - SKILL.md Workflow (deterministic orchestration)
      */
     private String executeDirect(String skillName, Long datasourceId,
                                   Long userId, String username, String userMessage) {
-        log.info("[SupervisorAgent] 直接执行: {}", skillName);
+        log.info("[SupervisorAgent] [DIRECT] executing skill: {}", skillName);
 
-        // 特殊处理：数据源澄清
         if ("clarify_datasource".equals(skillName)) {
             if (datasourceClarificationTool != null) {
                 return datasourceClarificationTool.clarifyDatasource(userMessage);
             }
-            return "{\"success\":false,\"error\":\"clarify_datasource工具未注册\"}";
+            return "{\"success\":false,\"error\":\"clarify_datasource tool not registered\"}";
         }
 
-        // ✅ 总结/图表等已有上下文的 skill 直接走硬编码，不走 SKILL.md workflow（避免重复查询）
         if ("summarize_result".equals(skillName) || "generate_chart".equals(skillName)) {
             return executeDirectSkill(skillName, datasourceId, userId, username, userMessage);
         }
 
-        // ✅ 优先尝试从 SKILL.md 的 workflow 定义执行
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("question", userMessage);
         params.put("datasourceId", datasourceId);
@@ -211,23 +199,21 @@ public class SupervisorAgent {
         try {
             String result = workflowEngine.executeFromSkillWorkflow(skillName, params);
             if (result != null && !result.contains("\"error\":\"未找到Skill的workflow定义")) {
-                log.info("[SupervisorAgent] ✅ 通过 SKILL.md workflow 执行成功: {}", skillName);
+                log.info("[SupervisorAgent] [DIRECT] SKILL.md workflow success: {}", skillName);
                 return result;
             }
         } catch (Exception e) {
-            log.warn("[SupervisorAgent] SKILL.md workflow 执行失败，降级到 Worker: {}", e.getMessage());
+            log.warn("[SupervisorAgent] [DIRECT] SKILL.md workflow failed, falling back to Worker: {}", e.getMessage());
         }
 
-        // 降级：通过 Worker 执行
-        log.info("[SupervisorAgent] 降级到 Worker 执行: {}", skillName);
+        log.info("[SupervisorAgent] [DIRECT] falling back to Worker: {}", skillName);
 
         if ("execute_standard_query".equals(skillName)) {
             Worker sqlWorker = workers.get("sql");
             if (sqlWorker == null) {
-                return "{\"success\":false,\"error\":\"sql Worker未注册\"}";
+                return "{\"success\":false,\"error\":\"sql Worker not registered\"}";
             }
 
-            // 构造最简单的 QueryPlan
             QueryPlan plan = buildSimplePlan(userMessage, datasourceId);
 
             Worker.WorkerContext context = new Worker.WorkerContext();
@@ -245,21 +231,14 @@ public class SupervisorAgent {
             try {
                 return objectMapper.writeValueAsString(result.getData());
             } catch (Exception e) {
-                log.error("[SupervisorAgent] SQL Worker结果序列化失败", e);
+                log.error("[SupervisorAgent] SQL Worker result serialization failed", e);
                 return "{\"success\":true,\"raw\":\"" + result.getRawOutput() + "\"}";
             }
         }
 
-        if ("summarize_result".equals(skillName)) {
-            return executeDirectSkill(skillName, datasourceId, userId, username, userMessage);
-        }
-
-        return "{\"success\":false,\"error\":\"未知的Skill: " + skillName + "\"}";
+        return executeDirectSkill(skillName, datasourceId, userId, username, userMessage);
     }
 
-    /**
-     * 直接执行 skill（不走 SKILL.md workflow，已有上下文数据）
-     */
     private String executeDirectSkill(String skillName, Long datasourceId,
                                        Long userId, String username, String userMessage) {
         if ("summarize_result".equals(skillName)) {
@@ -271,12 +250,11 @@ public class SupervisorAgent {
                     String sql = "";
                     if (sessionContextManager != null) {
                         sql = sessionContextManager.getCurrentSQL();
-                        log.info("[SupervisorAgent] 从上下文获取 SQL: {}", 
+                        log.info("[SupervisorAgent] got SQL from context: {}", 
                             sql != null ? sql.substring(0, Math.min(50, sql.length())) : "null");
                     }
                     args.put("sql", sql != null ? sql : "");
                     
-                    // ✅ 修复：参数名必须与 @Tool 注解中的参数名一致
                     String dataJson = "";
                     if (queryCacheService != null && sql != null && !sql.trim().isEmpty()) {
                         try {
@@ -284,16 +262,14 @@ public class SupervisorAgent {
                                 queryCacheService.getFromCache(sql);
                             if (cached != null && cached.getData() != null && !cached.getData().isEmpty()) {
                                 dataJson = objectMapper.writeValueAsString(cached.getData());
-                                log.info("[SupervisorAgent] 从缓存获取数据: {} rows, {} chars", 
+                                log.info("[SupervisorAgent] got data from cache: {} rows, {} chars", 
                                     cached.getData().size(), dataJson.length());
-                            } else {
-                                log.warn("[SupervisorAgent] 缓存未命中: sql={}", sql.substring(0, Math.min(50, sql.length())));
                             }
                         } catch (Exception e) {
-                            log.warn("[SupervisorAgent] 从缓存读取数据失败", e);
+                            log.warn("[SupervisorAgent] failed to read data from cache", e);
                         }
                     }
-                    args.put("data", dataJson);  // ✅ 参数名改为 data，与 @Tool 定义一致
+                    args.put("data", dataJson);
                     
                     Object result = toolRegistry.callTool("summarize_result", args);
                     if (result instanceof String) {
@@ -301,11 +277,11 @@ public class SupervisorAgent {
                     }
                     return objectMapper.writeValueAsString(result);
                 } catch (Exception e) {
-                    log.error("[SupervisorAgent] summarize_result Tool调用失败", e);
-                    return "{\"success\":false,\"error\":\"总结生成失败: " + e.getMessage() + "\"}";
+                    log.error("[SupervisorAgent] summarize_result tool call failed", e);
+                    return "{\"success\":false,\"error\":\"Summary generation failed: " + e.getMessage() + "\"}";
                 }
             }
-            return "{\"success\":false,\"error\":\"summarize_result Tool未注册\"}";
+            return "{\"success\":false,\"error\":\"summarize_result tool not registered\"}";
         }
 
         if ("generate_chart".equals(skillName)) {
@@ -317,8 +293,6 @@ public class SupervisorAgent {
                     String sql = "";
                     if (sessionContextManager != null) {
                         sql = sessionContextManager.getCurrentSQL();
-                        log.info("[SupervisorAgent] 从上下文获取 SQL: {}", 
-                            sql != null ? sql.substring(0, Math.min(50, sql.length())) : "null");
                     }
                     
                     List<Map<String, Object>> data = new ArrayList<>();
@@ -328,10 +302,9 @@ public class SupervisorAgent {
                                 queryCacheService.getFromCache(sql);
                             if (cached != null && cached.getData() != null) {
                                 data = cached.getData();
-                                log.info("[SupervisorAgent] 从缓存获取图表数据: {} rows", data.size());
                             }
                         } catch (Exception e) {
-                            log.warn("[SupervisorAgent] 从缓存读取图表数据失败", e);
+                            log.warn("[SupervisorAgent] failed to read chart data from cache", e);
                         }
                     }
                     args.put("data", data);
@@ -342,48 +315,73 @@ public class SupervisorAgent {
                     }
                     return objectMapper.writeValueAsString(result);
                 } catch (Exception e) {
-                    log.error("[SupervisorAgent] generate_chart Tool调用失败", e);
-                    return "{\"success\":false,\"error\":\"图表生成失败: " + e.getMessage() + "\"}";
+                    log.error("[SupervisorAgent] generate_chart tool call failed", e);
+                    return "{\"success\":false,\"error\":\"Chart generation failed: " + e.getMessage() + "\"}";
                 }
             }
-            return "{\"success\":false,\"error\":\"generate_chart Tool未注册\"}";
+            return "{\"success\":false,\"error\":\"generate_chart tool not registered\"}";
         }
 
-        return "{\"success\":false,\"error\":\"未知的Skill: " + skillName + "\"}";
+        return "{\"success\":false,\"error\":\"Unknown skill: " + skillName + "\"}";
     }
 
     /**
-     * 使用 Plan 执行（中等/复杂查询）
-     * ✅ 前置条件: datasourceId 已在 execute() 中确定
+     * Mode 2: PLAN_AND_EXECUTE - LLM generates plan, PlanExecutor dynamically orchestrates tools
+     *
+     * Key differences from DIRECT (SKILL.md Workflow):
+     * - Uses QueryPlan's structured output to guide execution
+     * - Plan-aware: table hints, chart type, summary needs from plan
+     * - Multi-step SQL execution for COMPLEX queries
+     * - Dynamic tool orchestration based on plan content
      */
     private String executeWithPlan(String userMessage, Long datasourceId,
                                     Long userId, String username,
                                     RoutingResult routing) {
-        log.info("[SupervisorAgent] 生成 QueryPlan...");
+        log.info("[SupervisorAgent] [PLAN_AND_EXECUTE] generating QueryPlan...");
 
-        // 生成 Plan
         QueryPlan plan;
         try {
             plan = plannerAgent.plan(userMessage, datasourceId);
         } catch (Exception e) {
-            log.error("[SupervisorAgent] Plan 生成失败，降级到直接执行", e);
+            log.error("[SupervisorAgent] [PLAN_AND_EXECUTE] plan generation failed, falling back to DIRECT", e);
             return executeDirect("execute_standard_query", datasourceId, userId, username, userMessage);
         }
 
-        // 简单 Plan：优先尝试 SKILL.md workflow，降级到 Worker
         if (plan.getComplexity() == QueryPlan.ComplexityLevel.SIMPLE) {
-            log.info("[SupervisorAgent] Plan 评估为 SIMPLE，优先尝试 SKILL.md workflow");
+            log.info("[SupervisorAgent] [PLAN_AND_EXECUTE] plan is SIMPLE, falling back to DIRECT");
             return executeDirect("execute_standard_query", datasourceId, userId, username, userMessage);
         }
 
-        // 复杂 Plan 交给 WorkflowEngine
-        log.info("[SupervisorAgent] Plan 评估为 {}，使用 WorkflowEngine", plan.getComplexity());
-        return workflowEngine.execute(plan, datasourceId, userId, username, userMessage);
+        PlanValidator planValidator = new PlanValidator(toolRegistry);
+        PlanValidator.ValidationResult planValidation = planValidator.validate(plan, datasourceId);
+        if (!planValidation.isValid()) {
+            log.warn("[SupervisorAgent] [PLAN_AND_EXECUTE] Plan validation REJECTED: {}, falling back to DIRECT",
+                planValidation.getRejectReason());
+            return executeDirect("execute_standard_query", datasourceId, userId, username, userMessage);
+        }
+        if (planValidation.isModified()) {
+            log.info("[SupervisorAgent] [PLAN_AND_EXECUTE] Plan auto-corrected: {}", planValidation.getCorrections());
+        }
+        if (!planValidation.getWarnings().isEmpty()) {
+            log.warn("[SupervisorAgent] [PLAN_AND_EXECUTE] Plan validation warnings: {}", planValidation.getWarnings());
+        }
+
+        log.info("[SupervisorAgent] [PLAN_AND_EXECUTE] plan complexity={}, tables={}, steps={}, using PlanExecutor",
+            plan.getComplexity(),
+            plan.getTables() != null ? plan.getTables().size() : 0,
+            plan.getSqlSteps() != null ? plan.getSqlSteps().size() : 0);
+
+        return planExecutor.execute(plan, datasourceId, userId, username, userMessage);
     }
 
     /**
-     * 构造简单查询的 QueryPlan
+     * Mode 3: REACT - DataExplorationAgent handles open-ended exploration
      */
+    private String executeWithReAct(String userMessage, Long datasourceId) {
+        log.info("[SupervisorAgent] [REACT] starting data exploration");
+        return explorationAgent.explore(userMessage, datasourceId);
+    }
+
     private QueryPlan buildSimplePlan(String userMessage, Long datasourceId) {
         QueryPlan plan = new QueryPlan();
         plan.setUserQuestion(userMessage);

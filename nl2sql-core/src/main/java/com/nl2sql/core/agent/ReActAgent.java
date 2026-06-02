@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.common.util.JsonUtils;
 import com.nl2sql.core.agent.intent.IntentClassifier;
 import com.nl2sql.core.agent.routing.RoutingResult;
-import com.nl2sql.core.agent.routing.RoutingStrategy;
 import com.nl2sql.core.agent.routing.SkillRouter;
 import com.nl2sql.core.agent.skills.SkillResult;
 import com.nl2sql.core.agent.tool.ToolVisibility;
@@ -99,21 +98,19 @@ public class ReActAgent {
                 return executeDirectSkill(routing.getRecommendedSkills().get(0), 
                                          datasourceId, userId, username, userMessage);
             
-            case LLM_ASSISTED:
-                // LLM 辅助决策：只传递推荐的 Skills
+            case PLAN_AND_EXECUTE:
                 List<Map<String, Object>> allToolsDef = ToolDefinitionConverter.convertToOpenAITools(tools, true);
                 List<Map<String, Object>> filteredTools = filterToolsByNames(
                     routing.getRecommendedSkills(), allToolsDef
                 );
-                log.info("[ReActAgent] LLM 辅助决策，过滤后工具数: {} -> {}", 
+                log.info("[ReActAgent] Plan-and-Execute, filtered tools: {} -> {}", 
                     allToolsDef.size(), filteredTools.size());
                 return executeWithFilteredTools(userMessage, datasourceId, userId, username, 
                                                historyMessages, filteredTools);
             
-            case FALLBACK:
+            case REACT:
             default:
-                // 降级：完整 ReAct 流程
-                log.info("[ReActAgent] 降级到完整 ReAct 流程");
+                log.info("[ReActAgent] Full ReAct loop");
                 return executeFullReAct(userMessage, datasourceId, userId, username, historyMessages);
         }
     }

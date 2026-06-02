@@ -2,475 +2,293 @@
 
 ## 1. 什么是 Skills？
 
-**Skills（技能）** 是封装了完整业务流程的高级抽象单元，由多个原子 **Tools（工具）** 组合而成。
+**Skills（技能）** 是封装了完整业务流程的高级抽象单元，由多个原子 **Tools（工具）** 组合编排而成。
 
 ### Skills vs Tools 对比
 
 | 维度 | Tools（工具） | Skills（技能） |
 |------|--------------|---------------|
 | **粒度** | 原子操作 | 业务流程 |
-| **示例** | `retrieve_schema`, `generate_sql`, `execute_sql` | `StandardQuerySkill`, `ReportWithInsightsSkill` |
+| **示例** | `retrieveSchema`, `generateSQL`, `executeRawSQL` | `execute_standard_query`（SKILL.md 编排） |
 | **职责** | 单一功能 | 端到端解决方案 |
-| **复用性** | 被 Skills 调用 | 可被其他 Skills 或 Agent 直接调用 |
-| **复杂度** | 低 | 高（包含错误处理、重试、风险评估等） |
+| **复用性** | 被多种 Skills 复用 | 可被 SupervisorAgent 或 PlanExecutor 直接调度 |
+| **复杂度** | 低 | 高（包含校验、风险评估、重试、RAG学习等） |
 
 ---
 
-## 2. 当前实现的 Skills
+## 2. 架构概览
 
-### 2.1 StandardQuerySkill（标准查询技能）
+当前架构采用 **SupervisorAgent 统一路由 + 三种执行模式** 的 Plan-and-Execute 多智能体架构：
 
-**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/StandardQuerySkill.java`
-
-**功能描述**:  
-封装完整的查询生命周期，适用于大多数数据查询场景。
-
-**执行流程**:
 ```
-用户问题 
-  ↓
-Step 1: 检索表结构 (NL2SQLService.retrieveSchema)
-  ↓
-Step 2: 生成 SQL (NL2SQLService.generateSQL)
-  ↓
-Step 2.5: SQL 优化与风险评估
-  - 检测 IN 子查询关联问题
-  - LLM 自主评估风险等级 (LOW/MEDIUM/HIGH)
-  - 必要时调用 EXPLAIN 辅助分析
-  ↓
-Step 3: 执行 SQL (SQLExecutionTool.executeSQL)
-  - 支持自动修正（最多重试 2 次）
-  - 失败时调用 NL2SQLService.autoFixSQL
-  ↓
-返回查询结果
+用户请求 → AgentChatService → SupervisorAgent
+                                    │
+                            SkillRouter 路由决策
+                                    │
+                   ┌────────────────┼────────────────┐
+                   ↓                ↓                ↓
+             DIRECT           PLAN_AND_EXECUTE     REACT
+         (SKILL.md Workflow)   (PlanExecutor)   (DataExplorationAgent)
+                   │                │                │
+                   ↓                ↓                ↓
+              WorkflowEngine    PlannerAgent +     LLM ReAct 循环
+              编排30+原子Tool   PlanExecutor       自主决定Tool
+                                  ↓
+                            PlanValidator(事前校验)
+                            + StepReflector(事中校验)
 ```
 
-**核心特性**:
-- ✅ **SQL 后处理**: 自动检测并警告 ON 条件中的 IN 子查询
-- ✅ **风险评估**: LLM 自主判断 + EXPLAIN 辅助，分为 LOW/MEDIUM/HIGH/UNCERTAIN 四级
-- ✅ **自动修正**: 执行失败时自动调用 LLM 修复 SQL，最多重试 2 次
-- ✅ **风险阻断**: HIGH 风险直接阻断执行，保护数据库性能
+### 核心组件
 
-**使用场景**:
-- 简单数据查询："查询最近 10 条订单"
-- 统计分析："统计上月各地区销售额"
-- 筛选过滤："找出消费超过 1000 元的用户"
-
-**返回结果**:
-```java
-QueryResult {
-    success: boolean,
-    data: List<Map<String, Object>>,
-    rowCount: int,
-    executionTime: double,
-    sql: String,
-    error: String (可选),
-    needsClarification: boolean (可选)
-}
-```
+| 组件 | 位置 | 职责 |
+|------|------|------|
+| **SupervisorAgent** | `core/agent/SupervisorAgent.java` | 统一入口，路由决策 + 降级管理 |
+| **SkillRouter** | `core/routing/SkillRouter.java` | 意图分类 + 路由策略决策 |
+| **IntentClassifier** | `core/intent/IntentClassifier.java` | 分类查询/总结/图表/探索/复杂等意图 |
+| **WorkflowEngine** | `core/agent/engine/WorkflowEngine.java` | 加载并执行 SKILL.md YAML 工作流 |
+| **PlannerAgent** | `core/agent/planner/PlannerAgent.java` | LLM 生成 QueryPlan（步骤规划） |
+| **PlanExecutor** | `core/agent/PlanExecutor.java` | 执行 QueryPlan，集成校验和反射 |
+| **PlanValidator** | `core/agent/planner/PlanValidator.java` | 事前校验 Plan 的表名、步骤正确性 |
+| **StepReflector** | `core/agent/planner/StepReflector.java` | 事中校验每一步执行结果，决策继续/重规划/终止 |
+| **ToolRegistry** | `core/agent/tools/ToolRegistry.java` | 管理所有原子 Tool 的注册和发现 |
+| **DataExplorationAgent** | `core/agent/DataExplorationAgent.java` | ReAct 模式，开放式数据探索 |
 
 ---
 
-### 2.2 ReportWithInsightsSkill（报表与洞察技能）
+## 3. 三种执行模式详解
 
-**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/skills/ReportWithInsightsSkill.java`
+### 3.1 DIRECT — SKILL.md Workflow（标准查询）
 
-**功能描述**:  
-在标准查询基础上，增加 AI 智能总结和图表推荐，适用于深度分析场景。
+**文件位置**: `nl2sql-web/src/main/resources/skills/standard-query/SKILL.md`
 
-**执行流程**:
+这是最核心的查询模式，由 SKILL.md YAML 编排 30+ 个原子 Tool 步骤。**Skill = SKILL.md 定义文件 + WorkflowEngine 执行引擎**，不再有 Java Skill 类。
+
 ```
-用户问题
-  ↓
-Step 1: 调用 StandardQuerySkill 执行查询
-  ↓
-Step 2: 如果数据量 > 5 行，生成 AI 总结 (AISummaryTool)
-  ↓
-Step 3: 推荐合适的图表类型 (ChartRecommendationTool)
-  ↓
-返回完整报告（数据 + 总结 + 图表建议）
+validate_params
+    → detect_chart_intent
+    → extract_table_preference
+    → inject_industry_concept
+    → retrieve_schema
+    → generate_sql
+        ├─ 失败 → respond_error
+        └─ 成功 → quick_risk_check
+            ├─ isSimple → 直接执行
+            └─ isSimple=false → analyze_query_plan
+                ├─ HIGH → regenerateSQLWithLLM → re_analyze
+                │   ├─ 仍HIGH → human_approval_required
+                │   └─ 非HIGH → 使用优化SQL
+                ├─ MEDIUM → get_llm_optimization_suggestion（仅建议不修改）
+                └─ LOW → 继续执行
+    → execute_sql
+        ├─ 成功 → rag_learn → generate_follow_up → check_chart_needed → assemble_result
+        └─ 失败 → auto_fix_sql → retry_execute
+            ├─ 重试成功 → rag_learn → assemble_result
+            └─ 重试失败 → respond_error
 ```
 
-**核心特性**:
-- ✅ **智能总结**: 自动提炼关键数据点和趋势
-- ✅ **图表推荐**: 根据数据特征推荐 bar/line/pie 等图表类型
-- ✅ **一键分析**: 用户无需分别调用多个工具
+**关键特性**:
+- ✅ 确定性编排，步骤顺序完全可预期
+- ✅ 三层风险评估（quickRiskCheck → analyzeQueryPlan → LLM优化）
+- ✅ HIGH 风险人机审批（human_approval_required）
+- ✅ RAG 自动学习（从执行结果学习，优化未来查询）
+- ✅ autoFixSQL 自动修正 + 重试
+- ✅ sqlOnly 模式（仅返回 SQL 不执行）
+- ✅ 图表/总结后置生成
 
-**使用场景**:
-- 趋势分析："分析近 3 个月销售趋势并给出建议"
-- 对比分析："对比各产品线的业绩表现"
-- 综合报告："生成上月经营分析报告"
-
-**返回结果**:
-```java
-ReportResult {
-    success: boolean,
-    data: List<Map<String, Object>>,
-    rowCount: int,
-    executionTime: double,
-    sql: String,
-    aiSummary: String (可选),
-    chartRecommendations: List<ChartRecommendation> (可选),
-    error: String (可选)
-}
-```
+**其他 SKILL.md 技能**:
+| Skill | 文件 | 用途 |
+|-------|------|------|
+| `execute_standard_query` | `skills/standard-query/SKILL.md` | 标准数据查询（最完整） |
+| `summarize_result` | `skills/summarize-result/SKILL.md` | AI 总结查询结果 |
+| `generate_chart` | `skills/report-with-insights/SKILL.md` | 生成图表配置 |
+| `sql-validate-execute` | `skills/sql-validate-execute/SKILL.md` | SQL 验证与安全执行 |
+| `data-exploration` | `skills/data-exploration/SKILL.md` | 数据探索（ReAct 模式） |
 
 ---
 
-## 3. Skills 的 Tool 封装
+### 3.2 PLAN_AND_EXECUTE — PlanExecutor（规划执行）
 
-为了让 Agent 能够调用 Skills，需要将 Skills 包装成 LangChain4j 的 `@Tool`。
+**核心文件**: `PlannerAgent.java` + `PlanExecutor.java` + `PlanValidator.java` + `StepReflector.java`
 
-### 3.1 StandardQuerySkillTool
+适用于中等复杂度查询，由 LLM 生成 QueryPlan 后动态执行：
 
-**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/StandardQuerySkillTool.java`
-
-```java
-@Tool("执行标准查询流程。适用于用户有明确查询需求的场景。" +
-      "输入：用户问题、数据源ID、用户ID、用户名。" +
-      "输出：查询结果数据、行数、执行时间、SQL语句。")
-public String executeStandardQuery(String question, Long datasourceId, Long userId, String username) {
-    // 调用 StandardQuerySkill.execute()
-    // 将 QueryResult 序列化为 JSON 字符串返回
-}
+```
+PlannerAgent.plan() → LLM 生成 QueryPlan（JSON格式）
+    ├─ 失败 → 降级到 DIRECT
+    └─ 成功 → PlanValidator.validate() 事前校验
+        ├─ 校验不通过 → 降级到 DIRECT
+        └─ 校验通过 → PlanExecutor.execute()
+            ├─ 前置处理：detectChartIntent / extractTablePreference / retrieveSchema
+            ├─ 循环执行 sqlSteps（支持多步SQL）:
+            │   ├─ generateSQL / quickRiskCheck / analyzeQueryPlan
+            │   ├─ executeRawSQL
+            │   │   ├─ 失败 → autoFixSQL → retry
+            │   │   └─ 成功 → ragLearnFromExecution
+            │   └─ StepReflector.reflect() 事中校验
+            │       ├─ CONTINUE → 继续下一步
+            │       ├─ REPLAN → 重新规划
+            │       └─ TERMINATE → 终止执行
+            └─ 后置处理：followUp / chartConfig / summary / 组装响应
 ```
 
-### 3.2 ReportWithInsightsSkillTool
-
-**文件位置**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/tools/ReportWithInsightsSkillTool.java`
-
-```java
-@Tool("生成数据分析报告和洞察。适用于用户需要深度分析的场景。" +
-      "输入：用户问题、数据源ID、用户ID、用户名。" +
-      "输出：包含数据、AI总结、图表推荐的完整报告。")
-public String generateReportWithInsights(String question, Long datasourceId, Long userId, String username) {
-    // 调用 ReportWithInsightsSkill.execute()
-    // 将 ReportResult 序列化为 JSON 字符串返回
-}
-```
+**关键特性**:
+- ✅ LLM 动态规划步骤（支持多步 SQL）
+- ✅ PlanValidator 事前校验（表名、步骤、复杂度）
+- ✅ StepReflector 事中校验（每步执行后决策）
+- ✅ 自动降级（失败→DIRECT，SIMPLE→DIRECT）
 
 ---
 
-## 4. Skills 注册与发现
+### 3.3 REACT — DataExplorationAgent（数据探索）
 
-**配置文件**: `NL2SQL-core/src/main/java/com/nl2sql/core/agent/AgentConfig.java`
+**核心文件**: `DataExplorationAgent.java`
 
-```java
-@Configuration
-public class AgentConfig {
-    
-    @Autowired(required = false)
-    private StandardQuerySkillTool standardQuerySkillTool;
-    
-    @Autowired(required = false)
-    private ReportWithInsightsSkillTool reportWithInsightsSkillTool;
-    
-    @Bean
-    public ReActAgent reActAgent(ChatModel chatModel) {
-        ReActAgent agent = new ReActAgent(chatModel);
-        
-        // 注册核心 Tools
-        agent.registerTool("nl2sql", nl2sqlTool);
-        agent.registerTool("execute_sql", sqlExecutionTool);
-        
-        // 注册 Skills（如果存在）
-        if (standardQuerySkillTool != null) {
-            agent.registerTool("execute_standard_query", standardQuerySkillTool);
-            log.info("✅ 已注册 Skill: StandardQuerySkill");
-        }
-        
-        if (reportWithInsightsSkillTool != null) {
-            agent.registerTool("generate_report_with_insights", reportWithInsightsSkillTool);
-            log.info("✅ 已注册 Skill: ReportWithInsightsSkill");
-        }
-        
-        return agent;
-    }
-}
+适用于开放式数据探索场景（EXPLORE 意图），LLM 自主决定每步调用什么工具：
+
+```
+循环 iteration 1..5:
+  ├─ LLM 返回 tool_calls → 执行第一个 tool
+  │   ├─ 可用 tools: retrieveSchema, generateSQL, quickRiskCheck,
+  │   │             executeRawSQL, autoFixSQL, detectChartIntent,
+  │   │             generateChartConfig, generateAISummary, assembleResult
+  │   └─ 结果 → 加入 messages，继续循环
+  ├─ LLM 无 tool_calls → 作为最终答案返回
+  ├─ 成功查询 ≥ 3 次 → 强制总结
+  └─ 达到 5 轮 → 返回最后结果
 ```
 
 ---
 
-## 5. Agent 如何使用 Skills
+## 4. 三种模式对比
 
-### 5.1 SystemMessage 引导
+| 维度 | DIRECT (SKILL.md) | PLAN_AND_EXECUTE | REACT |
+|------|-------------------|------------------|-------|
+| **适用场景** | 明确查询、总结、图表、澄清 | 复杂多步、中置信度 | 开放式探索、EXPLORE 意图 |
+| **步骤编排** | 确定性 YAML 编排（30+ 步骤） | LLM 生成 Plan → 动态执行 | LLM 每轮自主决定下一步 |
+| **LLM 调用次数** | 1 次（SQL 生成）+ 可选优化 | 2 次（Plan + SQL）+ 可选 | 3-5 次（每轮 1 次） |
+| **风险处理** | 三层评估 + LLM 优化 + 人机审批 | 三层评估 + LLM 优化 | 简单风险检查 |
+| **自动修正** | ✅ autoFixSQL + 重试 | ✅ autoFixSQL + 重试 | ✅ autoFixSQL + 重试 |
+| **RAG 学习** | ✅ 独立步骤 | ✅ 独立步骤 | ❌ |
+| **图表/总结** | ✅ 后置生成 | ✅ 后置生成 | ✅ LLM 自主决定 |
+| **多步 SQL** | ❌ 单步 | ✅ 循环 sqlSteps | ✅ LLM 自主 |
+| **人机审批** | ✅ HIGH 风险时 | ❌ | ❌ |
+| **sqlOnly** | ✅ | ❌ | ❌ |
+| **Plan 校验** | ❌（固定编排无需校验） | ✅ PlanValidator + StepReflector | ❌ |
 
-在 `ReActAgent` 的 SystemMessage 中明确告诉 LLM 何时使用 Skills：
+---
+
+## 5. 路由决策流程
 
 ```
-## 第二步：选择合适的高级技能
-
-根据用户需求选择合适的技能：
-
-#### 场景1：简单查询（大多数情况）
-使用 execute_standard_query(question, datasourceId, userId, username)
-适用：用户想要查询数据、统计数据、筛选数据等
-
-#### 场景2：复杂分析
-使用 generate_report_with_insights(question, datasourceId, userId, username)
-适用：用户要求"分析"、"总结"、"报告"、"趋势"等关键词
-
-#### 场景3：精细控制
-手动调用底层 Tools：
-- retrieve_schema → 查看表结构
-- generate_sql → 生成 SQL
-- execute_sql → 执行 SQL
-适用：用户明确要求分步执行或调试 SQL
+SkillRouter.route(intent, confidence)
+  │
+  ├─ EXPLORE → REACT
+  ├─ confidence ≥ 0.8 且 非 COMPLEX → DIRECT
+  │   ├─ QUERY → "execute_standard_query"
+  │   ├─ SUMMARY → "summarize_result"
+  │   ├─ CHART → "generate_chart"
+  │   └─ CLARIFY → "clarify_datasource"
+  ├─ COMPLEX 或 confidence ∈ [0.5, 0.8) → PLAN_AND_EXECUTE
+  └─ confidence < 0.5 → PLAN_AND_EXECUTE（兜底）
 ```
 
-### 5.2 实际调用示例
-
-**示例 1：简单查询**
+降级链路：
 ```
-用户：查询最近 10 条订单
-
-Agent 思考：这是一个简单查询，使用 StandardQuerySkill
-Agent 行动：调用 execute_standard_query("查询最近 10 条订单", 1, 123, "user")
-Agent 观察：收到查询结果
-Agent 回复：直接返回数据给用户
-```
-
-**示例 2：复杂分析**
-```
-用户：分析上月销售趋势并给出建议
-
-Agent 思考：这需要深度分析，使用 ReportWithInsightsSkill
-Agent 行动：调用 generate_report_with_insights("分析上月销售趋势", 1, 123, "user")
-Agent 观察：收到包含数据、AI总结、图表推荐的完整报告
-Agent 回复：返回完整分析报告
+PLAN_AND_EXECUTE: Plan 失败 / Plan 校验不通过 / complexity=SIMPLE → DIRECT
+DIRECT: WorkflowEngine 加载失败 / 执行异常 → SQL Worker
+REACT: MAX_ITERATIONS 到达 → 返回最后结果
+全局: datasourceId=null → DatasourceClarificationTool
 ```
 
 ---
 
-## 6. Skills 的优势
+## 6. 原子 Tools 清单
 
-### 6.1 对 Agent 的价值
+系统提供 40+ 原子 Tool，按功能分组：
 
-1. **简化决策**: Agent 只需选择合适的 Skill，无需关心内部细节
-2. **提高成功率**: Skills 内置了错误处理、重试、风险评估等机制
-3. **统一体验**: 不同场景下返回结果格式一致
+### 6.1 核心查询
+| Tool | 功能 |
+|------|------|
+| `validateParams` | 参数校验 |
+| `detectChartIntent` | 检测图表意图 |
+| `extractTablePreference` | 提取表名偏好 |
+| `injectIndustryConcept` | 注入行业概念 |
+| `retrieveSchema` | 检索表结构 |
+| `generateSQL` | 生成 SQL |
+| `quickRiskCheck` | 快速风险检查 |
+| `analyzeQueryPlan` | 深度风险分析 |
+| `executeRawSQL` | 执行 SQL |
+| `autoFixSQL` | 自动修正 SQL |
 
-### 6.2 对开发者的价值
+### 6.2 风险与优化
+| Tool | 功能 |
+|------|------|
+| `regenerateSQLWithLLM` | LLM 重写 SQL |
+| `getLLMOptimizationSuggestion` | 获取优化建议 |
+| `requireHumanApproval` | 请求人工审批 |
 
-1. **代码复用**: Skills 可以被其他 Skills 调用（如 ReportWithInsightsSkill 调用 StandardQuerySkill）
-2. **易于测试**: 每个 Skill 可以独立单元测试
-3. **可维护性**: 业务流程集中在 Skill 中，修改逻辑只需改一处
-
-### 6.3 对用户的价值
-
-1. **一站式解决**: 用户无需多次交互，一次提问即可得到完整答案
-2. **智能增强**: 自动获得 AI 总结、图表推荐等增值服务
-3. **安全可靠**: 内置风险评估和自动修正，减少错误
+### 6.3 后处理
+| Tool | 功能 |
+|------|------|
+| `ragLearnFromExecution` | RAG 学习 |
+| `generateFollowUpSuggestions` | 生成追问建议 |
+| `generateChartConfig` | 生成图表配置 |
+| `generateAISummary` | AI 总结 |
+| `assembleResult` | 组装最终响应 |
 
 ---
 
-## 7. 未来扩展方向
+## 7. 热部署与管理
 
-### 7.1 新增 Skills 建议
+### SKILL.md 热加载
 
-基于业务需求，可以扩展以下 Skills：
+SKILL.md 修改后无需重启应用，WorkflowEngine 在加载时会检测文件变更：
 
-1. **DataComparisonSkill（数据对比技能）**
-   - 功能：对比两个时间段/地区/产品的数据差异
-   - 适用："对比今年和去年同期的销售额"
+```bash
+# 重载所有 SKILL.md（POST 请求）
+curl -X POST http://localhost:8080/api/admin/skills/reload
+```
 
-2. **TrendAnalysisSkill（趋势分析技能）**
-   - 功能：识别数据趋势、周期性、异常点
-   - 适用："分析近 6 个月的用户增长趋势"
+### 管理端点
 
-3. **AnomalyDetectionSkill（异常检测技能）**
-   - 功能：自动检测数据异常（突增/突降）
-   - 适用："找出销售额异常的日期"
-
-4. **CohortAnalysisSkill（同期群分析技能）**
-   - 功能：按用户注册时间分组分析留存率
-   - 适用："分析各月新用户的 30 日留存率"
-
-### 7.2 架构升级方向
-
-1. **声明式元数据**
-   ```java
-   @Skill(
-       name = "standard_query",
-       description = "执行标准数据查询",
-       tags = {"query", "data"},
-       priority = 1.0
-   )
-   public class StandardQuerySkill { ... }
-   ```
-
-2. **自动发现机制**
-   - 通过注解扫描自动注册所有 Skills
-   - 无需在 AgentConfig 中硬编码
-
-3. **Skill Router**
-   - 基于意图分类自动路由到最佳 Skill
-   - 减少 LLM 决策负担
-
-4. **Skill 编排引擎**
-   - 支持声明式的 Skill Chain
-   - 例如：`StandardQuerySkill → AISummaryTool → ChartRecommendationTool`
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/skills/reload` | POST | 清除缓存，重新加载所有 SKILL.md |
+| `/api/admin/skills/list` | GET | 列出已发现的所有 Skills |
 
 ---
 
 ## 8. 最佳实践
 
-### 8.1 何时使用 Skills？
+### Skill 设计原则（SKILL.md）
 
-✅ **应该使用 Skills**:
-- 业务流程固定且频繁使用
-- 需要统一的错误处理和重试机制
-- 多个 Tools 需要按特定顺序调用
+1. **单一职责**: 一个 SKILL.md 只解决一类问题（查询 / 总结 / 图表）
+2. **可编排性**: 步骤通过 `on_next` / `condition` 灵活串联
+3. **容错性**: 每个执行步骤后都有错误处理分支
+4. **可观测性**: 所有步骤都有详细日志
 
-❌ **不应该使用 Skills**:
-- 一次性或极少使用的场景
-- 需要高度灵活控制的场景
-- 调试或学习阶段
+### 何时创建新的 SKILL.md？
 
-### 8.2 Skill 设计原则
+- 需要独立的业务流程（非标准查询场景）
+- 需要独立的错误处理和降级策略
+- 需要不同的参数校验规则
 
-1. **单一职责**: 每个 Skill 只解决一类问题
-2. **可组合性**: Skills 之间可以互相调用
-3. **容错性**: 内置完善的错误处理和降级策略
-4. **可观测性**: 详细的日志记录，便于排查问题
+### 命名规范
 
-### 8.3 命名规范
-
-- Skill 类名：`{功能}Skill`（如 `StandardQuerySkill`）
-- Tool 封装类名：`{功能}SkillTool`（如 `StandardQuerySkillTool`）
-- Tool 名称：`execute_{功能}` 或 `generate_{功能}`（如 `execute_standard_query`）
+- SKILL.md 的 `name` 字段：动词开头，下划线连接（如 `execute_standard_query`）
+- Tool 名称：驼峰命名（如 `retrieveSchema`）
+- 步骤 id：下划线命名（如 `validate_params`）
 
 ---
 
-## 9. 常见问题
+## 9. 历史演进
 
-### Q1: Skills 和 Tools 有什么区别？
-
-**A**: Tools 是原子操作（如查询表结构、生成 SQL），Skills 是业务流程（如完整查询生命周期）。Skills 内部会调用多个 Tools。
-
-### Q2: 为什么不直接用 Tools，而要封装成 Skills？
-
-**A**: 
-- Skills 提供了更高层次的抽象，简化了 Agent 的决策
-- Skills 内置了错误处理、重试、风险评估等企业级特性
-- Skills 更容易复用和维护
-
-### Q3: 如何决定创建新的 Skill？
-
-**A**: 当发现以下情况时，考虑创建新 Skill：
-- 某个业务流程被频繁使用
-- 多个 Tools 总是按固定顺序调用
-- 需要统一的错误处理和日志记录
-
-### Q4: Skills 会影响性能吗？
-
-**A**: 
-- Skills 本身只是 Java 方法调用，开销极小
-- 主要性能瓶颈在于 LLM 调用和 SQL 执行
-- Skills 反而可能提升整体效率（减少不必要的 Tool 调用）
-
----
-
-## 10. Skills热部署与管理（最新）
-
-### 10.1 热部署架构
-
-**提交记录**: `90385d9 feat: Skills架构优化与热部署支持`
-
-系统支持Skills的动态加载和热部署，无需重启应用即可更新Skill逻辑。
-
-**核心组件**:
-1. **GroovySkillExecutor**: Groovy脚本执行器，支持动态编译和缓存
-2. **SkillsAdminController**: 管理端点，提供重载、扫描、列表查询功能
-3. **ApiKeyAuthFilter**: API Key认证过滤器，保护管理端点
-
-### 10.2 管理端点
-
-**配置项**:
-```yaml
-# application.yml
-admin:
-  api:
-    key: ${ADMIN_API_KEY:}  # 可选，生产环境强制要求
-```
-
-**API列表**:
-| 端点 | 方法 | 说明 |
+| 阶段 | 架构 | 状态 |
 |------|------|------|
-| `/api/admin/skills/reload` | POST | 清除Groovy脚本缓存，重新加载 |
-| `/api/admin/skills/rescan` | POST | 触发重新扫描Skills目录 |
-| `/api/admin/skills/list` | GET | 获取已发现的Skills列表 |
+| v1 | Groovy 脚本执行 Skills（GroovySkillExecutor） | `@Deprecated` |
+| v2 | Java Skill 类 + ReActAgent + LangChain4j Tool | `@Deprecated` |
+| v3 | SKILL.md YAML 编排 + WorkflowEngine | ✅ 当前标准 |
+| v3.1 | + SupervisorAgent 统一路由 + 三种模式 | ✅ 当前标准 |
+| v3.2 | + PlanValidator + StepReflector | ✅ 当前标准 |
 
-**使用示例**:
-```bash
-# 重载Skills（需要API Key）
-curl -X POST http://localhost:8080/api/admin/skills/reload \
-  -H "X-API-Key: your-secret-key"
-
-# 列出所有Skills
-curl http://localhost:8080/api/admin/skills/list \
-  -H "X-API-Key: your-secret-key"
-```
-
-### 10.3 混合模式示例（hybrid-example）
-
-系统提供了Workflow + Groovy混合架构的示例Skill，展示声明式编排与灵活逻辑结合的最佳实践。
-
-**文件位置**: `nl2sql-web/src/main/resources/skills/hybrid-example/`
-
-**结构**:
-```
-hybrid-example/
-├── SKILL.md                    # Skill描述文件
-├── workflow.yml                # Workflow定义
-└── scripts/
-    ├── SmartTableSelector.groovy   # 智能选表脚本
-    └── SQLCorrector.groovy         # SQL验证与修正脚本
-```
-
-**WorkflowEngine扩展**:
-```java
-// 支持call_groovy action
-} else if ("call_groovy".equals(action) && step.containsKey("script")) {
-    String scriptName = (String) step.get("script");
-    Object result = executeGroovyScript(scriptPath, params, context);
-    // 解析结果并保存到output_var
-}
-```
-
-### 10.4 Skills边界优化
-
-**删除的Skills**:
-- ❌ `nl2sql-workflow` - 能力被execute_standard_query完全覆盖
-- ❌ `execute_simple_query` - 与标准查询重叠，Workflow无法处理失败场景
-
-**新增的Skills**:
-- ✅ `sql-validate-execute` - SQL验证与执行
-- ✅ `sql-performance-analysis` - SQL性能分析
-
-**修正的配置**:
-- `sql-validate-execute` 的 workflow 配置：`execute_sql` → `execute_safe_sql`
-
----
-
-## 11. 总结
-
-当前的 Skills 实现是一个**基于 Skills 理念的 Tool 封装模式**，具备以下特点：
-
-✅ **已实现**:
-- 2 个可用的 Skills（StandardQuerySkill、ReportWithInsightsSkill）
-- Skills 的 Tool 封装和注册机制
-- Agent 可以通过 SystemMessage 引导选择 Skills
-- **Skills热部署支持**（最新）
-- **混合模式示例**（Workflow + Groovy）
-- **管理端点与API Key认证**
-
-⚠️ **待完善**:
-- 缺少声明式元数据和自动发现机制
-- Skills 数量较少，覆盖场景有限
-- 缺少 Skill Router 和编排引擎
-
-🎯 **下一步**:
-- 根据业务需求扩展更多 Skills
-- 实现声明式注解和自动注册
-- 添加 Skill 监控和优化机制
+Groovy 脚本和旧的 Java Skill 类（StandardQuerySkill、ReportWithInsightsSkill）均已标记 `@Deprecated`，功能已全部迁移到 SKILL.md Workflow 中。

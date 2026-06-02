@@ -1,15 +1,15 @@
 ---
 name: execute_standard_query
 displayName: 标准查询技能
-description: 执行完整的数据查询流程，包括表结构检索、SQL生成、风险评估、执行和自动修正。适用于用户有明确数据查询需求的场景。
+description: 执行完整的数据查询流程，包括参数校验、图表意图检测、表名偏好提取、行业概念注入、表结构检索、SQL生成、三层风险评估、执行（含自动修正）、RAG学习和智能后处理。适用于用户有明确数据查询需求的场景。
 category: query
 priority: 1
-version: "2.0"
+version: "3.0"
 script: scripts/StandardQuerySkill.groovy  # @Deprecated - Groovy scripts are deprecated, use workflow instead
 requiredParams: [question, datasourceId]
 workflow:
-  version: 2.0
-  description: 标准查询工作流（完整版，含参数校验、图表检测、LLM风险评估、人机协同、sqlOnly分支）
+  version: 3.0
+  description: 标准查询工作流v3（原子Tool编排版，含参数校验、图表意图检测、表名偏好提取、行业概念注入、三层风险评估、自动修正、RAG学习）
   steps:
     - id: validate_params
       action: call_tool
@@ -21,23 +21,40 @@ workflow:
         username: "{{username}}"
         sqlOnly: "{{sqlOnly}}"
       output_var: validation_result
-      on_next: detect_chart
+      on_next: detect_chart_intent
 
-    - id: detect_chart
+    - id: detect_chart_intent
       action: call_tool
-      tool: detectAndGenerateChart
+      tool: detectChartIntent
       condition: "${validation_result.validated}==true"
       input:
         question: "{{question}}"
-      output_var: chart_result
-      on_next: retrieve_schema
+      output_var: chart_intent_result
+      on_next: extract_table_preference
       on_condition_false: respond_clarification
+
+    - id: extract_table_preference
+      action: call_tool
+      tool: extractTablePreference
+      input:
+        question: "{{chart_intent_result.data.cleanedQuestion}}"
+      output_var: table_pref_result
+      on_next: inject_industry_concept
+
+    - id: inject_industry_concept
+      action: call_tool
+      tool: injectIndustryConcept
+      input:
+        question: "{{chart_intent_result.data.cleanedQuestion}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: concept_result
+      on_next: retrieve_schema
 
     - id: retrieve_schema
       action: call_tool
       tool: retrieveSchema
       input:
-        question: "{{chart_result.cleanedQuestion}}"
+        question: "{{concept_result.data.enhancedQuestion}}"
         datasourceId: "{{datasourceId}}"
       output_var: schema_result
       on_next: generate_sql
@@ -46,93 +63,331 @@ workflow:
       action: call_tool
       tool: generateSQL
       input:
-        question: "{{chart_result.cleanedQuestion}}"
+        question: "{{concept_result.data.enhancedQuestion}}"
         datasourceId: "{{datasourceId}}"
         schemaInfo: "{{schema_result}}"
-        tableHint: ""
+        tableHint: "{{table_pref_result.data.tablePreference}}"
       output_var: sql_result
       on_next: check_sql_valid
+      on_condition_false: respond_error
 
     - id: check_sql_valid
-      action: call_tool
-      tool: analyzeSQLRisk
+      action: condition
       condition: "${sql_result.success}==true"
+      on_true: init_final_sql
+      on_false: respond_error
+
+    - id: init_final_sql
+      action: set_var
+      output_var: final_sql
+      value: "{{sql_result.data.sql}}"
+      on_next: quick_risk_check
+
+    - id: quick_risk_check
+      action: call_tool
+      tool: quickRiskCheck
+      input:
+        sql: "{{sql_result.data.sql}}"
+      output_var: quick_check_result
+      on_next: check_simple_query
+
+    - id: check_simple_query
+      action: condition
+      condition: "${quick_check_result.data.isSimple}==true"
+      on_true: check_sql_only
+      on_false: analyze_query_plan
+
+    - id: analyze_query_plan
+      action: call_tool
+      tool: analyzeQueryPlan
       input:
         sql: "{{sql_result.data.sql}}"
         datasourceId: "{{datasourceId}}"
-        question: "{{chart_result.cleanedQuestion}}"
-      output_var: risk_result
-      on_next: check_human_approval
-      on_condition_false: respond_error
+      output_var: explain_result
+      on_next: check_risk_level
 
-    - id: check_human_approval
+    - id: check_risk_level
+      action: condition
+      condition: "${explain_result.data.riskLevel}==HIGH"
+      on_true: handle_high_risk
+      on_false: check_medium_risk
+
+    - id: check_medium_risk
+      action: condition
+      condition: "${explain_result.data.riskLevel}==MEDIUM"
+      on_true: get_llm_optimization_suggestion
+      on_false: check_sql_only
+
+    - id: get_llm_optimization_suggestion
+      action: call_tool
+      tool: getLLMOptimizationSuggestion
+      input:
+        sql: "{{sql_result.data.sql}}"
+        question: "{{chart_intent_result.data.cleanedQuestion}}"
+        explainRisks: "{{explain_result.data.risks}}"
+      output_var: llm_suggestion_result
+      on_next: check_sql_only
+
+    - id: handle_high_risk
+      action: call_tool
+      tool: regenerateSQLWithLLM
+      input:
+        originalSql: "{{sql_result.data.sql}}"
+        question: "{{chart_intent_result.data.cleanedQuestion}}"
+        explainRisks: "{{explain_result.data.risks}}"
+        explainSuggestions: "{{explain_result.data.suggestions}}"
+      output_var: regenerate_result
+      on_next: check_regenerate_success
+
+    - id: check_regenerate_success
+      action: condition
+      condition: "${regenerate_result.data.regenerationSuccess}==true"
+      on_true: re_analyze_query_plan
+      on_false: require_human_approval
+
+    - id: re_analyze_query_plan
+      action: call_tool
+      tool: analyzeQueryPlan
+      input:
+        sql: "{{regenerate_result.data.optimizedSql}}"
+        datasourceId: "{{datasourceId}}"
+      output_var: re_explain_result
+      on_next: check_re_explain_risk
+
+    - id: check_re_explain_risk
+      action: condition
+      condition: "${re_explain_result.data.riskLevel}==HIGH"
+      on_true: require_human_approval
+      on_false: use_optimized_sql
+
+    - id: use_optimized_sql
+      action: set_var
+      output_var: final_sql
+      value: "{{regenerate_result.data.optimizedSql}}"
+      on_next: check_sql_only_with_optimized
+
+    - id: check_sql_only_with_optimized
+      action: condition
+      condition: "${validation_result.sqlOnly}==true"
+      on_true: respond_sql_only_optimized
+      on_false: execute_sql
+
+    - id: require_human_approval
       action: respond
-      condition: "${risk_result.needsHumanApproval}==true"
       output:
         success: false
         type: "human_approval_required"
-        approvalId: "{{sessionId}}"
-        riskLevel: "{{risk_result.riskLevel}}"
-        riskReason: "{{risk_result.reason}}"
+        approvalId: "risk_{{sessionId}}"
+        riskLevel: "HIGH"
+        riskReason: "{{explain_result.data.risks}}"
         sql: "{{sql_result.data.sql}}"
-        optimizedSql: "{{risk_result.optimizedSql}}"
-        optimizationSuggestion: "{{risk_result.optimizationSuggestion}}"
+        optimizedSql: "{{regenerate_result.data.optimizedSql}}"
+        optimizationSuggestion: "{{explain_result.data.suggestions}}"
         message: "该SQL存在高风险，请审核后再决定是否执行"
       on_next: null
-      on_condition_false: check_sql_only
 
     - id: check_sql_only
-      action: respond
+      action: condition
       condition: "${validation_result.sqlOnly}==true"
+      on_true: respond_sql_only
+      on_false: execute_sql
+
+    - id: respond_sql_only
+      action: respond
       output:
         success: true
         type: "sql_only"
         sql: "{{sql_result.data.sql}}"
         datasourceId: "{{datasourceId}}"
-        optimizationSuggestion: "{{risk_result.optimizationSuggestion}}"
+        riskLevel: "{{quick_check_result.data.riskLevel}}"
+        optimizationSuggestion: "{{llm_suggestion_result.data.suggestion}}"
       on_next: null
-      on_condition_false: execute_sql
+
+    - id: respond_sql_only_optimized
+      action: respond
+      output:
+        success: true
+        type: "sql_only"
+        sql: "{{regenerate_result.data.optimizedSql}}"
+        originalSql: "{{sql_result.data.sql}}"
+        datasourceId: "{{datasourceId}}"
+        riskLevel: "{{re_explain_result.data.riskLevel}}"
+        optimizationApplied: true
+      on_next: null
 
     - id: execute_sql
       action: call_tool
-      tool: executeSQL
+      tool: executeRawSQL
       input:
-        sql: "{{sql_result.data.sql}}"
+        sql: "{{final_sql}}"
         datasourceId: "{{datasourceId}}"
         userId: "{{userId}}"
         username: "{{username}}"
       output_var: exec_result
-      on_next: post_process
+      on_next: check_exec_success
 
-    - id: post_process
+    - id: check_exec_success
+      action: condition
+      condition: "${exec_result.data.success}==true"
+      on_true: rag_learn
+      on_false: attempt_auto_fix
+
+    - id: attempt_auto_fix
+      action: call_tool
+      tool: autoFixSQL
+      input:
+        failedSql: "{{final_sql}}"
+        errorMessage: "{{exec_result.data.error}}"
+      output_var: fix_result
+      on_next: retry_execute
+
+    - id: retry_execute
+      action: call_tool
+      tool: executeRawSQL
+      input:
+        sql: "{{fix_result.data.fixedSql}}"
+        datasourceId: "{{datasourceId}}"
+        userId: "{{userId}}"
+        username: "{{username}}"
+      output_var: retry_exec_result
+      on_next: check_retry_success
+
+    - id: check_retry_success
+      action: condition
+      condition: "${retry_exec_result.data.success}==true"
+      on_true: rag_learn_retry
+      on_false: respond_error
+
+    - id: rag_learn
+      action: call_tool
+      tool: ragLearnFromExecution
+      input:
+        question: "{{chart_intent_result.data.cleanedQuestion}}"
+        sql: "{{final_sql}}"
+        rowCount: "{{exec_result.data.rowCount}}"
+        executionTimeMs: "{{exec_result.data.executionTime}}"
+      output_var: rag_result
+      on_next: generate_follow_up
+
+    - id: rag_learn_retry
+      action: call_tool
+      tool: ragLearnFromExecution
+      input:
+        question: "{{chart_intent_result.data.cleanedQuestion}}"
+        sql: "{{fix_result.data.fixedSql}}"
+        rowCount: "{{retry_exec_result.data.rowCount}}"
+        executionTimeMs: "{{retry_exec_result.data.executionTime}}"
+      output_var: rag_result
+      on_next: generate_follow_up_retry
+
+    - id: generate_follow_up
+      action: call_tool
+      tool: generateFollowUpSuggestions
+      input:
+        sql: "{{final_sql}}"
+        rowCount: "{{exec_result.data.rowCount}}"
+        dataJson: "{{exec_result.data.data}}"
+      output_var: follow_up_result
+      on_next: check_chart_needed
+
+    - id: generate_follow_up_retry
+      action: call_tool
+      tool: generateFollowUpSuggestions
+      input:
+        sql: "{{fix_result.data.fixedSql}}"
+        rowCount: "{{retry_exec_result.data.rowCount}}"
+        dataJson: "{{retry_exec_result.data.data}}"
+      output_var: follow_up_result
+      on_next: check_chart_needed_retry
+
+    - id: check_chart_needed
+      action: condition
+      condition: "${chart_intent_result.data.chartDetected}==true"
+      on_true: generate_chart_config
+      on_false: assemble_result
+
+    - id: generate_chart_config
+      action: call_tool
+      tool: generateChartConfig
+      input:
+        chartType: "{{chart_intent_result.data.chartType}}"
+        dataJson: "{{exec_result.data.data}}"
+      output_var: chart_config_result
+      on_next: assemble_result
+
+    - id: assemble_result
       action: call_tool
       tool: post_process_response
-      condition: "${exec_result.success}==true"
       input:
-        data: "{{exec_result.data}}"
-        rowCount: "{{exec_result.rowCount}}"
-        executionTime: "{{exec_result.executionTime}}"
-        sql: "{{sql_result.data.sql}}"
+        data: "{{exec_result.data.data}}"
+        rowCount: "{{exec_result.data.rowCount}}"
+        sql: "{{final_sql}}"
         datasourceId: "{{datasourceId}}"
-        optimizationSuggestion: "{{risk_result.optimizationSuggestion}}"
-        chartConfig: "{{chart_result.echartsConfig}}"
+        executionTime: "{{exec_result.data.executionTime}}"
+        optimizationSuggestion: "{{llm_suggestion_result.data.suggestion}}"
+        chartConfig: "{{chart_config_result.data.echartsConfig}}"
       output_var: final_result
       on_next: respond_success
-      on_condition_false: respond_error
+
+    - id: check_chart_needed_retry
+      action: condition
+      condition: "${chart_intent_result.data.chartDetected}==true"
+      on_true: generate_chart_config_retry
+      on_false: assemble_result_retry
+
+    - id: generate_chart_config_retry
+      action: call_tool
+      tool: generateChartConfig
+      input:
+        chartType: "{{chart_intent_result.data.chartType}}"
+        dataJson: "{{retry_exec_result.data.data}}"
+      output_var: chart_config_result
+      on_next: assemble_result_retry
+
+    - id: assemble_result_retry
+      action: call_tool
+      tool: post_process_response
+      input:
+        data: "{{retry_exec_result.data.data}}"
+        rowCount: "{{retry_exec_result.data.rowCount}}"
+        sql: "{{fix_result.data.fixedSql}}"
+        datasourceId: "{{datasourceId}}"
+        executionTime: "{{retry_exec_result.data.executionTime}}"
+        optimizationSuggestion: "{{llm_suggestion_result.data.suggestion}}"
+        chartConfig: "{{chart_config_result.data.echartsConfig}}"
+      output_var: final_result
+      on_next: respond_success_retry
 
     - id: respond_success
       action: respond
       output:
-        success: "{{final_result.success}}"
-        type: "{{final_result.type}}"
+        success: true
+        type: "data"
         data: "{{final_result.data}}"
         rowCount: "{{final_result.rowCount}}"
         executionTime: "{{final_result.executionTime}}"
         sql: "{{final_result.sql}}"
         datasourceId: "{{final_result.datasourceId}}"
-        followUpSuggestions: "{{final_result.followUpSuggestions}}"
+        followUpSuggestions: "{{follow_up_result.data.followUpSuggestions}}"
         optimizationSuggestion: "{{final_result.optimizationSuggestion}}"
-        chartConfig: "{{final_result.chartConfig}}"
+        chartConfig: "{{chart_config_result.data.echartsConfig}}"
+      on_next: null
+
+    - id: respond_success_retry
+      action: respond
+      output:
+        success: true
+        type: "data"
+        data: "{{final_result.data}}"
+        rowCount: "{{final_result.rowCount}}"
+        executionTime: "{{final_result.executionTime}}"
+        sql: "{{final_result.sql}}"
+        originalSql: "{{sql_result.data.sql}}"
+        autoFixed: true
+        datasourceId: "{{final_result.datasourceId}}"
+        followUpSuggestions: "{{follow_up_result.data.followUpSuggestions}}"
+        optimizationSuggestion: "{{final_result.optimizationSuggestion}}"
+        chartConfig: "{{chart_config_result.data.echartsConfig}}"
       on_next: null
 
     - id: respond_error
@@ -140,7 +395,7 @@ workflow:
       output:
         success: false
         type: "error"
-        error: "{{exec_result.error}}"
+        error: "{{exec_result.data.error}}"
       on_next: null
 
     - id: respond_clarification
@@ -153,36 +408,35 @@ workflow:
       on_next: null
 ---
 
-# 标准查询技能（Standard Query Skill）
+# 标准查询技能（Standard Query Skill）v3.0
 
 ## 功能说明
 
-封装完整的查询生命周期，自动处理以下所有步骤：
-- 参数校验（datasourceId、question 必填校验，缺失时返回澄清请求）
-- 图表意图检测（自动识别柱状图/折线图/饼图/面积图需求，生成ECharts配置）
-- 智能检索相关表结构（并设置ThreadLocal表名偏好）
-- 自动生成 SQL 语句（支持预检索schema和表名偏好）
-- LLM 自主评估 SQL 风险（三层评估：快速判断→EXPLAIN→LLM辅助）
-- 高风险SQL自动优化与重新生成
-- 人机协同审批（高风险SQL需人工确认）
-- sqlOnly 模式（仅生成SQL不执行）
-- 执行 SQL 查询（支持自动修正，最多重试 2 次）
-- 智能后处理（追问建议、优化建议、图表配置）
-- 高风险 SQL 自动阻断，保护数据库性能
+封装完整的查询生命周期，基于原子Tool编排：
+1. 参数校验
+2. 图表意图检测（仅检测，生成后置）
+3. 表名偏好提取
+4. 行业概念注入
+5. 表结构检索
+6. SQL生成
+7. 三层风险评估（快速判断→EXPLAIN→LLM辅助）
+8. 高风险SQL自动优化与重新生成
+9. 人机协同审批
+10. sqlOnly模式
+11. 执行SQL（含自动修正重试）
+12. RAG自动学习
+13. 智能后处理（追问建议、图表配置）
 
-## 适用场景
+## 与v2.0的区别
 
-✅ **应该使用此 Skill**：
-- 简单数据查询：“查询最近10条记录”
-- 统计分析：“统计上月各地区某指标”
-- 筛选过滤：“找出满足特定条件的数据”
-- 排序查询：“查看排行榜”
-- 分组聚合：“按维度统计数据数量”
-
-❌ **不应该使用此 Skill**：
-- 需要深度分析和洞察 → 使用 `generate_report_with_insights`
-- 需要分步调试 SQL → 手动调用底层 Tools（retrieve_table_schema, generate_sql, execute_sql）
-- 用户明确要求“分析”、“总结”、“报告”等关键词
+| 维度 | v2.0 | v3.0 |
+|------|------|------|
+| 图表处理 | detectAndGenerateChart（检测+生成合一） | detectChartIntent + generateChartConfig（分离） |
+| 风险评估 | analyzeSQLRisk（三层合一巨无霸） | quickRiskCheck + analyzeQueryPlan + getLLMOptimizationSuggestion + regenerateSQLWithLLM |
+| SQL执行 | executeSQL（执行+重试+修正+RAG合一） | executeRawSQL + autoFixSQL + ragLearnFromExecution |
+| 后处理 | post_process_response（追问+图表+组装合一） | generateFollowUpSuggestions + generateChartConfig + post_process_response（仅组装） |
+| SQL生成 | generateSQL（含表名提取+行业扩展） | extractTablePreference + injectIndustryConcept + generateSQL（纯生成） |
+| RAG学习 | 内嵌在executeSQL中 | 独立步骤ragLearnFromExecution |
 
 ## 参数说明
 
@@ -192,128 +446,3 @@ workflow:
 | datasourceId | long | ✅ | 数据源ID |
 | userId | long | ✅ | 用户ID |
 | username | string | ✅ | 用户名 |
-
-## 内部工作流程
-
-### 当前实现（Groovy 脚本）
-
-当前通过 `scripts/StandardQuerySkill.groovy` 执行，包含复杂的 LLM 交互和循环重试逻辑。
-
-### Workflow 配置（已启用）
-
-Workflow 定义已在 YAML front matter 中配置，由 WorkflowEngine 直接执行。执行顺序：
-
-1. `retrieve_schema` → 调用 `retrieveSchema` Tool 检索表结构
-2. `generate_sql` → 调用 `execute` Tool (GenerateSQLTool) 生成 SQL
-3. `check_sql_valid` → 调用 `analyzeSQLRisk` Tool 评估风险
-4. `execute_sql` → 调用 `executeSQL` Tool 执行查询（风险非 HIGH 时）
-5. `respond_success` / `respond_error` → 返回结果
-
-⚠️ **降级机制**：如果 workflow 执行失败，系统会自动降级到 Worker 执行模式。
-
-### Groovy 脚本详细流程
-
-```
-用户问题
-  ↓
-Step 1: 检索表结构 (NL2SQLService.retrieveSchema)
-  ↓
-Step 2: 生成 SQL (NL2SQLService.generateSQL)
-  ↓
-Step 2.5: SQL 优化与风险评估
-  - 检测 IN 子查询关联问题
-  - LLM 自主评估风险等级
-  - 必要时调用 EXPLAIN 辅助分析
-  ↓
-Step 3: 执行 SQL (SQLExecutionTool.executeSQL)
-  - 支持自动修正（最多重试 2 次）
-  - 失败时调用 NL2SQLService.autoFixSQL
-  ↓
-返回查询结果
-```
-
-## 风险评估机制
-
-Skill 内置三层风险评估：
-
-1. **LLM 自主评估**：基于 SQL 复杂度、JOIN 数量、子查询等因素
-2. **EXPLAIN 辅助**：当 LLM 不确定时，调用数据库 EXPLAIN 分析
-3. **风险分级**：
-   - LOW：直接执行
-   - MEDIUM：继续执行但标记警告
-   - HIGH：阻断执行，返回错误信息
-   - UNCERTAIN：调用 EXPLAIN 进一步分析
-
-## 返回结果
-
-✅ **统一响应格式**：所有返回均包含 `success` 和 `type` 字段
-
-### 成功响应（type: "data"）
-```json
-{
-  "success": true,
-  "type": "data",
-  "data": [],
-  "rowCount": 10,
-  "executionTime": 125.5,
-  "sql": "SELECT ...",
-  "datasourceId": 1,
-  "followUpSuggestions": [
-    {"text": "🤖 AI 总结", "action": "generate_summary"},
-    {"text": "📊 生成图表", "action": "generate_chart"}
-  ],
-  "optimizationSuggestion": "优化建议（可选）"
-}
-```
-
-### 需要澄清（type: "clarification"）
-```json
-{
-  "success": true,
-  "type": "clarification",
-  "needsClarification": true,
-  "clarificationMessage": "请明确查询意图..."
-}
-```
-
-### 错误响应（type: "error"）
-```json
-{
-  "success": false,
-  "type": "error",
-  "error": "错误描述"
-}
-```
-
-### 高风险阻断（type: "error"）
-```json
-{
-  "success": false,
-  "type": "error",
-  "error": "⚠️ SQL风险评估为高风险，已阻断执行\n原因: ...",
-  "sql": "SELECT ...",
-  "optimizationSuggestion": "优化建议（可选）"
-}
-```
-
-## 示例
-
-### 示例 1：简单查询
-**用户**：查询最近10条记录  
-**Skill 调用**：`execute_standard_query("查询最近10条记录", 1, 123, "user")`
-
-### 示例 2：统计分析
-**用户**：统计上月各地区某指标  
-**Skill 调用**：`execute_standard_query("统计上月各地区某指标", 1, 123, "user")`
-
-### 示例 3：筛选过滤
-**用户**：找出满足特定条件的数据  
-**Skill 调用**：`execute_standard_query("找出满足特定条件的数据", 1, 123, "user")`
-
-## 注意事项
-
-⚠️ **重要提示**：
-- 优先使用此 Skill，它封装了完整的错误处理和重试机制
-- 不要在 SystemMessage 中展示 Thought/Action/Observation 等内部思考过程
-- 直接将查询结果用友好的中文回复给用户
-- 如果 SQL 执行失败，Skill 会自动尝试修正，无需人工干预

@@ -1,5 +1,5 @@
 name: complex-query
-description: 多步聚合查询，先查中间结果再关联详情，使用 Tool 调用链
+description: "@Deprecated - 已迁移至 skills/standard-query/SKILL.md，由 WorkflowEngine 统一调度。原描述：多步聚合查询，先查中间结果再关联详情，使用 Tool 调用链"
 
 steps:
   - id: resolve_datasource
