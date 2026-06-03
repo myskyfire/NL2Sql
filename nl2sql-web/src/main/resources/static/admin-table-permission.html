@@ -390,7 +390,7 @@
         
         async function loadDatasources() {
             try {
-                const response = await fetch('/api/admin/metadata/datasource/list', {
+                const response = await fetch('/api/admin/datasource/list', {
                     headers: { 'Authorization': token }
                 });
                 const result = await response.json();
