@@ -1,6 +1,7 @@
 package com.nl2sql.web.controller;
 
 import com.nl2sql.auth.service.AuthService;
+import com.nl2sql.auth.service.RowLevelFilterService;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.common.util.NetworkUtils;
 import lombok.Data;
@@ -19,9 +20,12 @@ import java.util.Map;
 public class AuthController {
     
     private final AuthService authService;
-    
-    public AuthController(AuthService authService) {
+
+    private final RowLevelFilterService rowLevelFilterService;
+
+    public AuthController(AuthService authService, RowLevelFilterService rowLevelFilterService) {
         this.authService = authService;
+        this.rowLevelFilterService = rowLevelFilterService;
     }
     
     /**
@@ -449,5 +453,198 @@ public class AuthController {
     public static class ResetPasswordRequest {
         private Long userId;
         private String newPassword;
+    }
+
+    // ==================== 行级权限策略管理 ====================
+
+    /**
+     * 查询所有行级策略(仅管理员)
+     */
+    @GetMapping("/row-level-policy/list")
+    public Result<List<Map<String, Object>>> listRowLevelPolicies(
+        @RequestHeader("Authorization") String token,
+        @RequestParam(required = false) Long datasourceId
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+        List<Map<String, Object>> policies = rowLevelFilterService.listPolicies(datasourceId);
+        return Result.success(policies);
+    }
+
+    /**
+     * 查询行级策略详情(仅管理员)
+     */
+    @GetMapping("/row-level-policy/{id}")
+    public Result<Map<String, Object>> getRowLevelPolicy(
+        @RequestHeader("Authorization") String token,
+        @PathVariable Long id
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+        Map<String, Object> policy = rowLevelFilterService.getPolicyDetail(id);
+        if (policy == null) {
+            return Result.error("策略不存在");
+        }
+        return Result.success(policy);
+    }
+
+    /**
+     * 创建行级策略(仅管理员)
+     */
+    @PostMapping("/row-level-policy/create")
+    public Result<Long> createRowLevelPolicy(
+        @RequestHeader("Authorization") String token,
+        @RequestBody RowLevelPolicyRequest request
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+
+        // 校验过滤类型
+        if (!List.of("USER_ATTRIBUTE", "STATIC_VALUE", "EXPRESSION").contains(request.filterType)) {
+            return Result.error("无效的过滤类型，支持: USER_ATTRIBUTE, STATIC_VALUE, EXPRESSION");
+        }
+
+        Long policyId = rowLevelFilterService.createPolicy(
+            request.policyName, request.datasourceId, request.tableName,
+            request.columnName, request.filterType, request.filterValue,
+            request.priority, request.userIds, request.roleNames
+        );
+
+        return Result.success(policyId);
+    }
+
+    /**
+     * 更新行级策略(仅管理员)
+     */
+    @PostMapping("/row-level-policy/update")
+    public Result<Boolean> updateRowLevelPolicy(
+        @RequestHeader("Authorization") String token,
+        @RequestBody RowLevelPolicyUpdateRequest request
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+
+        boolean success = rowLevelFilterService.updatePolicy(
+            request.id, request.policyName, request.datasourceId, request.tableName,
+            request.columnName, request.filterType, request.filterValue,
+            request.priority, request.isActive, request.userIds, request.roleNames
+        );
+
+        if (success) {
+            // 清除相关用户缓存
+            rowLevelFilterService.clearUserPolicyCache(null);
+        }
+
+        return Result.success(success);
+    }
+
+    /**
+     * 删除行级策略(仅管理员)
+     */
+    @PostMapping("/row-level-policy/delete/{id}")
+    public Result<Boolean> deleteRowLevelPolicy(
+        @RequestHeader("Authorization") String token,
+        @PathVariable Long id
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+
+        boolean success = rowLevelFilterService.deletePolicy(id);
+        return Result.success(success);
+    }
+
+    /**
+     * 停用行级策略(仅管理员)
+     */
+    @PostMapping("/row-level-policy/deactivate/{id}")
+    public Result<Boolean> deactivateRowLevelPolicy(
+        @RequestHeader("Authorization") String token,
+        @PathVariable Long id
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+
+        boolean success = rowLevelFilterService.deactivatePolicy(id);
+        return Result.success(success);
+    }
+
+    /**
+     * 查询用户在指定表上的行级策略(仅管理员)
+     */
+    @GetMapping("/row-level-policy/user/{userId}/table/{tableName}")
+    public Result<List<Map<String, Object>>> getUserRowLevelPolicies(
+        @RequestHeader("Authorization") String token,
+        @PathVariable Long userId,
+        @PathVariable String tableName,
+        @RequestParam(required = false) Long datasourceId
+    ) {
+        AuthService.UserInfo userInfo = authService.validateToken(token);
+        if (userInfo == null) {
+            return Result.error("未登录或Token无效");
+        }
+        if (!"admin".equals(userInfo.getRole())) {
+            return Result.error("权限不足");
+        }
+
+        List<Map<String, Object>> policies = rowLevelFilterService.getAppliedPolicies(userId, datasourceId, tableName);
+        return Result.success(policies);
+    }
+
+    @Data
+    public static class RowLevelPolicyRequest {
+        private String policyName;
+        private Long datasourceId;
+        private String tableName;
+        private String columnName;
+        private String filterType;
+        private String filterValue;
+        private Integer priority;
+        private List<Long> userIds;
+        private List<String> roleNames;
+    }
+
+    @Data
+    public static class RowLevelPolicyUpdateRequest {
+        private Long id;
+        private String policyName;
+        private Long datasourceId;
+        private String tableName;
+        private String columnName;
+        private String filterType;
+        private String filterValue;
+        private Integer priority;
+        private Integer isActive;
+        private List<Long> userIds;
+        private List<String> roleNames;
     }
 }

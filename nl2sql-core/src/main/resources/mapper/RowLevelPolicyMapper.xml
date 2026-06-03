@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nl2sql.auth.mapper.RowLevelPolicyMapper">
+
+    <!-- 查询用户在指定表上的行级过滤策略 -->
+    <select id="findActivePoliciesByUserAndTable" resultType="java.util.HashMap">
+        SELECT DISTINCT p.id, p.policy_name, p.datasource_id, p.table_name,
+               p.column_name, p.filter_type, p.filter_value, p.priority
+        FROM row_level_policies p
+        LEFT JOIN row_level_policy_bindings b ON p.id = b.policy_id AND b.is_active = 1
+        WHERE p.is_active = 1
+          AND p.table_name = #{tableName}
+          <if test="datasourceId != null">
+              AND (p.datasource_id = #{datasourceId} OR p.datasource_id IS NULL)
+          </if>
+          AND (
+              b.user_id = #{userId}
+              <if test="role != null and role != ''">
+                  OR b.role_name = #{role}
+              </if>
+              OR (b.user_id IS NULL AND b.role_name IS NULL)
+          )
+        ORDER BY p.priority DESC
+    </select>
+
+    <!-- 查询用户在多个表上的行级过滤策略 -->
+    <select id="findActivePoliciesByUserAndTables" resultType="java.util.HashMap">
+        SELECT DISTINCT p.id, p.policy_name, p.datasource_id, p.table_name,
+               p.column_name, p.filter_type, p.filter_value, p.priority
+        FROM row_level_policies p
+        LEFT JOIN row_level_policy_bindings b ON p.id = b.policy_id AND b.is_active = 1
+        WHERE p.is_active = 1
+          AND p.table_name IN
+          <foreach collection="tableNames" item="tn" open="(" separator="," close=")">
+              #{tn}
+          </foreach>
+          <if test="datasourceId != null">
+              AND (p.datasource_id = #{datasourceId} OR p.datasource_id IS NULL)
+          </if>
+          AND (
+              b.user_id = #{userId}
+              <if test="role != null and role != ''">
+                  OR b.role_name = #{role}
+              </if>
+              OR (b.user_id IS NULL AND b.role_name IS NULL)
+          )
+        ORDER BY p.priority DESC
+    </select>
+
+    <!-- 查询所有活跃策略 -->
+    <select id="findAllActivePolicies" resultType="java.util.HashMap">
+        SELECT p.id, p.policy_name, p.datasource_id, p.table_name,
+               p.column_name, p.filter_type, p.filter_value, p.priority,
+               p.created_at, p.updated_at
+        FROM row_level_policies p
+        WHERE p.is_active = 1
+        ORDER BY p.table_name, p.priority DESC
+    </select>
+
+    <!-- 查询所有策略（含非活跃） -->
+    <select id="findAllPolicies" resultType="java.util.HashMap">
+        SELECT p.id, p.policy_name, p.datasource_id, p.table_name,
+               p.column_name, p.filter_type, p.filter_value, p.priority,
+               p.is_active, p.created_at, p.updated_at
+        FROM row_level_policies p
+        <where>
+            <if test="datasourceId != null">
+                p.datasource_id = #{datasourceId}
+            </if>
+        </where>
+        ORDER BY p.is_active DESC, p.table_name, p.priority DESC
+    </select>
+
+    <!-- 根据ID查询策略 -->
+    <select id="findPolicyById" resultType="java.util.HashMap">
+        SELECT p.id, p.policy_name, p.datasource_id, p.table_name,
+               p.column_name, p.filter_type, p.filter_value, p.priority,
+               p.is_active, p.created_at, p.updated_at
+        FROM row_level_policies p
+        WHERE p.id = #{id}
+    </select>
+
+    <!-- 插入策略 -->
+    <insert id="insertPolicy" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO row_level_policies (policy_name, datasource_id, table_name, column_name,
+                                        filter_type, filter_value, priority)
+        VALUES (#{policyName}, #{datasourceId}, #{tableName}, #{columnName},
+                #{filterType}, #{filterValue}, #{priority})
+    </insert>
+
+    <!-- 更新策略 -->
+    <update id="updatePolicy">
+        UPDATE row_level_policies
+        SET policy_name = #{policyName},
+            datasource_id = #{datasourceId},
+            table_name = #{tableName},
+            column_name = #{columnName},
+            filter_type = #{filterType},
+            filter_value = #{filterValue},
+            priority = #{priority},
+            is_active = #{isActive}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 停用策略 -->
+    <update id="deactivatePolicy">
+        UPDATE row_level_policies SET is_active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- 删除策略 -->
+    <delete id="deletePolicy">
+        DELETE FROM row_level_policies WHERE id = #{id}
+    </delete>
+
+    <!-- 插入策略绑定 -->
+    <insert id="insertPolicyBinding">
+        INSERT INTO row_level_policy_bindings (policy_id, user_id, role_name)
+        VALUES (#{policyId}, #{userId}, #{roleName})
+        ON DUPLICATE KEY UPDATE is_active = 1
+    </insert>
+
+    <!-- 删除策略的所有绑定 -->
+    <delete id="deletePolicyBindings">
+        DELETE FROM row_level_policy_bindings WHERE policy_id = #{policyId}
+    </delete>
+
+    <!-- 查询策略的绑定用户列表 -->
+    <select id="findPolicyBindings" resultType="java.util.HashMap">
+        SELECT b.id, b.policy_id, b.user_id, b.role_name, b.is_active, b.created_at,
+               u.username, u.real_name
+        FROM row_level_policy_bindings b
+        LEFT JOIN users u ON b.user_id = u.id
+        WHERE b.policy_id = #{policyId}
+        ORDER BY b.created_at DESC
+    </select>
+
+</mapper>

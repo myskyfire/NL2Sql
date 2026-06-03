@@ -16,6 +16,13 @@
         UPDATE users SET last_login_at = NOW() WHERE id = #{userId}
     </update>
     
+    <!-- 根据ID查询用户 -->
+    <select id="findById" resultType="java.util.HashMap">
+        SELECT id, username, real_name, email, role, status
+        FROM users
+        WHERE id = #{id}
+    </select>
+
     <!-- 根据ID查询角色 -->
     <select id="findRoleById" resultType="string">
         SELECT role FROM users WHERE id = #{id}

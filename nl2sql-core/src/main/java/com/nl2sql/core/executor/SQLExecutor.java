@@ -3,6 +3,7 @@ package com.nl2sql.core.executor;
 import com.nl2sql.core.datasource.DataSourceManager;
 import com.nl2sql.core.metadata.ValueMappingService;
 import com.nl2sql.auth.service.AuthService;  // ✅ 新增：权限服务
+import com.nl2sql.auth.service.RowLevelFilterService;  // ✅ 新增：行级权限过滤服务
 import com.nl2sql.core.service.NL2SQLService;
 import com.nl2sql.metadata.mapper.MetadataQueryMapper;
 import lombok.Data;
@@ -41,6 +42,9 @@ public class SQLExecutor {
     
     @Autowired(required = false)
     private AuthService authService;  // ✅ 新增：权限服务（可选注入）
+
+    @Autowired(required = false)
+    private RowLevelFilterService rowLevelFilterService;  // ✅ 新增：行级权限过滤服务（可选注入）
     
     @Autowired(required = false)
     private com.nl2sql.metadata.service.TableQueryStatsService tableQueryStatsService;  // ✅ 新增：查询统计服务
@@ -142,6 +146,20 @@ public class SQLExecutor {
             } catch (Exception e) {
                 log.error("[权限校验失败] 继续执行SQL: {}", e.getMessage());
                 // 权限校验失败不阻断执行，仅记录日志
+            }
+        }
+        
+        // ✅ 新增：行级权限过滤（在表权限检查之后、执行之前）
+        if (rowLevelFilterService != null && userId != null) {
+            try {
+                String filteredSql = rowLevelFilterService.applyRowLevelFilter(sql, userId, datasourceId);
+                if (!filteredSql.equals(sql)) {
+                    log.info("[行级过滤] SQL已改写: userId={}, 原始SQL长度={}, 改写后长度={}", 
+                        userId, sql.length(), filteredSql.length());
+                    sql = filteredSql;
+                }
+            } catch (Exception e) {
+                log.error("[行级过滤异常] 继续执行原始SQL: {}", e.getMessage());
             }
         }
         

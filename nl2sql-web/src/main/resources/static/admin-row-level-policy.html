@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataMind AI - 行级权限策略管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+
+        .container { max-width: 1200px; margin: 0 auto 40px; padding: 0 20px; }
+
+        .card {
+            background: white; border-radius: 10px; padding: 20px;
+            margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .card h2 { color: #333; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #667eea; }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #555; font-weight: 500; }
+        .form-group select, .form-group input, .form-group textarea {
+            width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;
+        }
+        .form-group textarea { min-height: 60px; resize: vertical; }
+        .form-row { display: flex; gap: 15px; }
+        .form-row .form-group { flex: 1; }
+
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;
+            font-size: 14px; transition: all 0.3s;
+        }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn-warning { background: #ff9800; color: white; }
+        .btn-success { background: #4caf50; color: white; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f5f5f5; font-weight: 600; color: #333; }
+        tr:hover { background: #f9f9f9; }
+
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+        .badge-success { background: #4caf50; color: white; }
+        .badge-warning { background: #ff9800; color: white; }
+        .badge-info { background: #2196f3; color: white; }
+        .badge-danger { background: #f44336; color: white; }
+
+        .alert { padding: 12px; border-radius: 5px; margin-bottom: 15px; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        .hidden { display: none; }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 20px; border-radius: 10px;
+            margin-bottom: 20px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+
+        .filter-type-desc {
+            background: #f0f4ff; padding: 10px; border-radius: 5px;
+            font-size: 13px; color: #555; margin-top: 5px;
+        }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex; align-items: center;
+            justify-content: center; z-index: 1000;
+        }
+        .modal {
+            background: white; border-radius: 10px; padding: 25px;
+            width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto;
+        }
+        .modal h3 { margin-bottom: 20px; color: #333; }
+
+        .tag { display: inline-block; padding: 3px 8px; margin: 2px; border-radius: 3px; font-size: 12px; background: #e3f2fd; color: #1565c0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>行级权限策略管理</h1>
+        <p>配置行级数据过滤规则，控制用户只能查看授权范围内的数据行</p>
+    </div>
+
+    <div id="alertArea"></div>
+
+    <!-- 创建策略 -->
+    <div class="card">
+        <h2>创建行级策略</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label>策略名称</label>
+                <input type="text" id="policyName" placeholder="如：华东区域数据隔离">
+            </div>
+            <div class="form-group">
+                <label>数据源ID（可选，空=所有数据源）</label>
+                <input type="number" id="datasourceId" placeholder="留空表示全局策略">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>表名</label>
+                <input type="text" id="tableName" placeholder="如：orders">
+            </div>
+            <div class="form-group">
+                <label>过滤列名</label>
+                <input type="text" id="columnName" placeholder="如：region">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>过滤类型</label>
+                <select id="filterType" onchange="updateFilterDesc()">
+                    <option value="USER_ATTRIBUTE">用户属性（动态）</option>
+                    <option value="STATIC_VALUE">固定值</option>
+                    <option value="EXPRESSION">自定义表达式</option>
+                </select>
+                <div id="filterDesc" class="filter-type-desc">
+                    根据用户属性动态过滤。filterValue格式：user.{属性名}，如 user.username、user.role
+                </div>
+            </div>
+            <div class="form-group">
+                <label>过滤值/表达式</label>
+                <input type="text" id="filterValue" placeholder="如：user.role 或 华东 或 region IN ('华东','华南')">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>优先级（数值越大越优先）</label>
+                <input type="number" id="priority" value="0">
+            </div>
+            <div class="form-group">
+                <label>绑定用户ID（逗号分隔，可选）</label>
+                <input type="text" id="userIds" placeholder="如：2,3,5">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>绑定角色名（逗号分隔，可选）</label>
+            <input type="text" id="roleNames" placeholder="如：user,viewer">
+        </div>
+        <button class="btn btn-primary" onclick="createPolicy()">创建策略</button>
+    </div>
+
+    <!-- 策略列表 -->
+    <div class="card">
+        <h2>行级策略列表</h2>
+        <div class="form-group">
+            <label>数据源筛选</label>
+            <select id="filterDatasource" onchange="loadPolicies()">
+                <option value="">全部数据源</option>
+            </select>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>策略名称</th>
+                    <th>数据源</th>
+                    <th>表名</th>
+                    <th>过滤列</th>
+                    <th>类型</th>
+                    <th>过滤值</th>
+                    <th>优先级</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="policyTable"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 策略详情弹窗 -->
+<div id="detailModal" class="modal-overlay hidden" onclick="if(event.target===this)closeDetail()">
+    <div class="modal">
+        <h3>策略详情</h3>
+        <div id="detailContent"></div>
+        <br>
+        <button class="btn btn-primary" onclick="closeDetail()">关闭</button>
+    </div>
+</div>
+
+<script>
+const API_BASE = '/api/auth';
+let token = localStorage.getItem('token');
+
+function headers() {
+    return { 'Content-Type': 'application/json', 'Authorization': token };
+}
+
+function showAlert(msg, type) {
+    const area = document.getElementById('alertArea');
+    area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+    setTimeout(() => area.innerHTML = '', 4000);
+}
+
+function updateFilterDesc() {
+    const type = document.getElementById('filterType').value;
+    const desc = document.getElementById('filterDesc');
+    const input = document.getElementById('filterValue');
+    switch (type) {
+        case 'USER_ATTRIBUTE':
+            desc.textContent = '根据用户属性动态过滤。filterValue格式：user.{属性名}，如 user.username、user.role、user.realName';
+            input.placeholder = '如：user.role';
+            break;
+        case 'STATIC_VALUE':
+            desc.textContent = '固定值过滤。单值直接填写，多值用逗号分隔（自动生成IN语句）';
+            input.placeholder = '如：华东 或 华东,华南,华北';
+            break;
+        case 'EXPRESSION':
+            desc.textContent = '自定义SQL条件表达式，将直接拼接到WHERE子句中';
+            input.placeholder = "如：region IN ('华东','华南')";
+            break;
+    }
+}
+
+async function createPolicy() {
+    const policyName = document.getElementById('policyName').value.trim();
+    const datasourceIdVal = document.getElementById('datasourceId').value.trim();
+    const tableName = document.getElementById('tableName').value.trim();
+    const columnName = document.getElementById('columnName').value.trim();
+    const filterType = document.getElementById('filterType').value;
+    const filterValue = document.getElementById('filterValue').value.trim();
+    const priority = parseInt(document.getElementById('priority').value) || 0;
+    const userIdsStr = document.getElementById('userIds').value.trim();
+    const roleNamesStr = document.getElementById('roleNames').value.trim();
+
+    if (!policyName || !tableName || !columnName || !filterType || !filterValue) {
+        showAlert('请填写策略名称、表名、过滤列、过滤类型和过滤值', 'error');
+        return;
+    }
+
+    const body = {
+        policyName,
+        datasourceId: datasourceIdVal ? parseInt(datasourceIdVal) : null,
+        tableName,
+        columnName,
+        filterType,
+        filterValue,
+        priority,
+        userIds: userIdsStr ? userIdsStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [],
+        roleNames: roleNamesStr ? roleNamesStr.split(',').map(s => s.trim()).filter(s => s) : []
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/row-level-policy/create`, {
+            method: 'POST', headers: headers(), body: JSON.stringify(body)
+        });
+        const result = await res.json();
+        if (result.code === 200) {
+            showAlert('策略创建成功', 'success');
+            // 清空表单
+            ['policyName', 'datasourceId', 'tableName', 'columnName', 'filterValue', 'userIds', 'roleNames'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('priority').value = '0';
+            loadPolicies();
+        } else {
+            showAlert('创建失败: ' + result.message, 'error');
+        }
+    } catch (e) {
+        showAlert('请求失败: ' + e.message, 'error');
+    }
+}
+
+async function loadPolicies() {
+    const dsId = document.getElementById('filterDatasource').value;
+    const params = dsId ? `?datasourceId=${dsId}` : '';
+    try {
+        const res = await fetch(`${API_BASE}/row-level-policy/list${params}`, { headers: headers() });
+        const result = await res.json();
+        if (result.code === 200) {
+            renderPolicies(result.data || []);
+        } else {
+            showAlert('加载失败: ' + result.message, 'error');
+        }
+    } catch (e) {
+        showAlert('请求失败: ' + e.message, 'error');
+    }
+}
+
+function renderPolicies(policies) {
+    const tbody = document.getElementById('policyTable');
+    if (!policies.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">暂无行级策略</td></tr>';
+        return;
+    }
+    tbody.innerHTML = policies.map(p => {
+        const isActive = p.is_active == 1;
+        const typeBadge = {
+            'USER_ATTRIBUTE': 'badge-info',
+            'STATIC_VALUE': 'badge-success',
+            'EXPRESSION': 'badge-warning'
+        }[p.filter_type] || 'badge-info';
+        return `<tr>
+            <td>${p.id}</td>
+            <td>${p.policy_name}</td>
+            <td>${p.datasource_id || '全局'}</td>
+            <td><strong>${p.table_name}</strong></td>
+            <td>${p.column_name}</td>
+            <td><span class="badge ${typeBadge}">${p.filter_type}</span></td>
+            <td><code>${p.filter_value}</code></td>
+            <td>${p.priority}</td>
+            <td><span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? '启用' : '停用'}</span></td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="showDetail(${p.id})">详情</button>
+                ${isActive ? `<button class="btn btn-sm btn-warning" onclick="deactivatePolicy(${p.id})">停用</button>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="deletePolicy(${p.id})">删除</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function showDetail(id) {
+    try {
+        const res = await fetch(`${API_BASE}/row-level-policy/${id}`, { headers: headers() });
+        const result = await res.json();
+        if (result.code === 200) {
+            const p = result.data;
+            const bindings = p.bindings || [];
+            let html = `
+                <table>
+                    <tr><th>策略名称</th><td>${p.policy_name}</td></tr>
+                    <tr><th>数据源ID</th><td>${p.datasource_id || '全局'}</td></tr>
+                    <tr><th>表名</th><td>${p.table_name}</td></tr>
+                    <tr><th>过滤列</th><td>${p.column_name}</td></tr>
+                    <tr><th>过滤类型</th><td>${p.filter_type}</td></tr>
+                    <tr><th>过滤值</th><td><code>${p.filter_value}</code></td></tr>
+                    <tr><th>优先级</th><td>${p.priority}</td></tr>
+                    <tr><th>状态</th><td>${p.is_active == 1 ? '启用' : '停用'}</td></tr>
+                    <tr><th>创建时间</th><td>${p.created_at || '-'}</td></tr>
+                    <tr><th>更新时间</th><td>${p.updated_at || '-'}</td></tr>
+                </table>
+            `;
+            if (bindings.length) {
+                html += `<h4 style="margin-top:15px;">绑定用户/角色</h4>`;
+                html += bindings.map(b => {
+                    if (b.user_id) {
+                        return `<span class="tag">用户: ${b.username || b.real_name || b.user_id}</span>`;
+                    } else if (b.role_name) {
+                        return `<span class="tag">角色: ${b.role_name}</span>`;
+                    }
+                    return '';
+                }).join('');
+            }
+            document.getElementById('detailContent').innerHTML = html;
+            document.getElementById('detailModal').classList.remove('hidden');
+        }
+    } catch (e) {
+        showAlert('请求失败: ' + e.message, 'error');
+    }
+}
+
+function closeDetail() {
+    document.getElementById('detailModal').classList.add('hidden');
+}
+
+async function deactivatePolicy(id) {
+    if (!confirm('确定要停用该策略吗？')) return;
+    try {
+        const res = await fetch(`${API_BASE}/row-level-policy/deactivate/${id}`, {
+            method: 'POST', headers: headers()
+        });
+        const result = await res.json();
+        if (result.code === 200) {
+            showAlert('策略已停用', 'success');
+            loadPolicies();
+        } else {
+            showAlert('操作失败: ' + result.message, 'error');
+        }
+    } catch (e) {
+        showAlert('请求失败: ' + e.message, 'error');
+    }
+}
+
+async function deletePolicy(id) {
+    if (!confirm('确定要删除该策略吗？此操作不可恢复！')) return;
+    try {
+        const res = await fetch(`${API_BASE}/row-level-policy/delete/${id}`, {
+            method: 'POST', headers: headers()
+        });
+        const result = await res.json();
+        if (result.code === 200) {
+            showAlert('策略已删除', 'success');
+            loadPolicies();
+        } else {
+            showAlert('操作失败: ' + result.message, 'error');
+        }
+    } catch (e) {
+        showAlert('请求失败: ' + e.message, 'error');
+    }
+}
+
+// 初始化
+loadPolicies();
+</script>
+</body>
+</html>

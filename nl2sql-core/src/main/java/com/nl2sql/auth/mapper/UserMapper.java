@@ -23,6 +23,11 @@ public interface UserMapper {
     void updateLastLoginAt(@Param("userId") Long userId);
     
     /**
+     * 根据ID查询用户
+     */
+    Map<String, Object> findById(@Param("id") Long id);
+
+    /**
      * 根据ID查询角色
      */
     String findRoleById(@Param("id") Long id);
