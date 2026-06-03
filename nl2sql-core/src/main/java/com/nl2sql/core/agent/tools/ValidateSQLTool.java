@@ -1,6 +1,6 @@
 package com.nl2sql.core.agent.tools;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.core.datasource.DatasourceAccessService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +11,7 @@ import java.util.*;
 
 /**
  * SQL 验证 Tool - 原子能力：验证SQL语法和安全性
+ * 支持 MCP/JDBC 双模式
  */
 @Slf4j
 @Component
@@ -19,19 +20,16 @@ public class ValidateSQLTool {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private DatasourceAccessService datasourceAccessService;
     
     /**
      * 验证SQL语句
-     * 
-     * @param sql SQL语句
-     * @param datasourceId 数据源ID
-     * @return JSON格式的验证结果
      */
     @Tool("验证SQL语句的语法正确性和安全性。输入SQL语句和数据源ID，返回验证结果包括是否有效、错误信息、风险等级")
     public String validateSQL(String sql, Long datasourceId) {
         try {
-            log.info("[ValidateSQLTool] 验证SQL: {}", sql);
+            log.info("[ValidateSQLTool] 验证SQL: mcp={}, sql={}", datasourceAccessService.isMcpEnabled(), sql);
             
             // 1. 基本检查
             if (sql == null || sql.trim().isEmpty()) {
@@ -64,38 +62,11 @@ public class ValidateSQLTool {
                 }
             }
             
-            // 4. 尝试EXPLAIN验证语法
-            try {
-                String explainSQL = "EXPLAIN " + sql;
-                jdbcTemplate.queryForList(explainSQL);
-                
-                // ✅ 构建统一响应
-                Map<String, Object> data = new HashMap<>();
-                data.put("valid", true);
-                data.put("error", null);
-                data.put("riskLevel", "LOW");
-                data.put("message", "SQL语法正确");
-                
-                log.info("[ValidateSQLTool] 验证完成: valid=true");
-                
-                return ToolResponseBuilder.success("data")
-                    .withData(data)
-                    .addMetadata("toolName", "validate_sql")
-                    .addMetadata("datasourceId", datasourceId)
-                    .build();
-                
-            } catch (Exception e) {
-                // ✅ 构建统一响应
-                Map<String, Object> data = new HashMap<>();
-                data.put("valid", false);
-                data.put("error", "SQL语法错误: " + e.getMessage());
-                data.put("riskLevel", "MEDIUM");
-                
-                return ToolResponseBuilder.success("data")
-                    .withData(data)
-                    .addMetadata("toolName", "validate_sql")
-                    .addMetadata("datasourceId", datasourceId)
-                    .build();
+            // 4. EXPLAIN 验证语法（MCP 或 JDBC）
+            if (datasourceAccessService.isMcpEnabled()) {
+                return validateViaMcp(sql, datasourceId);
+            } else {
+                return validateViaJdbc(sql, datasourceId);
             }
             
         } catch (Exception e) {
@@ -104,6 +75,66 @@ public class ValidateSQLTool {
             return ToolResponseBuilder.error("VALIDATION_ERROR", e.getMessage())
                 .addMetadata("toolName", "validate_sql")
                 .addMetadata("datasourceId", datasourceId)
+                .build();
+        }
+    }
+    
+    private String validateViaMcp(String sql, Long datasourceId) {
+        try {
+            DatasourceAccessService.SqlValidationResult result = 
+                datasourceAccessService.validateSql(datasourceId, sql);
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("valid", result.isValid());
+            data.put("error", result.getError());
+            data.put("riskLevel", result.getRiskLevel());
+            data.put("message", result.getMessage());
+            
+            log.info("[ValidateSQLTool] MCP验证完成: valid={}", result.isValid());
+            
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "validate_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .addMetadata("accessMode", "MCP")
+                .build();
+        } catch (Exception e) {
+            log.warn("[ValidateSQLTool] MCP验证失败，降级到JDBC: {}", e.getMessage());
+            return validateViaJdbc(sql, datasourceId);
+        }
+    }
+    
+    private String validateViaJdbc(String sql, Long datasourceId) {
+        try {
+            String explainSQL = "EXPLAIN " + sql;
+            jdbcTemplate.queryForList(explainSQL);
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("valid", true);
+            data.put("error", null);
+            data.put("riskLevel", "LOW");
+            data.put("message", "SQL语法正确");
+            
+            log.info("[ValidateSQLTool] JDBC验证完成: valid=true");
+            
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "validate_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .addMetadata("accessMode", "JDBC")
+                .build();
+            
+        } catch (Exception e) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("valid", false);
+            data.put("error", "SQL语法错误: " + e.getMessage());
+            data.put("riskLevel", "MEDIUM");
+            
+            return ToolResponseBuilder.success("data")
+                .withData(data)
+                .addMetadata("toolName", "validate_sql")
+                .addMetadata("datasourceId", datasourceId)
+                .addMetadata("accessMode", "JDBC")
                 .build();
         }
     }

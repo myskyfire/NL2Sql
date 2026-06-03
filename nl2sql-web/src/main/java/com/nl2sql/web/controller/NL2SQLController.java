@@ -5,6 +5,7 @@ import com.nl2sql.auth.service.AuthService;
 import com.nl2sql.common.result.Result;
 import com.nl2sql.conversation.ConversationService;
 import com.nl2sql.core.cache.QueryCacheService;
+import com.nl2sql.core.datasource.DatasourceAccessService;
 import com.nl2sql.core.executor.ExcelExportService;
 import com.nl2sql.core.executor.SQLExecutor;
 import com.nl2sql.core.retriever.VectorRetriever;
@@ -39,6 +40,7 @@ public class NL2SQLController {
     private final QueryCacheService cacheService;
     private final SQLExecutor sqlExecutor;
     private final ChartRecommendationService chartRecommendationService;
+    private final DatasourceAccessService datasourceAccessService;
     
     public NL2SQLController(
         NL2SQLDepService nl2sqlService,
@@ -50,7 +52,8 @@ public class NL2SQLController {
         ExcelExportService excelExportService,
         QueryCacheService cacheService,
         SQLExecutor sqlExecutor,
-        ChartRecommendationService chartRecommendationService
+        ChartRecommendationService chartRecommendationService,
+        DatasourceAccessService datasourceAccessService
     ) {
         this.nl2sqlService = nl2sqlService;
         this.metadataService = metadataService;
@@ -62,6 +65,7 @@ public class NL2SQLController {
         this.cacheService = cacheService;
         this.sqlExecutor = sqlExecutor;
         this.chartRecommendationService = chartRecommendationService;
+        this.datasourceAccessService = datasourceAccessService;
     }
 
     
@@ -169,32 +173,59 @@ public class NL2SQLController {
         try {
             log.info("[手动执行SQL] 用户={}, datasourceId={}", userInfo.getUsername(), request.getDatasourceId());
             
-            // 使用动态数据源执行SQL
-            SQLExecutor.QueryResult result = sqlExecutor.executeQuery(
-                request.getSql(),
-                request.getDatasourceId(),
-                userInfo.getUserId(),
-                userInfo.getUsername(),
-                "unknown"
-            );
-            
             Map<String, Object> response = new HashMap<>();
-            if (result.getError() != null) {
-                response.put("error", result.getError());
-            } else {
-                response.put("data", result.getData());
-                response.put("rowCount", result.getRowCount());
-                response.put("executionTime", result.getExecutionTime());
+            
+            if (datasourceAccessService.isMcpEnabled()) {
+                // MCP 模式：通过 DatasourceAccessService 执行（自动降级到 JDBC）
+                DatasourceAccessService.SqlExecutionResult mcpResult = 
+                    datasourceAccessService.executeSql(request.getDatasourceId(), request.getSql());
                 
-                // 生成图表推荐（如果有数据）
-                if (result.getData() != null && !result.getData().isEmpty()) {
-                    try {
-                        ChartRecommendationService.ChartRecommendation chartRec = 
-                            chartRecommendationService.recommendCharts("手动SQL查询", result.getData());
-                        response.put("chartRecommendation", chartRec);
-                        log.info("[手动执行SQL] 图表推荐完成: {}个图表", chartRec.getCharts().size());
-                    } catch (Exception e) {
-                        log.warn("[手动执行SQL] 图表推荐失败", e);
+                if (mcpResult.getError() != null) {
+                    response.put("error", mcpResult.getError());
+                } else {
+                    response.put("data", mcpResult.getData());
+                    response.put("rowCount", mcpResult.getRowCount());
+                    response.put("executionTime", mcpResult.getExecutionTime());
+                    
+                    // 生成图表推荐（如果有数据）
+                    if (mcpResult.getData() != null && !mcpResult.getData().isEmpty()) {
+                        try {
+                            ChartRecommendationService.ChartRecommendation chartRec = 
+                                chartRecommendationService.recommendCharts("手动SQL查询", mcpResult.getData());
+                            response.put("chartRecommendation", chartRec);
+                            log.info("[手动执行SQL] 图表推荐完成: {}个图表", chartRec.getCharts().size());
+                        } catch (Exception e) {
+                            log.warn("[手动执行SQL] 图表推荐失败", e);
+                        }
+                    }
+                }
+            } else {
+                // JDBC 模式：原有逻辑
+                SQLExecutor.QueryResult result = sqlExecutor.executeQuery(
+                    request.getSql(),
+                    request.getDatasourceId(),
+                    userInfo.getUserId(),
+                    userInfo.getUsername(),
+                    "unknown"
+                );
+                
+                if (result.getError() != null) {
+                    response.put("error", result.getError());
+                } else {
+                    response.put("data", result.getData());
+                    response.put("rowCount", result.getRowCount());
+                    response.put("executionTime", result.getExecutionTime());
+                    
+                    // 生成图表推荐（如果有数据）
+                    if (result.getData() != null && !result.getData().isEmpty()) {
+                        try {
+                            ChartRecommendationService.ChartRecommendation chartRec = 
+                                chartRecommendationService.recommendCharts("手动SQL查询", result.getData());
+                            response.put("chartRecommendation", chartRec);
+                            log.info("[手动执行SQL] 图表推荐完成: {}个图表", chartRec.getCharts().size());
+                        } catch (Exception e) {
+                            log.warn("[手动执行SQL] 图表推荐失败", e);
+                        }
                     }
                 }
             }

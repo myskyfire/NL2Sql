@@ -1,5 +1,6 @@
 package com.nl2sql.metadata.service;
 
+import com.nl2sql.core.datasource.DatasourceAccessService;
 import com.nl2sql.core.llm.MultiModelService;
 import com.nl2sql.metadata.mapper.MetadataCollectorMapper;
 import com.nl2sql.metadata.entity.ColumnMetadata;
@@ -33,6 +34,9 @@ public class MetadataCollectorService {
     @Autowired
     private MetadataCollectorMapper metadataCollectorMapper;
     
+    @Autowired
+    private DatasourceAccessService datasourceAccessService;
+    
     public MetadataCollectorService(JdbcTemplate jdbcTemplate, DataSourceConfigService dataSourceConfigService) {
         this.localJdbcTemplate = jdbcTemplate;
         this.dataSourceConfigService = dataSourceConfigService;
@@ -40,6 +44,7 @@ public class MetadataCollectorService {
     
     /**
      * 全量同步元数据
+     * 支持 MCP/JDBC 双模式：MCP 模式通过 MCP Server 拉取，JDBC 模式直连远端库
      */
     @Transactional
     public SyncResult syncAllMetadata(Long datasourceId, Long operatorId) {
@@ -54,47 +59,16 @@ public class MetadataCollectorService {
                 throw new IllegalArgumentException("数据源不存在: " + datasourceId);
             }
             
-            log.info("开始同步元数据: datasourceId={}, name={}", datasourceId, config.getName());
+            log.info("开始同步元数据: datasourceId={}, name={}, mcp={}", 
+                datasourceId, config.getName(), datasourceAccessService.isMcpEnabled());
             
-            // 建立远程连接
-            Connection remoteConn = createRemoteConnection(config);
-            
-            try {
-                // 1. 采集表列表
-                List<TableMetadata> tables = collectTables(remoteConn, datasourceId);
-                result.setTableCount(tables.size());
-                
-                // 2. 清空旧数据（在事务内，确保原子性）
-                clearOldMetadata(datasourceId);
-                
-                // 3. 保存表元数据
-                saveTableMetadata(tables);
-                
-                // ✅ 新增：异步增强表描述（不阻塞主流程）
-                enhanceTableDescriptionsAsync(datasourceId);
-                // ❌ 已移除：列增强改为按需触发（反馈驱动 + 定时批量）
-                
-                // 4. 采集字段和外键
-                int totalColumns = 0;
-                int totalForeignKeys = 0;
-                
-                for (TableMetadata table : tables) {
-                    List<ColumnMetadata> columns = collectColumns(remoteConn, datasourceId, table.getTableName(), table.getTableComment());
-                    saveColumnMetadata(columns);
-                    totalColumns += columns.size();
-                    
-                    // TODO: 采集外键（简化版暂不实现）
-                }
-                
-                result.setColumnCount(totalColumns);
-                result.setForeignKeyCount(totalForeignKeys);
-                result.setStatus("SUCCESS");
-                
-                log.info("元数据同步成功: tables={}, columns={}", tables.size(), totalColumns);
-                
-            } finally {
-                closeConnection(remoteConn);
+            // MCP 模式：通过 DatasourceAccessService 拉取元数据
+            if (datasourceAccessService.isMcpEnabled()) {
+                return syncAllMetadataViaMcp(datasourceId, operatorId, result);
             }
+            
+            // JDBC 模式：走原有直连逻辑
+            return syncAllMetadataViaJdbc(datasourceId, result);
             
         } catch (Exception e) {
             log.error("元数据同步失败", e);
@@ -110,6 +84,127 @@ public class MetadataCollectorService {
             
             // 记录日志
             saveSyncLog(result);
+        }
+    }
+    
+    /**
+     * MCP 模式同步元数据
+     */
+    private SyncResult syncAllMetadataViaMcp(Long datasourceId, Long operatorId, SyncResult result) {
+        try {
+            // 1. 通过 MCP 拉取完整元数据
+            DatasourceAccessService.SchemaMetadataResult schemaResult = 
+                datasourceAccessService.batchQuerySchema(datasourceId, null, null);
+            
+            // 2. 清空旧数据
+            clearOldMetadata(datasourceId);
+            
+            // 3. 转换并保存表元数据
+            List<TableMetadata> tables = new ArrayList<>();
+            for (DatasourceAccessService.TableSchema tableSchema : schemaResult.getTables()) {
+                TableMetadata table = new TableMetadata();
+                table.setDatasourceId(datasourceId);
+                table.setTableName(tableSchema.getTableName());
+                table.setTableType("TABLE");
+                table.setTableComment(tableSchema.getTableComment());
+                tables.add(table);
+            }
+            saveTableMetadata(tables);
+            result.setTableCount(tables.size());
+            
+            // 4. 转换并保存列元数据
+            int totalColumns = 0;
+            for (DatasourceAccessService.TableSchema tableSchema : schemaResult.getTables()) {
+                List<ColumnMetadata> columns = new ArrayList<>();
+                int ordinalPosition = 1;
+                for (DatasourceAccessService.ColumnSchema colSchema : tableSchema.getColumns()) {
+                    ColumnMetadata col = new ColumnMetadata();
+                    col.setDatasourceId(datasourceId);
+                    col.setTableName(tableSchema.getTableName());
+                    col.setColumnName(colSchema.getName());
+                    col.setDataType(colSchema.getType());
+                    col.setColumnComment(colSchema.getComment());
+                    col.setIsNullable(colSchema.isNullable() ? 1 : 0);
+                    col.setColumnDefault(colSchema.getDefaultValue());
+                    col.setIsPrimaryKey(
+                        tableSchema.getPrimaryKeys() != null && 
+                        tableSchema.getPrimaryKeys().contains(colSchema.getName()) ? 1 : 0
+                    );
+                    col.setOrdinalPosition(ordinalPosition++);
+                    columns.add(col);
+                }
+                saveColumnMetadata(columns);
+                totalColumns += columns.size();
+            }
+            
+            result.setColumnCount(totalColumns);
+            result.setForeignKeyCount(schemaResult.getRelationshipCount());
+            result.setStatus("SUCCESS");
+            
+            // 5. 异步增强表描述
+            enhanceTableDescriptionsAsync(datasourceId);
+            
+            log.info("[MCP] 元数据同步成功: tables={}, columns={}, relationships={}", 
+                tables.size(), totalColumns, schemaResult.getRelationshipCount());
+            
+        } catch (Exception e) {
+            log.warn("[MCP] 元数据同步失败，降级到JDBC: {}", e.getMessage());
+            return syncAllMetadataViaJdbc(datasourceId, result);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * JDBC 模式同步元数据（原有逻辑）
+     */
+    private SyncResult syncAllMetadataViaJdbc(Long datasourceId, SyncResult result) {
+        DataSourceConfig config = dataSourceConfigService.getConfigById(datasourceId);
+        
+        Connection remoteConn;
+        try {
+            remoteConn = createRemoteConnection(config);
+        } catch (SQLException e) {
+            throw new RuntimeException("创建远程连接失败: " + e.getMessage(), e);
+        }
+        
+        try {
+            // 1. 采集表列表
+            List<TableMetadata> tables = collectTables(remoteConn, datasourceId);
+            result.setTableCount(tables.size());
+            
+            // 2. 清空旧数据（在事务内，确保原子性）
+            clearOldMetadata(datasourceId);
+            
+            // 3. 保存表元数据
+            saveTableMetadata(tables);
+            
+            // ✅ 新增：异步增强表描述（不阻塞主流程）
+            enhanceTableDescriptionsAsync(datasourceId);
+            // ❌ 已移除：列增强改为按需触发（反馈驱动 + 定时批量）
+            
+            // 4. 采集字段和外键
+            int totalColumns = 0;
+            int totalForeignKeys = 0;
+            
+            for (TableMetadata table : tables) {
+                List<ColumnMetadata> columns = collectColumns(remoteConn, datasourceId, table.getTableName(), table.getTableComment());
+                saveColumnMetadata(columns);
+                totalColumns += columns.size();
+                
+                // TODO: 采集外键（简化版暂不实现）
+            }
+            
+            result.setColumnCount(totalColumns);
+            result.setForeignKeyCount(totalForeignKeys);
+            result.setStatus("SUCCESS");
+            
+            log.info("元数据同步成功: tables={}, columns={}", tables.size(), totalColumns);
+            
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            closeConnection(remoteConn);
         }
         
         return result;

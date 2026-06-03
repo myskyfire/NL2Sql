@@ -1,8 +1,10 @@
 package com.nl2sql.core.executor;
 
+import com.nl2sql.core.datasource.DatasourceAccessService;
 import com.nl2sql.core.datasource.DataSourceManager;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,6 +21,9 @@ public class SQLRiskAnalyzer {
     
     private final DataSourceManager dataSourceManager;
     private final RedisTemplate<String, Object> redisTemplate;
+    
+    @Autowired
+    private DatasourceAccessService datasourceAccessService;
     
     @Value("${sql.execution.table-stats-cache-hours:12}")
     private long cacheHours;
@@ -55,39 +60,13 @@ public class SQLRiskAnalyzer {
                 return cached;
             }
             
-            // 获取对应数据源的 JdbcTemplate
-            JdbcTemplate jdbcTemplate = dataSourceManager.getJdbcTemplate(datasourceId);
-            
-            // 1. 执行EXPLAIN获取执行计划
-            List<Map<String, Object>> explainResult = executeExplain(sql, jdbcTemplate);
-            result.setExplainResult(explainResult);
-            
-            // 2. 提取涉及的表
-            Set<String> tables = extractTablesFromExplain(explainResult);
-            result.setInvolvedTables(new ArrayList<>(tables));
-            
-            // 3. 获取表统计信息(带缓存)
-            Map<String, TableStats> tableStatsMap = new HashMap<>();
-            for (String table : tables) {
-                TableStats stats = getTableStatsWithCache(table, datasourceId, jdbcTemplate);
-                tableStatsMap.put(table, stats);
+            // MCP 模式：通过 DatasourceAccessService 执行 EXPLAIN
+            if (datasourceAccessService.isMcpEnabled()) {
+                return analyzeRiskViaMcp(sql, datasourceId, result, explainCacheKey);
             }
-            result.setTableStats(tableStatsMap);
             
-            // 4. 风险评估
-            List<String> risks = assessRisks(explainResult, tableStatsMap);
-            result.setRisks(risks);
-            result.setRiskLevel(calculateRiskLevel(risks));
-            
-            // 5. 生成优化建议
-            List<String> suggestions = generateSuggestions(explainResult, tableStatsMap, risks);
-            result.setSuggestions(suggestions);
-            
-            log.info("SQL风险分析完成: datasourceId={}, 风险等级={}, 风险点={}", datasourceId, result.getRiskLevel(), risks.size());
-            
-            // ✅ 关键优化：缓存 EXPLAIN 结果（1小时）
-            redisTemplate.opsForValue().set(explainCacheKey, result, 1, TimeUnit.HOURS);
-            log.info("[SQLRiskAnalyzer] EXPLAIN 结果已缓存: key={}", explainCacheKey);
+            // JDBC 模式：走原有逻辑
+            return analyzeRiskViaJdbc(sql, datasourceId, result, explainCacheKey);
             
         } catch (Exception e) {
             log.error("SQL风险分析失败: datasourceId={}", datasourceId, e);
@@ -96,6 +75,184 @@ public class SQLRiskAnalyzer {
         }
         
         return result;
+    }
+    
+    /**
+     * MCP 模式风险分析
+     * MCP 的 validate_sql 只返回 valid/invalid，不返回 EXPLAIN 详情，
+     * 所以 MCP 模式下做简化版风险分析
+     */
+    private RiskAnalysisResult analyzeRiskViaMcp(String sql, Long datasourceId, RiskAnalysisResult result, String explainCacheKey) {
+        try {
+            // 1. 先用 MCP validate_sql 验证语法
+            DatasourceAccessService.SqlValidationResult validationResult = 
+                datasourceAccessService.validateSql(datasourceId, sql);
+            
+            if (!validationResult.isValid()) {
+                result.setRiskLevel("HIGH");
+                result.getRisks().add("SQL语法错误: " + validationResult.getError());
+                return result;
+            }
+            
+            // 2. MCP 模式下无法获取 EXPLAIN 详情，做静态规则分析
+            List<String> risks = staticRiskAnalysis(sql);
+            result.setRisks(risks);
+            result.setRiskLevel(calculateRiskLevel(risks));
+            
+            // 3. 生成优化建议
+            List<String> suggestions = generateStaticSuggestions(risks);
+            result.setSuggestions(suggestions);
+            
+            log.info("[SQLRiskAnalyzer] MCP风险分析完成: datasourceId={}, 风险等级={}, 风险点={}", 
+                datasourceId, result.getRiskLevel(), risks.size());
+            
+            // 缓存结果
+            redisTemplate.opsForValue().set(explainCacheKey, result, 1, TimeUnit.HOURS);
+            
+            return result;
+        } catch (Exception e) {
+            log.warn("[SQLRiskAnalyzer] MCP风险分析失败，降级到JDBC: {}", e.getMessage());
+            return analyzeRiskViaJdbc(sql, datasourceId, result, explainCacheKey);
+        }
+    }
+    
+    /**
+     * JDBC 模式风险分析（原有逻辑）
+     */
+    private RiskAnalysisResult analyzeRiskViaJdbc(String sql, Long datasourceId, RiskAnalysisResult result, String explainCacheKey) {
+        // 获取对应数据源的 JdbcTemplate
+        JdbcTemplate jdbcTemplate = dataSourceManager.getJdbcTemplate(datasourceId);
+        
+        // 1. 执行EXPLAIN获取执行计划
+        List<Map<String, Object>> explainResult = executeExplain(sql, jdbcTemplate);
+        result.setExplainResult(explainResult);
+        
+        // 2. 提取涉及的表
+        Set<String> tables = extractTablesFromExplain(explainResult);
+        result.setInvolvedTables(new ArrayList<>(tables));
+        
+        // 3. 获取表统计信息(带缓存)
+        Map<String, TableStats> tableStatsMap = new HashMap<>();
+        for (String table : tables) {
+            TableStats stats = getTableStatsWithCache(table, datasourceId, jdbcTemplate);
+            tableStatsMap.put(table, stats);
+        }
+        result.setTableStats(tableStatsMap);
+        
+        // 4. 风险评估
+        List<String> risks = assessRisks(explainResult, tableStatsMap);
+        result.setRisks(risks);
+        result.setRiskLevel(calculateRiskLevel(risks));
+        
+        // 5. 生成优化建议
+        List<String> suggestions = generateSuggestions(explainResult, tableStatsMap, risks);
+        result.setSuggestions(suggestions);
+        
+        log.info("SQL风险分析完成: datasourceId={}, 风险等级={}, 风险点={}", datasourceId, result.getRiskLevel(), risks.size());
+        
+        // ✅ 关键优化：缓存 EXPLAIN 结果（1小时）
+        redisTemplate.opsForValue().set(explainCacheKey, result, 1, TimeUnit.HOURS);
+        log.info("[SQLRiskAnalyzer] EXPLAIN 结果已缓存: key={}", explainCacheKey);
+        
+        return result;
+    }
+    
+    /**
+     * 静态风险分析（MCP 模式下使用，不依赖 EXPLAIN 结果）
+     */
+    private List<String> staticRiskAnalysis(String sql) {
+        List<String> risks = new ArrayList<>();
+        String upperSQL = sql.toUpperCase();
+        
+        // 检测 SELECT *
+        if (upperSQL.contains("SELECT *")) {
+            risks.add("使用了 SELECT *，可能返回过多列数据");
+        }
+        
+        // 检测无 WHERE 条件
+        if (!upperSQL.contains("WHERE") && !upperSQL.contains("LIMIT")) {
+            risks.add("缺少 WHERE 条件和 LIMIT 限制，可能返回大量数据");
+        }
+        
+        // 检测无 LIMIT
+        if (!upperSQL.contains("LIMIT")) {
+            risks.add("缺少 LIMIT 限制，可能返回大量数据");
+        }
+        
+        // 检测子查询
+        int subqueryCount = countOccurrences(upperSQL, "SELECT") - 1;
+        if (subqueryCount > 0) {
+            risks.add(String.format("包含 %d 个子查询，可能影响性能", subqueryCount));
+        }
+        
+        // 检测多表 JOIN
+        int joinCount = countOccurrences(upperSQL, "JOIN");
+        if (joinCount > 2) {
+            risks.add(String.format("包含 %d 个 JOIN，查询复杂度较高", joinCount));
+        }
+        
+        // 检测 GROUP BY + 无索引提示
+        if (upperSQL.contains("GROUP BY") && upperSQL.contains("ORDER BY")) {
+            risks.add("同时使用 GROUP BY 和 ORDER BY，可能产生文件排序");
+        }
+        
+        // 检测 DISTINCT
+        if (upperSQL.contains("DISTINCT")) {
+            risks.add("使用了 DISTINCT，可能需要临时表去重");
+        }
+        
+        // 检测 LIKE '%...'
+        if (upperSQL.contains("LIKE '%")) {
+            risks.add("使用了前缀通配符 LIKE '%...'，无法使用索引");
+        }
+        
+        return risks;
+    }
+    
+    private int countOccurrences(String str, String sub) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = str.indexOf(sub, idx)) != -1) {
+            count++;
+            idx += sub.length();
+        }
+        return count;
+    }
+    
+    /**
+     * 静态优化建议（MCP 模式下使用）
+     */
+    private List<String> generateStaticSuggestions(List<String> risks) {
+        List<String> suggestions = new ArrayList<>();
+        
+        for (String risk : risks) {
+            if (risk.contains("SELECT *")) {
+                suggestions.add("💡 建议只查询需要的列，避免 SELECT *");
+            }
+            if (risk.contains("缺少 WHERE")) {
+                suggestions.add("💡 建议添加 WHERE 条件缩小查询范围");
+            }
+            if (risk.contains("缺少 LIMIT")) {
+                suggestions.add("💡 建议添加 LIMIT 限制返回行数");
+            }
+            if (risk.contains("子查询")) {
+                suggestions.add("💡 建议将子查询改写为 JOIN，可能提升性能");
+            }
+            if (risk.contains("JOIN") && risk.contains("复杂度")) {
+                suggestions.add("💡 建议减少 JOIN 数量或拆分为多个查询");
+            }
+            if (risk.contains("GROUP BY") && risk.contains("ORDER BY")) {
+                suggestions.add("💡 建议在 GROUP BY 和 ORDER BY 字段上创建复合索引");
+            }
+            if (risk.contains("DISTINCT")) {
+                suggestions.add("💡 建议通过 GROUP BY 替代 DISTINCT");
+            }
+            if (risk.contains("LIKE '%")) {
+                suggestions.add("💡 建议避免前缀通配符，改用全文索引或前缀匹配");
+            }
+        }
+        
+        return suggestions;
     }
     
     /**

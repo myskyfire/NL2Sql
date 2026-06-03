@@ -2,6 +2,7 @@ package com.nl2sql.web.controller;
 
 import com.nl2sql.common.result.Result;
 import com.nl2sql.core.cache.MetadataCacheService;
+import com.nl2sql.core.datasource.DatasourceAccessService;
 import com.nl2sql.core.metadata.MetadataService;
 import com.nl2sql.metadata.entity.DataSourceConfig;
 import com.nl2sql.metadata.service.DataSourceConfigService;
@@ -35,6 +36,9 @@ public class AdminMetadataController {
     @Autowired(required = false)
     private MetadataService metadataService;
     
+    @Autowired
+    private DatasourceAccessService datasourceAccessService;
+    
     public AdminMetadataController(DataSourceConfigService dataSourceConfigService,
                                    MetadataCollectorService metadataCollectorService,
                                    MetadataQueryService metadataQueryService) {
@@ -44,16 +48,42 @@ public class AdminMetadataController {
     }
     
     /**
+     * 查询 MCP 模式状态
+     */
+    @GetMapping("/datasource/mcp-status")
+    public Result<Map<String, Object>> getMcpStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("mcpEnabled", datasourceAccessService.isMcpEnabled());
+        return Result.success(status);
+    }
+    
+    /**
      * 测试数据库连接
+     * MCP 模式下通过 MCP Server 测试，JDBC 模式下直连测试
      */
     @PostMapping("/datasource/test")
     public Result<Map<String, Object>> testConnection(@RequestBody DataSourceConfig config) {
         try {
+            // MCP 模式：通过 MCP Server 验证数据源连通性
+            if (datasourceAccessService.isMcpEnabled() && config.getId() != null) {
+                DatasourceAccessService.SqlValidationResult validationResult = 
+                    datasourceAccessService.validateSql(config.getId(), "SELECT 1");
+                
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", validationResult.isValid());
+                result.put("message", validationResult.isValid() ? "MCP 连接成功" : "MCP 连接失败: " + validationResult.getError());
+                result.put("mode", "MCP");
+                
+                return validationResult.isValid() ? Result.success(result) : Result.error("MCP 连接失败: " + validationResult.getError());
+            }
+            
+            // JDBC 模式：直连测试
             boolean success = dataSourceConfigService.testConnection(config);
             
             Map<String, Object> result = new HashMap<>();
             result.put("success", success);
             result.put("message", success ? "连接成功" : "连接失败");
+            result.put("mode", "JDBC");
             
             return success ? Result.success(result) : Result.error("连接失败，请检查配置");
         } catch (Exception e) {
